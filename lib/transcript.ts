@@ -34,6 +34,18 @@ export type AdvisorNote = { advisor: string; severity: string; note: string };
 // `title` is eval's intent; `code` (its first line) only when a call carries nothing better.
 const INTENT_KEYS = ["i", "title", "command", "path", "pattern", "query", "url", "description", "code"];
 
+/** What a subagent hands back with `yield` when it is text (`data.result`, or `data` itself); "" otherwise. */
+export function yieldText(args: Obj): string {
+  const data = args.data;
+  return (typeof data === "string" ? data : str(obj(data).result)).trim();
+}
+
+/** A tool call's one-line intent from its arguments ("" when it carries none), at most 160 chars. */
+export function callIntent(args: Obj): string {
+  const key = INTENT_KEYS.find((k) => typeof args[k] === "string");
+  return key ? str(args[key]).trim().split("\n")[0].slice(0, 160) : "";
+}
+
 export function textOf(content: unknown): string {
   if (typeof content === "string") return content;
   return arr(content)
@@ -135,9 +147,13 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
           entries.push(ask);
           continue;
         }
-        const key = INTENT_KEYS.find((k) => typeof args[k] === "string");
-        const intent = key ? str(args[key]).trim().split("\n")[0] : "";
-        const call: ToolCall = { name: str(part.name), intent: intent.slice(0, 160) };
+        // A subagent's final answer: its parent reads it, so the chat shows it as the reply.
+        const result = part.name === "yield" ? yieldText(args) : "";
+        if (result) {
+          entries.push({ role: "assistant", text: result, ts });
+          continue;
+        }
+        const call: ToolCall = { name: str(part.name), intent: callIntent(args) };
         callsById.set(str(part.id), call);
         const last = entries[entries.length - 1];
         const group = last?.role === "tools" ? last : { role: "tools" as const, calls: [], images: [], todo: null, ts };

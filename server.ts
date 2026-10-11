@@ -15,6 +15,7 @@ import type { ServerWebSocket } from "bun";
 import webpush, { type PushSubscription } from "web-push";
 import { arr, num, obj, str, type Obj } from "./lib/json";
 import { IMAGE_MIMES, readChatFile, recapStale, scanFacts, type ChatEntry, type Facts } from "./lib/transcript";
+import { countSubagents, listSubagents, regularFile, subagentDir, subagentFile, validSubagentName, type Subagent, type SubagentFacts } from "./lib/subagents";
 import { compactAtPercent, type Compaction } from "./lib/compaction";
 import { branchOf, projectOf } from "./lib/git";
 import { queryRecaps } from "./lib/recaps";
@@ -287,6 +288,8 @@ type Agent = {
   recapStale: boolean;
   /** The newest transcript entry (ms). */
   lastActivity: number;
+  /** Its subagents: those with a transcript, finished ones too, and running ones. */
+  subagents: number;
 };
 
 type Item = {
@@ -370,12 +373,14 @@ async function readAgents(): Promise<Map<string, Agent>> {
       const sessionId = b.state.sessionId;
       const facts = await sessionFacts(sessionId);
       const recap = recaps.get(sessionId);
+      const transcript = transcriptPath(sessionId);
       byPane.set(pane, {
         sessionId,
         lastPrompt: facts?.lastPrompt ?? "",
         recap: recap?.text ?? "",
         recapStale: recapStale(recap, facts?.lastTurn ?? 0),
         lastActivity: facts?.lastActivity ?? 0,
+        subagents: transcript ? countSubagents(subagentDir(transcript), b.state.jobs) : 0,
       });
     }),
   );
@@ -533,6 +538,13 @@ async function readChat(sessionId: string, limit: number): Promise<{ entries: Ch
   return readChatFile(path, leaf, limit);
 }
 
+const subagentFacts = new Map<string, SubagentFacts>();
+/** A session's subagents; none while its omp isn't bridged (its transcript is unknown then). */
+async function readSubagents(item: Item): Promise<Subagent[]> {
+  const transcript = item.agent ? transcriptPath(item.agent.sessionId) : null;
+  return transcript ? listSubagents(subagentDir(transcript), item.live?.jobs ?? [], subagentFacts) : [];
+}
+
 /**
  * A block's screen. omp agents render as Tern surfaces, read as text with --surfaces (their
  * HTML runs to megabytes). Plain terminals come as Tern's colored HTML: one screen of
@@ -598,9 +610,10 @@ function draftPayload(b: Bridge | null) {
 /**
  * One phone screen's updates. Nothing here polls on a timer except terminal screens (Tern has
  * no output event): the list is rechecked when `invalidateState` batches an event, and the open
- * transcript or file when its folder reports a write to it.
+ * transcript or file when its folder reports a write to it. `view=subagents` follows a session's
+ * subagent list; `sub` one subagent's chat, read-only.
  */
-function stream(req: Request, block: string | null, view: string): Response {
+function stream(req: Request, block: string | null, view: string, sub: string | null): Response {
   const enc = new TextEncoder();
   let stop = false;
   const cleanups: (() => void)[] = [];
@@ -621,7 +634,8 @@ function stream(req: Request, block: string | null, view: string): Response {
         };
         req.signal.addEventListener("abort", finish);
 
-        if (block) {
+        // A subagent screen shows none of the session's own draft, live text or queue.
+        if (block && sub === null && view !== "subagents") {
           // Drafts, live text and btw answers go out the moment omp reports them.
           let lastDraft = "";
           const onPane = (event: string, data: unknown) => {
@@ -650,8 +664,11 @@ function stream(req: Request, block: string | null, view: string): Response {
           clearTimeout(timer);
           followed?.watcher.close();
         });
-        /** Rechecks when `path` is written or replaced; its folder is watched, as editors save by renaming. */
-        const follow = (path: string | null) => {
+        /**
+         * Rechecks when `path` is written or replaced; its folder is watched, as editors save by
+         * renaming. `folder`: `path` is a folder of transcripts, rechecked on any `.jsonl` write in it.
+         */
+        const follow = (path: string | null, folder = false) => {
           if (followed?.path === path) return;
           followed?.watcher.close();
           followed = null;
@@ -659,11 +676,13 @@ function stream(req: Request, block: string | null, view: string): Response {
           if (!path || stop) return;
           const name = basename(path);
           try {
-            const watcher = watch(dirname(path), (_e, f) => f === name && check());
+            const watcher = folder
+              ? watch(path, (_e, f) => f?.endsWith(".jsonl") && check())
+              : watch(dirname(path), (_e, f) => f === name && check());
             watcher.on("error", () => {});
             followed = { path, watcher };
           } catch {
-            // A missing folder: the safety recheck tries again.
+            // A missing folder (no subagent has started yet): the next check tries again.
           }
         };
 
@@ -677,7 +696,29 @@ function stream(req: Request, block: string | null, view: string): Response {
           const item = block ? await findItem(block) : undefined;
           if (stop) return;
           clearTimeout(timer);
-          if (item?.doc) {
+          if (sub !== null || view === "subagents") {
+            // A session's subagents sit beside its transcript, known while its omp is bridged.
+            const transcript = item?.agent ? transcriptPath(item.agent.sessionId) : null;
+            if (sub === null) {
+              follow(transcript && subagentDir(transcript), true);
+              const list = item ? await readSubagents(item) : [];
+              const etag = JSON.stringify(list);
+              if (etag !== lastDetail) {
+                lastDetail = etag;
+                send("subagents", list);
+              }
+            } else {
+              const path = transcript && subagentFile(transcript, sub);
+              follow(path);
+              const file = path && regularFile(path) ? path : null;
+              const etag = file ? String(statSync(file).size) : "none";
+              if (etag !== lastDetail) {
+                lastDetail = etag;
+                // No bridge speaks for a subagent: its file's last entry is its leaf.
+                send("chat", file ? await readChatFile(file, "", 80) : { entries: [] });
+              }
+            }
+          } else if (item?.doc) {
             const path = item.doc;
             follow(path);
             const st = existsSync(path) ? statSync(path) : null;
@@ -746,8 +787,16 @@ async function handleApi(req: Request, url: URL): Promise<Response> {
   if (req.method === "GET" && path === "/api/state") return json(await getState());
   if (req.method === "GET" && path === "/api/stream") {
     const block = url.searchParams.get("block");
+    const sub = url.searchParams.get("sub");
+    // The name comes from the URL: only a plain name reaches the session's subagent folder.
+    if (sub !== null && !(block && validSubagentName(sub))) return json({ error: "bad subagent" }, 400);
     if (block && !(await findItem(block))) return json({ error: "no such block" }, 404);
-    return stream(req, block, url.searchParams.get("view") ?? "chat");
+    return stream(req, block, url.searchParams.get("view") ?? "chat", sub);
+  }
+  const subagents = /^\/api\/blocks\/(\d+)\/subagents$/.exec(path);
+  if (req.method === "GET" && subagents) {
+    const item = await findItem(subagents[1]);
+    return item ? json({ subagents: await readSubagents(item) }) : json({ error: "no such block" }, 404);
   }
   const blob = /^\/api\/blob\/([0-9a-f]{64})$/.exec(path);
   if (req.method === "GET" && blob) {

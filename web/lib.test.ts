@@ -5,6 +5,7 @@ import {
   age,
   askAnswers,
   askReady,
+  backStep,
   btwQuestion,
   can,
   clock,
@@ -15,6 +16,7 @@ import {
   extensionOutdated,
   fitEdge,
   folderLabel,
+  isAbove,
   isOld,
   jobsSummary,
   langOf,
@@ -25,16 +27,20 @@ import {
   parseAdvisorNote,
   parseCollapsed,
   parseRecent,
+  parseRoute,
   prettyModel,
   priceShort,
+  routeHash,
   rowText,
   searchModels,
   todoSummary,
   toggled,
   tokensShort,
+  trackOrigin,
   vapidBytes,
   withRecent,
   type AskPick,
+  type Route,
 } from "./lib";
 
 const NOW = Date.UTC(2026, 9, 11, 12, 0, 0);
@@ -63,6 +69,7 @@ const agent = (over: Partial<NonNullable<Item["agent"]>> = {}) => ({
   recap: "",
   recapStale: false,
   lastActivity: 0,
+  subagents: 0,
   ...over,
 });
 
@@ -578,5 +585,80 @@ describe("checkPaired", () => {
     expect(await checkPaired()).toBe(true);
     answer(new Error("offline"));
     expect(await checkPaired()).toBe(true);
+  });
+});
+
+describe("routes", () => {
+  test.each<[string, Route]>([
+    ["", { view: "list" }],
+    ["#/", { view: "list" }],
+    ["#/b/12", { view: "session", block: "12" }],
+    ["#/b/12/sub", { view: "subagents", block: "12" }],
+    ["#/b/12/sub/ViewA", { view: "subagent", block: "12", name: "ViewA" }],
+    ["#/b/12/sub/Fix.v2-a_b", { view: "subagent", block: "12", name: "Fix.v2-a_b" }],
+    // Names that could leave the subagent folder, or reach an advisor transcript, are no subagent.
+    ["#/b/12/sub/..%2F..%2Fsecret", { view: "subagents", block: "12" }],
+    ["#/b/12/sub/..", { view: "subagents", block: "12" }],
+    ["#/b/12/sub/__advisor.sol61-high", { view: "subagents", block: "12" }],
+    ["#/b/12/sub/%E0%A4%A", { view: "subagents", block: "12" }],
+    ["#/b/12/sub/a/b", { view: "list" }],
+    ["#/b/x", { view: "list" }],
+    ["#/b/12/other", { view: "list" }],
+  ])("%s", (hash, want) => expect(parseRoute(hash)).toEqual(want));
+
+  test("a route's hash parses back to the same route", () => {
+    const routes: Route[] = [
+      { view: "list" },
+      { view: "session", block: "3" },
+      { view: "subagents", block: "3" },
+      { view: "subagent", block: "3", name: "WebTests" },
+    ];
+    for (const r of routes) expect(parseRoute(routeHash(r))).toEqual(r);
+    expect(routeHash({ view: "subagent", block: "3", name: "WebTests" })).toBe("#/b/3/sub/WebTests");
+  });
+
+  test("the list is above every screen, a session above its own subagent screens only", () => {
+    const list: Route = { view: "list" };
+    const session: Route = { view: "session", block: "1" };
+    const subs: Route = { view: "subagents", block: "1" };
+    const sub: Route = { view: "subagent", block: "1", name: "A" };
+    expect([isAbove(list, session), isAbove(list, sub), isAbove(list, list)]).toEqual([true, true, false]);
+    expect([isAbove(session, subs), isAbove(session, sub), isAbove(subs, sub)]).toEqual([true, true, true]);
+    expect([isAbove(sub, session), isAbove(subs, session), isAbove(session, session)]).toEqual([false, false, false]);
+    expect(isAbove({ view: "session", block: "2" }, sub)).toBe(false);
+  });
+
+  /** Walks hashes as the browser reports them, then asks where ‹ leads from the last. */
+  function walk(hashes: string[]) {
+    const origins = new Map<string, string>();
+    for (let i = 1; i < hashes.length; i++) trackOrigin(origins, hashes[i - 1], hashes[i]);
+    return backStep(origins, parseRoute(hashes.at(-1)!));
+  }
+
+  test("a subagent opened from the session's strip pops back to the session, which pops back to the list", () => {
+    expect(walk(["", "#/b/1", "#/b/1/sub/A"])).toEqual({ target: "#/b/1", pop: true });
+    // The pop returns to the session; it still remembers coming from the list.
+    expect(walk(["", "#/b/1", "#/b/1/sub/A", "#/b/1"])).toEqual({ target: "#/", pop: true });
+  });
+
+  test("a subagent opened from the subagent list pops back to that list, and the list to the session", () => {
+    expect(walk(["#/", "#/b/1", "#/b/1/sub", "#/b/1/sub/A"])).toEqual({ target: "#/b/1/sub", pop: true });
+    expect(walk(["#/", "#/b/1", "#/b/1/sub", "#/b/1/sub/A", "#/b/1/sub"])).toEqual({ target: "#/b/1", pop: true });
+  });
+
+  test("a deep-linked subagent replaces itself with its session, which then replaces itself with the list", () => {
+    expect(walk(["#/b/1/sub/A"])).toEqual({ target: "#/b/1", pop: false });
+    expect(walk(["#/b/1/sub/A", "#/b/1"])).toEqual({ target: "#/", pop: false });
+    expect(walk(["#/b/1/sub"])).toEqual({ target: "#/b/1", pop: false });
+  });
+
+  test("a subagent reached from elsewhere goes to its own session without popping", () => {
+    expect(walk(["#/", "#/b/2", "#/b/1/sub/A"])).toEqual({ target: "#/b/1", pop: false });
+    expect(walk(["#/", "#/b/1", "#/b/1/sub/A", "#/b/1/sub/B"])).toEqual({ target: "#/b/1", pop: false });
+  });
+
+  test("a session opened from another session (the desktop sidebar) replaces itself with the list", () => {
+    expect(walk(["#/", "#/b/5", "#/b/12"])).toEqual({ target: "#/", pop: false });
+    expect(walk(["#/b/5/sub/A", "#/b/12"])).toEqual({ target: "#/", pop: false });
   });
 });

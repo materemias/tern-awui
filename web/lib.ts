@@ -96,6 +96,73 @@ export function extensionOutdated(live: Live | null | undefined): boolean {
   return !!live && live.protocol < PROTOCOL;
 }
 
+// ---------- routes ----------
+
+/** A subagent name as omp writes it (and the server accepts): no separators, no leading dot or underscore. */
+export const SUBAGENT_NAME = /^[A-Za-z0-9][\w.-]{0,127}$/;
+
+/** The screen a URL hash shows: the list, a session, its subagents, or one subagent's chat. */
+export type Route =
+  | { view: "list" }
+  | { view: "session"; block: string }
+  | { view: "subagents"; block: string }
+  | { view: "subagent"; block: string; name: string };
+
+/** `#/b/12`, `#/b/12/sub`, `#/b/12/sub/<name>`; anything else is the list, a bad name the subagent list. */
+export function parseRoute(hash: string): Route {
+  const m = /^#\/b\/(\d+)(\/sub(?:\/([^/]+))?)?$/.exec(hash);
+  if (!m) return { view: "list" };
+  const [, block, sub, raw] = m;
+  if (!sub) return { view: "session", block };
+  let name = "";
+  try {
+    name = decodeURIComponent(raw ?? "");
+  } catch {
+    // A malformed escape is no name.
+  }
+  return SUBAGENT_NAME.test(name) ? { view: "subagent", block, name } : { view: "subagents", block };
+}
+
+export function routeHash(r: Route): string {
+  if (r.view === "list") return "#/";
+  const session = `#/b/${r.block}`;
+  if (r.view === "session") return session;
+  return r.view === "subagents" ? `${session}/sub` : `${session}/sub/${encodeURIComponent(r.name)}`;
+}
+
+/** Whether `to` is a screen above `from`: the list above all, a session above its subagent screens, the subagent list above each subagent. */
+export function isAbove(to: Route, from: Route): boolean {
+  if (to.view === "list") return from.view !== "list";
+  if (from.view === "list" || to.block !== from.block) return false;
+  return to.view === "session" ? from.view !== "session" : to.view === "subagents" && from.view === "subagent";
+}
+
+/**
+ * Records the screen `newHash` was entered from, so its ‹ can pop history. Going up (back to the
+ * list, to a session from its subagents) keeps what the screen above was entered from.
+ */
+export function trackOrigin(origins: Map<string, string>, oldHash: string, newHash: string): void {
+  const from = parseRoute(oldHash);
+  const to = parseRoute(newHash);
+  if (!isAbove(to, from)) origins.set(routeHash(to), routeHash(from));
+}
+
+/**
+ * Where ‹ leads from `r`, and whether that is a history pop (the target is the screen `r` was
+ * entered from) rather than a replace (a deep link, a notification, a jump from elsewhere), so
+ * back never stacks a screen it would reopen. A session goes to the list, the subagent list to
+ * its session, a subagent to the subagent list when opened from there, else to its session.
+ */
+export function backStep(origins: Map<string, string>, r: Route): { target: string; pop: boolean } {
+  const origin = origins.get(routeHash(r));
+  let target = "#/";
+  if (r.view === "subagents" || r.view === "subagent") {
+    const session = `#/b/${r.block}`;
+    target = r.view === "subagent" && origin === `${session}/sub` ? origin : session;
+  }
+  return { target, pop: origin === target };
+}
+
 // ---------- folders ----------
 
 /**

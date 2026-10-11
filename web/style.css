@@ -252,6 +252,9 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
   .desk-main { min-width: 0; overflow: hidden; }
   .desk-empty { padding-top: 30vh; }
   .desk .session-bar .back { display: none; }
+  /* A subagent screen's ‹ leads to its session, which the sidebar doesn't show. */
+  .desk .sub-bar .back { display: block; }
+  .desk-main .list .row { padding-inline: max(14px, calc((100% - 780px) / 2)); }
   .desk .row { cursor: pointer; }
   .desk .row:hover { background: var(--raise); }
   .desk .row.selected { background: color-mix(in srgb, var(--accent) 12%, var(--panel)); border-left-color: var(--accent); }
@@ -313,7 +316,8 @@ button:disabled { cursor: default; }
 .todo-task.st-blocked .todo-mark, .todo-blocked { color: var(--blocked); }
 .todo-blocker { color: var(--muted); opacity: .8; }
 
-/* Background jobs of a session: subagents and backgrounded shells, names only. */
+/* Background jobs of a session: subagents and backgrounded shells. A running subagent opens its
+   chat; "Subagents (N)" lists them all. */
 .row-jobs { font: 11px var(--mono); color: var(--working); margin-top: 2px; padding-left: calc(12.5px * 1.1 + 7px); }
 .jobs { display: flex; flex-direction: column; gap: 3px; font: 12px var(--mono); color: var(--muted); }
 .job { display: flex; gap: 7px; align-items: baseline; min-width: 0; white-space: nowrap; }
@@ -322,6 +326,13 @@ button:disabled { cursor: default; }
 .job-name { color: var(--fg); flex: none; }
 .job-label { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .job-age { margin-left: auto; flex: none; }
+a.job, .subagents-link { margin: 0 -6px; padding: 2px 6px; border-radius: 6px; }
+a.job:hover, .subagents-link:hover { background: var(--raise); }
+.job-go { flex: none; color: var(--muted); }
+.subagents-link { display: flex; gap: 7px; align-items: baseline; color: var(--accent); }
+.subagents-link .job-go { margin-left: auto; }
+.sub-mark { flex: none; color: var(--muted); }
+.sub-parent { overflow: hidden; text-overflow: ellipsis; }
 
 /* Project headers fold their sessions away; the choice is remembered per device. */
 .group-head { cursor: pointer; user-select: none; }

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Subagents are viewable, read-only: tapping a running subagent in a session's `⑂` strip opens its chat, and **Subagents (N)** lists all of them, finished ones too, with their result and age. A subagent's chat uses the session's chat renderer without composer, prompt actions or answerable questions, shows the text it yields as its final reply, and updates while it runs. Routes `#/b/<block>/sub` and `#/b/<block>/sub/<name>`; ‹ returns to the screen it was opened from. Server: `GET /api/blocks/<id>/subagents`, and `/api/stream` with `view=subagents` or `sub=<name>`; names are validated strictly (no paths, no advisor transcripts, no symlinks).
+- Windows install/uninstall no longer kill whatever owns the port: they stop only tern-awui's own server and launcher (matched by their paths on the command line). If another program holds the port, install fails with a conflict message; uninstall leaves it alone.
+
 ## 0.1.0 (2026-10-11)
 
 First release. tern-awui is a phone-sized web app (PWA) for the Tern panes on one machine, served over Tailscale.

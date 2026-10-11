@@ -1,7 +1,7 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
-import { appendFileSync, chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { appendFileSync, chmodSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { arr, obj } from "../lib/json";
-import { HASH, T0, Transcript } from "./fixtures";
+import { HASH, T0, Transcript, call } from "./fixtures";
 import { Events, Extension, Sandbox, item, until } from "./server-harness";
 
 const s = new Sandbox();
@@ -167,7 +167,7 @@ test("a bridge snapshot creates an agent, reads transcript facts/recap and reord
   const state = await until(async () => { const state = await s.state(); return item(state, 1).status === "working" ? state : null; }, "bridge state");
   expect(arr(state.projects).map((p) => obj(p).name)).toEqual(["alpha", "beta", "~"]);
   expect(arr(obj(arr(state.projects)[0]).items).map((i) => obj(i).block)).toEqual(["1", "4"]);
-  expect(item(state, 1).agent).toEqual({ sessionId: s.session, lastPrompt: "Which route?", recap: "Earlier recap", recapStale: true, lastActivity: T0 + 4000 });
+  expect(item(state, 1).agent).toEqual({ sessionId: s.session, lastPrompt: "Which route?", recap: "Earlier recap", recapStale: true, lastActivity: T0 + 4000, subagents: 0 });
   expect(obj(item(state, 1).live).context).toEqual({ tokens: 40000, window: 200000, percent: 20, compactAt: 80 });
   // A snapshot without them is an extension from before versioning.
   expect(obj(item(state, 1).live)).toMatchObject({ protocol: 0, caps: null });
@@ -207,6 +207,115 @@ test("SSE streams chat, draft, live and queued updates and pushes state without 
   agent.report({ leaf: s.leaf });
   events.close();
   expect((await agent.take("watch")).on).toBe(false);
+});
+
+describe("subagents", () => {
+  /** The session's subagent folder: its transcript's path without `.jsonl`. */
+  const dir = () => s.transcriptPath.replace(/\.jsonl$/, "");
+  const done = new Transcript("sub-done", `${s.home}/alpha`);
+  const busy = new Transcript("sub-busy", `${s.home}/alpha`);
+
+  beforeAll(() => {
+    mkdirSync(dir());
+    done.user("Run sleep 20 and report", 1000);
+    done.assistant([call("c1", "bash", { i: "Sleeping 20 s", command: "sleep 20" })], 2000, { stop: "toolUse" });
+    done.result("c1", "bash", 22000);
+    done.say("Slept for twenty seconds.", 23000);
+    writeFileSync(`${dir()}/ViewA.jsonl`, done.text());
+    busy.user("Run sleep 20", 3000);
+    busy.assistant([call("c1", "bash", { i: "Sleeping in B", command: "sleep 20" })], 4000, { stop: "toolUse" });
+    writeFileSync(`${dir()}/ViewB.jsonl`, busy.text());
+    // Not subagents: an advisor transcript, a result, a tool log, and a link out of the folder.
+    const advisor = new Transcript("advisor");
+    advisor.say("secret advice", 100);
+    writeFileSync(`${dir()}/__advisor.sol61-high.jsonl`, advisor.text());
+    writeFileSync(`${dir()}/ViewA.md`, "{}");
+    writeFileSync(`${dir()}/12.bash.log`, "output");
+    const outside = new Transcript("outside");
+    outside.say("outside the folder", 100);
+    writeFileSync(`${s.home}/outside.jsonl`, outside.text());
+    symlinkSync(`${s.home}/outside.jsonl`, `${dir()}/Escape.jsonl`);
+    agent.report({ jobs: [{ id: "j1", type: "task", label: "B", agent: "ViewB", since: T0 + 3000 }, { id: "j2", type: "task", label: "C", agent: "ViewC", since: T0 + 9000 }] });
+  });
+  afterAll(() => agent.report({ jobs: [] }));
+
+  test("the list endpoint merges transcripts with running jobs and leaves out advisors, logs and links", async () => {
+    const list = await until(async () => {
+      const r = obj(await (await s.get("/api/blocks/1/subagents")).json());
+      return arr(r.subagents).length === 3 ? arr(r.subagents) : null;
+    }, "subagents with jobs");
+    expect(list).toEqual([
+      { name: "ViewC", started: T0 + 9000, lastActivity: T0 + 9000, running: true, summary: "", messages: 0 },
+      { name: "ViewB", started: T0, lastActivity: T0 + 4000, running: true, summary: "Sleeping in B", messages: 2 },
+      { name: "ViewA", started: T0, lastActivity: T0 + 23000, running: false, summary: "Slept for twenty seconds.", messages: 4 },
+    ]);
+    // The session row counts them, finished ones too.
+    expect(obj(item(await s.state(), 1).agent).subagents).toBe(3);
+    // A terminal has none; a missing block is 404.
+    expect(await (await s.get("/api/blocks/2/subagents")).json()).toEqual({ subagents: [] });
+    expect((await s.get("/api/blocks/999/subagents")).status).toBe(404);
+  });
+
+  test("a subagent's chat streams read-only through the transcript parser and follows appends", async () => {
+    const events = new Events();
+    await events.open(s, "?block=1&view=chat&sub=ViewB");
+    const chat = obj(await events.take("chat"));
+    expect(arr(chat.entries)).toEqual([
+      { role: "user", id: expect.any(String), text: "Run sleep 20", images: [], ts: T0 + 3000 },
+      { role: "tools", calls: [{ name: "bash", intent: "Sleeping in B" }], images: [], todo: null, ts: T0 + 4000 },
+    ]);
+    busy.result("c1", "bash", 24000);
+    busy.say("B is awake.", 25000);
+    appendFileSync(`${dir()}/ViewB.jsonl`, busy.lines().slice(-2).join("\n") + "\n");
+    const next = obj(await events.take("chat", (c) => arr(obj(c).entries).some((e) => obj(e).text === "B is awake.")));
+    expect(arr(next.entries).map((e) => obj(e).role)).toEqual(["user", "tools", "assistant", "turn"]);
+    // The parent session's draft, live text and queue don't reach a subagent screen.
+    expect(events.events.filter((e) => ["draft", "live", "queued"].includes(e.event))).toEqual([]);
+    events.close();
+  });
+
+  test("the subagent list streams and picks up a subagent that starts", async () => {
+    const events = new Events();
+    await events.open(s, "?block=1&view=subagents");
+    const first = arr(await events.take("subagents"));
+    // Both running; ViewB wrote last (the append above), so it leads.
+    expect(first.map((x) => obj(x).name)).toEqual(["ViewB", "ViewC", "ViewA"]);
+    const fresh = new Transcript("sub-d");
+    fresh.user("Start D", 30000);
+    writeFileSync(`${dir()}/ViewD.jsonl`, fresh.text());
+    const next = arr(await events.take("subagents", (l) => arr(l).some((x) => obj(x).name === "ViewD")));
+    expect(obj(next.find((x) => obj(x).name === "ViewD"))).toMatchObject({ running: false, messages: 1, lastActivity: T0 + 30000 });
+    expect(events.events.filter((e) => e.event === "draft")).toEqual([]);
+    events.close();
+  });
+
+  test("names that could leave the folder or reach an advisor are refused; links and unknown names show nothing", async () => {
+    for (const sub of ["..", "../date_test-session", "..%2F..%2Fx", "__advisor.sol61-high", "a%2Fb", ".hidden", ""]) {
+      const r = await s.get(`/api/stream?block=1&view=chat&sub=${sub}`);
+      expect(r.status).toBe(400);
+      expect(await r.json()).toEqual({ error: "bad subagent" });
+    }
+    expect((await s.get("/api/stream?view=chat&sub=ViewA")).status).toBe(400);
+    expect((await s.get("/api/stream?block=999&view=chat&sub=ViewA")).status).toBe(404);
+    for (const sub of ["Escape", "Missing"]) {
+      const events = new Events();
+      await events.open(s, `?block=1&view=chat&sub=${sub}`);
+      expect(await events.take("chat")).toEqual({ entries: [] });
+      events.close();
+    }
+  });
+
+  test("the list and the subagent stream need the pairing cookie", async () => {
+    const login = { "tailscale-user-login": s.login };
+    for (const path of ["/api/blocks/1/subagents", "/api/stream?block=1&view=chat&sub=ViewA", "/api/stream?block=1&view=subagents"]) {
+      for (const headers of [login, { ...login, cookie: "tern_awui=wrong" }]) {
+        const r = await fetch(s.base + path, { headers });
+        expect(r.status).toBe(401);
+        expect(await r.json()).toEqual({ error: "not paired" });
+      }
+      expect((await fetch(s.base + path, { headers: { cookie: `tern_awui=${s.access}` } })).status).toBe(403);
+    }
+  });
 });
 
 test("submit/draft and image/follow-up submissions use the bridge protocol", async () => {

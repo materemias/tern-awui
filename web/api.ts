@@ -7,6 +7,8 @@ export type Agent = {
   recap: string;
   recapStale: boolean;
   lastActivity: number;
+  /** Its subagents: finished ones with a transcript and running ones. */
+  subagents: number;
 };
 export type Live = {
   model: string;
@@ -35,6 +37,8 @@ export type Caps = {
   levels: boolean;
 };
 export type Job = { id: string; type: string; label: string; agent: string; since: number };
+/** A session's subagent as `view=subagents` lists it; `running`: one of the session's jobs. */
+export type Subagent = { name: string; started: number; lastActivity: number; running: boolean; summary: string; messages: number };
 
 export type Item = {
   block: string;

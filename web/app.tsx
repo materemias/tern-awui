@@ -1,62 +1,42 @@
 import { render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { Mermaid } from "mermaid";
-import { drawCharts } from "./charts";
-import { checkPaired, post, type AdvisorNote, type Ask, type Btw, type CatalogModel, type ChatEntry, type Doc, type Img, type Item, type Job, type Live, type Role, type State, type TodoPhase, type ToolCall } from "./api";
+import { checkPaired, post, type Btw, type CatalogModel, type ChatEntry, type Doc, type Item, type Live, type Role, type State, type Subagent } from "./api";
 import {
   age,
-  askAnswers,
-  askReady,
+  backStep,
   btwQuestion,
   can,
-  clock,
   composerKey,
   ctxShort,
   currentRole,
-  duration,
   extensionOutdated,
   fitEdge,
   folderLabel,
-  isAgentJob,
   isOld,
   jobsSummary,
-  langOf,
   lineEdit,
   listProjects,
   matchesWords,
   needsReencode,
-  parseAdvisorNote,
   parseCollapsed,
   parseRecent,
+  parseRoute,
   prettyModel,
   priceShort,
+  routeHash,
   rowText,
   searchModels,
   toggled,
   tokensShort,
+  trackOrigin,
   vapidBytes,
   withRecent,
-  type AskPick,
+  type Route,
 } from "./lib";
-import { renderMarkdown, screenHtml } from "./markdown";
-import { buzz, Thumbs, Todo, UserMsg } from "./parts";
-
-/** The session's running background jobs under the transcript: names only, no drill-down. */
-function JobsStrip({ jobs, now }: { jobs: Job[]; now: number }) {
-  if (!jobs.length) return null;
-  return (
-    <div class="jobs">
-      {jobs.map((j) => (
-        <div key={j.id} class={`job${isAgentJob(j) ? " job-agent" : ""}`}>
-          <span class="job-mark">{isAgentJob(j) ? "⑂" : "⧗"}</span>
-          <span class="job-name">{j.agent || j.id}</span>
-          {j.label && j.label !== (j.agent || j.id) && <span class="job-label">{j.label}</span>}
-          <span class="job-age">{age(j.since, now)}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
+import { Chat, Markdown } from "./chat";
+import { screenHtml } from "./markdown";
+import { buzz, Dot } from "./parts";
+import { JobsStrip, SubagentChat, SubagentList } from "./subagents";
 
 /** The app icon counts updates not seen yet: finished turns and waits on you. */
 function setBadge(count: number) {
@@ -65,7 +45,7 @@ function setBadge(count: number) {
 }
 
 type Draft = { live: boolean; text: string };
-type View = "chat" | "screen";
+type View = "chat" | "screen" | "subagents";
 
 function useNow(intervalMs: number): number {
   const [now, setNow] = useState(Date.now());
@@ -76,28 +56,25 @@ function useNow(intervalMs: number): number {
   return now;
 }
 
-function useRoute(): string | null {
-  const read = () => /^#\/b\/(\d+)$/.exec(location.hash)?.[1] ?? null;
-  const [block, setBlock] = useState(read);
+function useRoute(): Route {
+  const [route, setRoute] = useState(() => parseRoute(location.hash));
   useEffect(() => {
-    const on = () => setBlock(read());
+    const on = () => setRoute(parseRoute(location.hash));
     addEventListener("hashchange", on);
     return () => removeEventListener("hashchange", on);
   }, []);
-  return block;
+  return route;
 }
 
-const SESSION_HASH = /^#\/b\/\d+$/;
-/** True when the open session was entered from the list, so going back is a history pop. */
-let cameFromList = false;
-addEventListener("hashchange", (e: HashChangeEvent) => {
-  cameFromList = !SESSION_HASH.test(new URL(e.oldURL).hash) && SESSION_HASH.test(location.hash);
-});
+/** The screen each screen was entered from, so ‹ can pop history instead of stacking (see `backStep`). */
+const origins = new Map<string, string>();
+addEventListener("hashchange", (e: HashChangeEvent) => trackOrigin(origins, new URL(e.oldURL).hash, location.hash));
 
-/** Returns to the list without stacking a list entry above the session (back would reopen it). */
-function backToList() {
-  if (cameFromList) history.back();
-  else location.replace("#/");
+/** Leaves `route` for the screen above it without stacking a history entry that back would reopen. */
+function goBack(route: Route) {
+  const { target, pop } = backStep(origins, route);
+  if (pop) history.back();
+  else location.replace(target);
 }
 
 /**
@@ -113,7 +90,7 @@ function useExitGuard(enabled: boolean): boolean {
     let armedUntil = 0;
     let timer: number | undefined;
     const onPop = () => {
-      if (SESSION_HASH.test(location.hash) || history.state?.guard === true) return;
+      if (parseRoute(location.hash).view !== "list" || history.state?.guard === true) return;
       if (Date.now() < armedUntil) {
         history.back();
         return;
@@ -149,10 +126,14 @@ function useWide(): boolean {
 /** How long a hidden app keeps its stream, so a quick app switch doesn't reconnect. */
 const HIDDEN_GRACE_MS = 10_000;
 
-/** One SSE connection: always the block list, plus chat or screen and the draft for the open block. */
-function useStream(block: string | null, view: View) {
+/**
+ * One SSE connection: always the block list, plus the open block's chat or screen and draft, its
+ * subagent list (`view` "subagents"), or one subagent's chat (`sub`).
+ */
+function useStream(block: string | null, view: View, sub: string | null = null) {
   const [state, setState] = useState<State | null>(null);
   const [chat, setChat] = useState<ChatEntry[] | null>(null);
+  const [subagents, setSubagents] = useState<Subagent[] | null>(null);
   const [btw, setBtw] = useState<Btw | null>(null);
   const [screen, setScreen] = useState<{ text: string; html: boolean } | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -164,10 +145,11 @@ function useStream(block: string | null, view: View) {
   const [online, setOnline] = useState(false);
   useEffect(() => {
     setChat(null);
+    setSubagents(null);
     setScreen(null);
     setLive(null);
     setQueued([]);
-    const qs = block ? `?block=${block}&view=${view}` : "";
+    const qs = block ? `?block=${block}&view=${view}${sub ? `&sub=${encodeURIComponent(sub)}` : ""}` : "";
     let es: EventSource | null = null;
     let liveEnded = false;
     let liveTimer: number | undefined;
@@ -205,6 +187,7 @@ function useStream(block: string | null, view: View) {
       src.addEventListener("draft", (e) => setDraft(JSON.parse(e.data)));
       src.addEventListener("queued", (e) => setQueued(JSON.parse(e.data)));
       src.addEventListener("doc", (e) => setDoc(JSON.parse(e.data)));
+      src.addEventListener("subagents", (e) => setSubagents(JSON.parse(e.data)));
     };
     const close = () => {
       es?.close();
@@ -228,15 +211,11 @@ function useStream(block: string | null, view: View) {
       clearTimeout(hideTimer);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [block, view]);
-  return { state, chat, live, queued, btw, setBtw, screen, draft, doc, online };
+  }, [block, view, sub]);
+  return { state, chat, subagents, live, queued, btw, setBtw, screen, draft, doc, online };
 }
 
 // ---------- pieces ----------
-
-function Dot({ state }: { state: string | undefined }) {
-  return <span class={`dot dot-${state ?? "shell"}`} />;
-}
 
 /** The row's icon: the title's Nerd Font glyph, else Tern's π fallback for an omp not yet titled. */
 function iconOf(item: Item): { glyph: string; pi: boolean } | null {
@@ -562,260 +541,6 @@ function Home({ wide = false, selected = null }: { wide?: boolean; selected?: st
       )}
       {exitHint && <div class="toast">Press back again to exit</div>}
     </div>
-  );
-}
-
-let mermaidReady: Promise<Mermaid> | null = null;
-const mermaidSvgs = new Map<string, string | null>();
-let mermaidSeq = 0;
-
-/** Draws the mermaid placeholders under `root`; the library (~1 MB) loads on first use. */
-async function drawMermaid(root: HTMLElement) {
-  const slots = [...root.querySelectorAll<HTMLElement>(".mermaid-src")];
-  if (!slots.length) return;
-  mermaidReady ??= import("mermaid").then(({ default: m }) => {
-    // strict: labels are sanitized and click handlers off; the source is agent text.
-    m.initialize({ startOnLoad: false, securityLevel: "strict", theme: "dark", fontFamily: "system-ui, sans-serif" });
-    return m;
-  });
-  const mermaid = await mermaidReady;
-  for (const slot of slots) {
-    const src = slot.textContent ?? "";
-    if (!mermaidSvgs.has(src)) {
-      const id = `mmd${++mermaidSeq}`;
-      const svg = await mermaid.render(id, src).then((r) => r.svg, () => null);
-      document.getElementById(`d${id}`)?.remove(); // a failed render leaves its scratch node
-      mermaidSvgs.set(src, svg);
-    }
-    if (!slot.isConnected || !slot.classList.contains("mermaid-src")) continue;
-    const svg = mermaidSvgs.get(src);
-    // A diagram that doesn't parse keeps showing its source.
-    slot.classList.remove("mermaid-src");
-    if (svg) slot.innerHTML = svg;
-  }
-}
-
-function Markdown({ text, class: cls }: { text: string; class: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const html = useMemo(() => renderMarkdown(text), [text]);
-  const lang = useMemo(() => langOf(text), [text]);
-  useEffect(() => {
-    if (!ref.current) return;
-    drawCharts(ref.current);
-    void drawMermaid(ref.current);
-  }, [html]);
-  return <div ref={ref} class={cls} lang={lang} dangerouslySetInnerHTML={{ __html: html }} />;
-}
-
-/** omp's advisor notes: severity, then `Key:`, `Evidence:`, `Impact:`, `Fix:` lines; tap to expand. */
-function AdvisorCard({ notes }: { notes: AdvisorNote[] }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div class="advisor" onClick={() => setOpen(!open)}>
-      <div class="advisor-head">
-        <span class="chev">{open ? "▾" : "▸"}</span>
-        <span>Advisor</span>
-        <span class="muted">
-          {notes.length} note{notes.length > 1 ? "s" : ""}
-        </span>
-      </div>
-      {notes.map((n, i) => {
-        const { key, lines } = parseAdvisorNote(n.note);
-        return (
-          <div key={i} class="advisor-note">
-            <div class="advisor-line">
-              <span class={`sev sev-${n.severity}`}>{n.severity}</span>
-              <span class="advisor-key">{key}</span>
-            </div>
-            {open && (
-              <div class="advisor-body">
-                {lines.map((l, j) =>
-                  l.label ? (
-                    <p key={j}>
-                      <b>{l.label}:</b> {l.text}
-                    </p>
-                  ) : (
-                    <p key={j}>{l.text}</p>
-                  ),
-                )}
-                <div class="muted small">{n.advisor}</div>
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function Tools({ calls, images, todo, latestTodo }: { calls: ToolCall[]; images: Img[]; todo: TodoPhase[] | null; latestTodo: boolean }) {
-  const [open, setOpen] = useState(false);
-  const errors = calls.filter((c) => c.error).length;
-  const last = calls[calls.length - 1];
-  return (
-    <div class="tools" onClick={() => setOpen(!open)}>
-      <div class="tools-head">
-        <span class="chev">{open ? "▾" : "▸"}</span>
-        <span>
-          {calls.length} tool{calls.length > 1 ? "s" : ""}
-        </span>
-        {errors > 0 && <span class="err">· {errors} failed</span>}
-        <span class="tools-last">{last.intent || last.name}</span>
-      </div>
-      {open && (
-        <ul>
-          {calls.map((c, n) => (
-            <li key={n} class={c.error ? "err" : ""}>
-              <span class="tool-name">{c.name}</span> {c.intent}
-            </li>
-          ))}
-        </ul>
-      )}
-      {images.length > 0 && <Thumbs images={images} />}
-      {todo && <Todo phases={todo} full={latestTodo} />}
-    </div>
-  );
-}
-
-/** An open ask: tap to answer, like omp's own dialog. One single-choice question sends on tap. */
-function AskCard({ ask, block, pending }: { ask: Ask; block: string; pending: boolean }) {
-  const [picks, setPicks] = useState<AskPick[]>(() =>
-    ask.questions.map(() => ({ option: null, picks: [], other: "", otherOpen: false })),
-  );
-  const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  if (ask.answer !== null || !pending) {
-    return (
-      <div class="ask done">
-        {ask.questions.map((q, k) => (
-          <div key={k} class="ask-q">{q.question}</div>
-        ))}
-        <div class="ask-answer">{ask.answer ?? "not answered"}</div>
-      </div>
-    );
-  }
-
-  const instant = ask.questions.length === 1 && !ask.questions[0].multi;
-  const ready = askReady(ask.questions, picks);
-
-  async function send(next: AskPick[]) {
-    setSending(true);
-    const answers = askAnswers(next);
-    const err = await post(`/api/blocks/${block}/answer`, { id: ask.id, answers });
-    setSending(false);
-    setError(err);
-    if (!err) {
-      buzz();
-      setSent(true);
-    }
-  }
-
-  function update(i: number, change: Partial<AskPick>, submitNow = false) {
-    const next = picks.map((p, k) => (k === i ? { ...p, ...change } : p));
-    setPicks(next);
-    if (submitNow) void send(next);
-  }
-
-  return (
-    <div class={`ask${sent ? " sent" : ""}`}>
-      {ask.questions.map((q, i) => {
-        const p = picks[i];
-        return (
-          <div key={i} class="ask-block">
-            <div class="ask-q">{q.question}</div>
-            {q.multi && <div class="muted small">Pick any</div>}
-            <div class="opts">
-              {q.options.map((o, j) => {
-                const on = q.multi ? p.picks.includes(j) : p.option === j && !p.otherOpen;
-                return (
-                  <button
-                    key={j}
-                    class={`opt${on ? " on" : ""}`}
-                    disabled={sending || sent}
-                    onClick={() =>
-                      q.multi
-                        ? update(i, { picks: on ? p.picks.filter((x) => x !== j) : [...p.picks, j] })
-                        : update(i, { option: j, otherOpen: false }, instant)
-                    }
-                  >
-                    <span class={`mark${q.multi ? " box" : ""}`} />
-                    <span class="opt-text">
-                      <span class="opt-label">
-                        {o.label}
-                        {q.recommended === j && <span class="rec">recommended</span>}
-                      </span>
-                      {o.description && <span class="opt-desc">{o.description}</span>}
-                    </span>
-                  </button>
-                );
-              })}
-              <button
-                class={`opt${p.otherOpen ? " on" : ""}`}
-                disabled={sending || sent}
-                onClick={() => update(i, { otherOpen: !p.otherOpen, option: null })}
-              >
-                <span class={`mark${q.multi ? " box" : ""}`} />
-                <span class="opt-text">
-                  <span class="opt-label">Other…</span>
-                  <span class="opt-desc">Type your own answer</span>
-                </span>
-              </button>
-              {p.otherOpen && (
-                <input
-                  class="other-input"
-                  autoFocus
-                  placeholder="Your answer"
-                  value={p.other}
-                  onInput={(e) => update(i, { other: e.currentTarget.value })}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && ready) void send(picks);
-                  }}
-                />
-              )}
-            </div>
-          </div>
-        );
-      })}
-      {error && <div class="err small">{error}</div>}
-      {sent ? (
-        <div class="muted small">Sent, waiting for omp…</div>
-      ) : (
-        (!instant || picks[0].otherOpen) && (
-          <button class="primary" disabled={!ready || sending} onClick={() => send(picks)}>
-            {sending ? "Sending…" : "Send answer"}
-          </button>
-        )
-      )}
-    </div>
-  );
-}
-
-/** `rewind`: the session's omp can rewind to a prompt. */
-function Chat({ entries, block, rewind }: { entries: ChatEntry[]; block: string; rewind: boolean }) {
-  // An ask is open only while nothing was said after it.
-  const lastTalk = entries.findLastIndex((e) => e.role === "user" || e.role === "assistant");
-  const latestTodo = entries.findLastIndex((e) => e.role === "tools" && e.todo !== null);
-  return (
-    <>
-      {entries.map((e, n) => {
-        if (e.role === "user") return <UserMsg key={n} entry={e} block={block} rewind={rewind} />;
-        if (e.role === "turn")
-          return (
-            <div key={n} class="turn">
-              {duration(e.ms)}
-              {e.model && ` · ${prettyModel(e.model)}`}
-              {` · ${clock(e.ts)}`}
-            </div>
-          );
-        if (e.role === "assistant") return <Markdown key={n} class="msg assistant md" text={e.text} />;
-        if (e.role === "advisor") return <AdvisorCard key={n} notes={e.notes} />;
-        if (e.role === "tools")
-          return <Tools key={n} calls={e.calls} images={e.images} todo={e.todo} latestTodo={n === latestTodo} />;
-        return <AskCard key={e.id} ask={e} block={block} pending={n > lastTalk} />;
-      })}
-    </>
   );
 }
 
@@ -1550,7 +1275,7 @@ function Session({ block }: { block: string }) {
           href="#/"
           onClick={(e) => {
             e.preventDefault();
-            backToList();
+            goBack({ view: "session", block });
           }}
         >
           ‹
@@ -1585,7 +1310,7 @@ function Session({ block }: { block: string }) {
               if (!confirm(`Close “${name}”?\n\nThis closes it in Tern on the desktop too.${warn}`)) return;
               const err = await post(`/api/blocks/${block}/close`, {});
               if (err) alert(`Close failed: ${err}`);
-              else backToList();
+              else goBack({ view: "session", block });
             }}
           >
             ✕
@@ -1641,7 +1366,7 @@ function Session({ block }: { block: string }) {
         )}
         {doc?.clipped && <div class="muted small">Showing the first 512 KB.</div>}
         {working && <div class="working">working · {item ? age(item.since, now) : ""}</div>}
-        {item?.live && <JobsStrip jobs={item.live.jobs} now={now} />}
+        {item && <JobsStrip block={block} jobs={item.live?.jobs ?? []} subagents={item.agent?.subagents ?? 0} now={now} />}
       </div>
       {!item?.doc && (
         <Composer
@@ -1682,20 +1407,31 @@ function NotPaired() {
   );
 }
 
+/** A session's subagent list, or one subagent's chat; both read-only. */
+function SubagentScreen({ route }: { route: Extract<Route, { view: "subagents" | "subagent" }> }) {
+  const sub = route.view === "subagent" ? route.name : null;
+  const { state, chat, subagents, online } = useStream(route.block, sub ? "chat" : "subagents", sub);
+  const item = state?.projects.flatMap((p) => p.items).find((i) => i.block === route.block);
+  const now = useNow(5000);
+  const screen = { block: route.block, item, online, now, backHref: backStep(origins, route).target, onBack: () => goBack(route) };
+  return sub ? <SubagentChat {...screen} name={sub} entries={chat} /> : <SubagentList {...screen} list={subagents} />;
+}
+
 function App() {
-  const block = useRoute();
+  const route = useRoute();
   const wide = useWide();
   const paired = usePaired();
   if (paired === false) return <NotPaired />;
-  if (!wide) return block ? <Session key={block} block={block} /> : <Home />;
+  const key = routeHash(route);
+  const open =
+    route.view === "list" ? null : route.view === "session" ? <Session key={key} block={route.block} /> : <SubagentScreen key={key} route={route} />;
+  if (!wide) return open ?? <Home />;
   return (
     <div class="desk">
       <aside class="desk-side">
-        <Home wide selected={block} />
+        <Home wide selected={route.view === "list" ? null : route.block} />
       </aside>
-      <main class="desk-main">
-        {block ? <Session key={block} block={block} /> : <div class="empty desk-empty">Pick a session on the left.</div>}
-      </main>
+      <main class="desk-main">{open ?? <div class="empty desk-empty">Pick a session on the left.</div>}</main>
     </div>
   );
 }

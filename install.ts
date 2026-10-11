@@ -183,10 +183,35 @@ export function windowsTask(input: PlanInput, launcher: string): string {
   ].join("\r\n");
 }
 
-/** Stops whatever listens on the port: the bun the launcher started outlives `schtasks /End`. */
-function windowsStopServer(port: number): Action {
-  const ps = `Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }`;
-  return { kind: "run", argv: ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps], mayFail: true };
+/** PowerShell single-quoted literal: only `'` needs escaping (doubled). */
+export function psString(s: string): string {
+  return `'${s.replaceAll("'", "''")}'`;
+}
+
+/**
+ * Stops only tern-awui's own processes (the launcher's wscript and the bun it started, which outlives
+ * `schtasks /End`), matched by our server.ts / .vbs paths on the command line. Never stops by port: on
+ * install, anything still listening afterwards is someone else's, so it fails with a conflict instead.
+ */
+export function windowsStopScript(port: number, ours: string[], checkConflict: boolean): string {
+  const lines = [
+    `$ours = @(${ours.map(psString).join(", ")})`,
+    "$mine = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $c = $_.CommandLine; $c -and @($ours | Where-Object { $c.Contains($_) }).Count -gt 0 })",
+    "$mine | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+  ];
+  if (checkConflict) {
+    lines.push(
+      "if ($mine.Count -gt 0) { Start-Sleep -Seconds 1 }",
+      `$held = @(Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | ForEach-Object { $_.OwningProcess } | Sort-Object -Unique)`,
+      `if ($held.Count -gt 0) { [Console]::Error.WriteLine("Port ${port} is in use by another program (PID $($held -join ', ')); stop it or pick another --port."); exit 1 }`,
+    );
+  }
+  return lines.join("; ");
+}
+
+function windowsStopServer(port: number, ours: string[], install: boolean): Action {
+  const ps = windowsStopScript(port, ours, install);
+  return { kind: "run", argv: ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps], ...(install ? {} : { mayFail: true }) };
 }
 
 export function plan(input: PlanInput): Action[] {
@@ -203,6 +228,7 @@ export function plan(input: PlanInput): Action[] {
   const launcher = p.join(input.configDir, "tern-awui.vbs");
   const taskXml = p.join(input.configDir, "tern-awui-task.xml");
   const endTask: Action = { kind: "run", argv: ["schtasks", "/End", "/TN", TASK_NAME], mayFail: true };
+  const ours = [p.join(input.repo, "server.ts"), launcher];
 
   if (input.uninstall) {
     const service: Action[] =
@@ -212,7 +238,7 @@ export function plan(input: PlanInput): Action[] {
           ? [bootout, { kind: "remove", path: plist }]
           : [
               endTask,
-              windowsStopServer(input.port),
+              windowsStopServer(input.port, ours, false),
               { kind: "run", argv: ["schtasks", "/Delete", "/TN", TASK_NAME, "/F"], mayFail: true },
               { kind: "remove", path: launcher },
               { kind: "remove", path: taskXml },
@@ -249,7 +275,7 @@ export function plan(input: PlanInput): Action[] {
       { kind: "write", path: launcher, content: windowsLauncher(input), encoding: "utf16le" },
       { kind: "write", path: taskXml, content: windowsTask(input, launcher), encoding: "utf16le" },
       endTask,
-      windowsStopServer(input.port),
+      windowsStopServer(input.port, ours, true),
       { kind: "run", argv: ["schtasks", "/Create", "/TN", TASK_NAME, "/XML", taskXml, "/F"] },
       { kind: "run", argv: ["schtasks", "/Run", "/TN", TASK_NAME] },
     );

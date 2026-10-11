@@ -154,6 +154,20 @@ describe("parseChat tool groups", () => {
     t.result("x", "other", 12, { details: { phases: [{ name: "Not a todo", tasks: [] }] } });
     expect(only(parseChat(t.lines(), "", 80).entries, "tools")[0].todo).toBeNull();
   });
+
+  test("a subagent's yielded text is its reply; a yield without text stays a tool line", () => {
+    const t = new Transcript();
+    t.user("sleep", 0);
+    t.assistant([call("b", "bash", { i: "Sleeping" })], 10, { stop: "toolUse" });
+    t.result("b", "bash", 20);
+    t.assistant([call("y", "yield", { data: { result: "I slept." } })], 30, { stop: "toolUse" });
+    t.result("y", "yield", 31);
+    t.assistant([call("y2", "yield", { data: { files: 2 } })], 40, { stop: "toolUse" });
+    const entries = parseChat(t.lines(), "", 80).entries;
+    expect(roles(entries)).toEqual(["user", "tools", "assistant", "tools"]);
+    expect(only(entries, "assistant")[0]).toEqual({ role: "assistant", text: "I slept.", ts: T0 + 30 });
+    expect(only(entries, "tools").map((g) => g.calls.map((c) => c.name))).toEqual([["bash"], ["yield"]]);
+  });
 });
 
 describe("parseChat images", () => {
