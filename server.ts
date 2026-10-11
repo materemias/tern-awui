@@ -1,14 +1,16 @@
 // tern-mobile: a phone-sized control surface for the Tern panes on this machine.
-// Reads blocks from `tern ls --json`, omp transcripts from ~/.omp/agent/sessions and recaps
-// from omp's ~/.omp/agent/history.db; writes input with `tern send`.
+// Reads blocks from `tern ls --json`, omp transcripts from omp's sessions folder and recaps
+// from its history.db (see lib/paths.ts for where omp keeps them); writes input with `tern send`.
 // omp sessions running the tern-mobile extension also connect to /bridge: they stream their
 // prompt draft, model and busy state, and take drafts and model picks from the phone.
-// Listens on loopback only; `tailscale serve` is the way in, and its identity header is the gate.
+// Listens on loopback only; `tailscale serve` is the way in. Its identity header and the
+// pairing cookie (`bun server.ts pair` prints the link that sets it) are the gate.
 
 import { Database } from "bun:sqlite";
-import { basename, dirname } from "node:path";
-import { existsSync, mkdirSync, readFileSync, statSync, watch, writeFileSync, type FSWatcher } from "node:fs";
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { basename, dirname, isAbsolute, join } from "node:path";
+import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
+import { existsSync, readFileSync, statSync, watch, writeFileSync, type FSWatcher } from "node:fs";
 import type { ServerWebSocket } from "bun";
 import webpush, { type PushSubscription } from "web-push";
 import { arr, num, obj, str, type Obj } from "./lib/json";
@@ -17,20 +19,36 @@ import { compactAtPercent, type Compaction } from "./lib/compaction";
 import { branchOf, projectOf } from "./lib/git";
 import { queryRecaps } from "./lib/recaps";
 import { answerSteps, KEYS, promptImages, type PromptImage } from "./lib/input";
-import { emptyState, listChanged, parseBridgeState, type BridgeState, type Context, type Job } from "./lib/bridge-state";
+import { emptyState, listChanged, parseBridgeState, type BridgeState, type Caps, type Context, type Job } from "./lib/bridge-state";
+import { configDir, ompDataDir, ternNotesDir } from "./lib/paths";
+import { cookieValue, ensureToken, PAIR_COOKIE, sameToken } from "./lib/auth";
+import { recentProjects } from "./lib/projects";
+import { vapidSubject } from "./lib/push";
 
-const HOME = process.env.HOME ?? "";
+const HOME = homedir();
+const CONFIG_DIR = configDir(process.env, HOME);
+const ACCESS_TOKEN_FILE = join(CONFIG_DIR, "access-token");
+
+// `bun server.ts pair`: the pairing link's path, for installers to put behind the tailnet URL.
+if (process.argv[2] === "pair") {
+  console.log(`/pair?code=${ensureToken(ACCESS_TOKEN_FILE)}`);
+  process.exit(0);
+}
+
 const PORT = Number(process.env.TERN_MOBILE_PORT ?? 4380);
 const ALLOW = (process.env.TERN_MOBILE_ALLOW ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 const DEV = process.env.TERN_MOBILE_DEV === "1";
-const SESSIONS_DIR = `${HOME}/.omp/agent/sessions`;
-const HISTORY_DB = `${HOME}/.omp/agent/history.db`;
-const BLOBS_DIR = `${HOME}/.omp/agent/blobs`;
-const NOTES_DIR = `${HOME}/.local/state/tern/notes`;
+const OMP_DATA = ompDataDir(process.env, HOME, process.platform);
+const SESSIONS_DIR = join(OMP_DATA, "sessions");
+const HISTORY_DB = join(OMP_DATA, "history.db");
+const BLOBS_DIR = join(OMP_DATA, "blobs");
+const NOTES_DIR = ternNotesDir(process.env, HOME, process.platform);
 const DOC_MAX_BYTES = 512 * 1024;
-const PROJECTS_SCRIPT = process.env.TERN_MOBILE_PROJECTS ?? `${HOME}/.local/bin/agent-projects.py`;
-const TOKEN_FILE = `${HOME}/.config/tern-mobile/bridge-token`;
-const DIST = new URL("./dist/", import.meta.url).pathname;
+/** A command printing one folder per line; `.py` runs with python3. Unset: lib/projects.ts. */
+const PROJECTS_SCRIPT = process.env.TERN_MOBILE_PROJECTS ?? "";
+const DIST = fileURLToPath(new URL("./dist/", import.meta.url));
+/** Browsers cap cookie lifetimes at 400 days. */
+const PAIR_MAX_AGE_S = 400 * 24 * 3600;
 
 /** The list is rebuilt on events (Tern, bridges, history.db); this is only the cache's backstop. */
 const STATE_TTL_MS = 15_000;
@@ -49,23 +67,19 @@ if (!DEV && ALLOW.length === 0) {
   process.exit(2);
 }
 
-if (!existsSync(TOKEN_FILE)) {
-  mkdirSync(`${HOME}/.config/tern-mobile`, { recursive: true });
-  writeFileSync(TOKEN_FILE, randomBytes(32).toString("base64url"), { mode: 0o600 });
-}
-const BRIDGE_TOKEN = Buffer.from(readFileSync(TOKEN_FILE, "utf8").trim());
+const BRIDGE_TOKEN = ensureToken(join(CONFIG_DIR, "bridge-token"));
+const ACCESS_TOKEN = ensureToken(ACCESS_TOKEN_FILE);
 
 // ---------- web push ----------
 
-const VAPID_FILE = `${HOME}/.config/tern-mobile/vapid.json`;
-const PUSH_FILE = `${HOME}/.config/tern-mobile/push.json`;
+const VAPID_FILE = join(CONFIG_DIR, "vapid.json");
+const PUSH_FILE = join(CONFIG_DIR, "push.json");
 /** A finish is reported only if the session stays idle this long (no follow-up turn). */
 const DONE_SETTLE_MS = 3000;
 
 if (!existsSync(VAPID_FILE)) writeFileSync(VAPID_FILE, JSON.stringify(webpush.generateVAPIDKeys()), { mode: 0o600 });
 const VAPID: { publicKey: string; privateKey: string } = JSON.parse(readFileSync(VAPID_FILE, "utf8"));
-// The subject reaches the browser's push service (FCM for Chrome); keep it free of personal data.
-webpush.setVapidDetails(process.env.TERN_MOBILE_VAPID_SUBJECT ?? "https://tern-mobile.invalid", VAPID.publicKey, VAPID.privateKey);
+webpush.setVapidDetails(vapidSubject(process.env, ALLOW), VAPID.publicKey, VAPID.privateKey);
 
 const pushSubs = new Map<string, PushSubscription>(
   existsSync(PUSH_FILE) ? arr(JSON.parse(readFileSync(PUSH_FILE, "utf8"))).map((s) => [str(obj(s).endpoint), s as PushSubscription]) : [],
@@ -294,6 +308,9 @@ type Item = {
     tier: string;
     context: (Context & { compactAt: number | null }) | null;
     jobs: Job[];
+    /** The extension's bridge protocol (0: older than versioning) and its feature caps (null: none sent). */
+    protocol: number;
+    caps: Caps | null;
   } | null;
   /** working / blocked / idle, from the session's bridge; null without one. */
   status: string | null;
@@ -382,7 +399,7 @@ async function buildState(): Promise<State> {
         const cwd = str(b.cwd, HOME);
         const file = str(b.file);
         const note = /^note:([0-9a-f]+)$/.exec(file)?.[1];
-        const doc = note ? `${NOTES_DIR}/${note}.md` : file.startsWith("/") ? file : null;
+        const doc = note ? join(NOTES_DIR, `${note}.md`) : file && isAbsolute(file) ? file : null;
         const raw = str(b.title, basename(str(b.program, id))).trim();
         const icon = PUA.exec(raw)?.[0] ?? null;
         const clean = raw.replace(new RegExp(PUA.source, "gu"), "").trim();
@@ -411,6 +428,8 @@ async function buildState(): Promise<State> {
                 tier: bridge.state.tier,
                 context: bridge.state.context && { ...bridge.state.context, compactAt: compactAtPercent(compactionSettings(), bridge.state.context.window) },
                 jobs: bridge.state.jobs,
+                protocol: bridge.state.protocol,
+                caps: bridge.state.caps,
               }
             : null,
           status,
@@ -499,7 +518,7 @@ function transcriptPath(sessionId: string): string | null {
   if (hit && existsSync(hit)) return hit;
   if (!/^[\w-]+$/.test(sessionId)) return null;
   for (const rel of new Bun.Glob(`*/*_${sessionId}.jsonl`).scanSync(SESSIONS_DIR)) {
-    const full = `${SESSIONS_DIR}/${rel}`;
+    const full = join(SESSIONS_DIR, rel);
     sessionPaths.set(sessionId, full);
     return full;
   }
@@ -733,20 +752,32 @@ async function handleApi(req: Request, url: URL): Promise<Response> {
   const blob = /^\/api\/blob\/([0-9a-f]{64})$/.exec(path);
   if (req.method === "GET" && blob) {
     const type = url.searchParams.get("type") ?? "";
-    const file = Bun.file(`${BLOBS_DIR}/${blob[1]}`);
+    const file = Bun.file(join(BLOBS_DIR, blob[1]));
     if (IMAGE_MIMES[type] !== true || !(await file.exists())) return json({ error: "no such image" }, 404);
     // Content-addressed: the bytes behind a hash never change.
     return new Response(file, { headers: { "content-type": type, "cache-control": "private, max-age=31536000, immutable" } });
   }
   if (req.method === "GET" && path === "/api/projects") {
-    // The same list `op` feeds to fzf: known Claude/omp project folders, active first.
-    const r = Bun.spawnSync(["python3", PROJECTS_SCRIPT], { stderr: "ignore" });
-    const projects = r.stdout
-      .toString()
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((p) => p.startsWith("/") && existsSync(p));
-    return json({ projects });
+    // Folders for a new omp: the open blocks' and past omp sessions' cwds, or a configured command's list.
+    let projects: string[];
+    if (PROJECTS_SCRIPT) {
+      let out = "";
+      try {
+        const cmd = /\.py$/i.test(PROJECTS_SCRIPT) ? ["python3", PROJECTS_SCRIPT] : [PROJECTS_SCRIPT];
+        out = Bun.spawnSync(cmd, { stderr: "ignore" }).stdout.toString();
+      } catch {
+        // A missing command lists nothing.
+      }
+      projects = out
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((p) => isAbsolute(p) && existsSync(p));
+    } else {
+      const open = (await getState()).projects.flatMap((p) => p.items).filter((i) => !i.doc).map((i) => i.cwd);
+      projects = await recentProjects(SESSIONS_DIR, open);
+    }
+    // `home` lets the phone show paths under it as ~, whatever the separators.
+    return json({ projects, home: HOME });
   }
   if (req.method === "GET" && path === "/api/push/key") return json({ key: VAPID.publicKey });
   if (req.method !== "POST") return json({ error: "not found" }, 404);
@@ -795,6 +826,7 @@ async function handleApi(req: Request, url: URL): Promise<Response> {
         const entry = str(body.entry);
         if (!/^[A-Za-z0-9_-]{1,64}$/.test(entry)) return json({ error: "bad entry" }, 400);
         if (!bridge) return json({ error: "rewind needs an omp session connected to tern-mobile (restart it)" }, 409);
+        if (bridge.state.caps?.rewind === false) return json({ error: "this omp can't rewind from tern-mobile (update omp)" }, 409);
         if (bridge.state.status !== "idle") return json({ error: "stop the agent first" }, 409);
         return done(await submit(block, `/tern-mobile-rewind ${entry}`, [], false));
       }
@@ -834,6 +866,7 @@ async function handleApi(req: Request, url: URL): Promise<Response> {
       case "models": {
         // The picker's full list; the same on every session, so one fetch serves a few minutes.
         if (!bridge) return json({ error: "no bridge" }, 409);
+        if (bridge.state.caps?.models === false) return json({ error: "this omp can't list its models (update omp)" }, 409);
         if (!modelsCache || Date.now() - modelsCache.at > MODELS_TTL_MS) {
           const r = await bridgeRequest(bridge, { t: "models" });
           if (!r) return json({ error: "omp did not answer" }, 502);
@@ -846,6 +879,7 @@ async function handleApi(req: Request, url: URL): Promise<Response> {
         return done(bridgeError(await bridgeRequest(bridge, { t: "thinking", level: str(body.level) })));
       case "tier":
         if (!bridge) return json({ error: "no bridge" }, 409);
+        if (bridge.state.caps?.tiers === false) return json({ error: "this omp has no service tiers (update omp)" }, 409);
         return done(bridgeError(await bridgeRequest(bridge, { t: "tier", tier: str(body.tier) })));
       case "complete": {
         // omp's own autocomplete (slash commands, /skill:…, @files) for the phone's text.
@@ -866,7 +900,7 @@ async function handleApi(req: Request, url: URL): Promise<Response> {
 
   if (path === "/api/new") {
     const cwd = str(body.cwd);
-    if (!cwd.startsWith("/") || !existsSync(cwd) || !statSync(cwd).isDirectory())
+    if (!isAbsolute(cwd) || !existsSync(cwd) || !statSync(cwd).isDirectory())
       return json({ error: "cwd must be an existing directory" }, 400);
     const r = await tern(["new", "tab", "--cwd", cwd, "--json", "--", "omp"]);
     if (r.error) return json({ error: r.error }, 502);
@@ -881,8 +915,24 @@ async function handleApi(req: Request, url: URL): Promise<Response> {
 }
 
 function bridgeAuthorized(req: Request): boolean {
-  const given = Buffer.from(req.headers.get("x-tern-mobile-bridge") ?? "");
-  return given.length === BRIDGE_TOKEN.length && timingSafeEqual(given, BRIDGE_TOKEN);
+  return sameToken(req.headers.get("x-tern-mobile-bridge") ?? "", BRIDGE_TOKEN);
+}
+
+/** `/pair?code=…`: the installer's link. The right code sets the cookie /api asks for. */
+function pair(url: URL): Response {
+  if (!sameToken(url.searchParams.get("code") ?? "", ACCESS_TOKEN))
+    return new Response("<!doctype html><title>tern</title><p>Wrong pairing code. Open the pairing link the installer printed (<code>bun server.ts pair</code>).</p>", {
+      status: 403,
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+    });
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: "/",
+      "cache-control": "no-store",
+      "set-cookie": `${PAIR_COOKIE}=${ACCESS_TOKEN}; Path=/; Max-Age=${PAIR_MAX_AGE_S}; HttpOnly; Secure; SameSite=Strict`,
+    },
+  });
 }
 
 /** Every bridge connection per pane; the newest is the pane's bridge. */
@@ -940,11 +990,18 @@ Bun.serve<{ pane: string | null }>({
     }
     const login = req.headers.get("tailscale-user-login");
     if (!DEV && !(login && ALLOW.includes(login))) return new Response("forbidden", { status: 403 });
-    if (url.pathname.startsWith("/api/")) return handleApi(req, url);
+    if (url.pathname === "/pair") return pair(url);
+    if (url.pathname.startsWith("/api/")) {
+      if (!DEV && !sameToken(cookieValue(req.headers.get("cookie"), PAIR_COOKIE), ACCESS_TOKEN)) return json({ error: "not paired" }, 401);
+      return handleApi(req, url);
+    }
+    // The app itself needs only the login: it shows how to pair when /api says "not paired".
     const rel = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
     if (rel.includes("..")) return new Response("bad path", { status: 400 });
-    const file = Bun.file(DIST + rel);
-    return new Response((await file.exists()) ? file : Bun.file(DIST + "index.html"), {
+    const file = Bun.file(join(DIST, rel));
+    const index = Bun.file(join(DIST, "index.html"));
+    if (!(await index.exists())) return new Response("not built: run `bun run build`", { status: 404 });
+    return new Response((await file.exists()) ? file : index, {
       // The 1 MB symbols font changes only with the Nerd Font package.
       headers: { "cache-control": rel === "symbols.woff2" ? "max-age=604800" : "no-cache" },
     });

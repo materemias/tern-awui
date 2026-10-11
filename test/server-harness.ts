@@ -15,14 +15,24 @@ export async function until<T>(fn: () => T | Promise<T>, description: string, ti
   throw new Error(`Timed out: ${description}`);
 }
 
+/** Variables that would point the server at the user's real omp, Tern or tern-mobile files. */
+const LEAKY = /^(TERN_MOBILE_|PI_CODING_AGENT_DIR$|PI_CONFIG_DIR$|OMP_PROFILE$|PI_PROFILE$|XDG_(DATA|STATE|CONFIG|CACHE)_HOME$)/;
+/** The test process's environment without anything that reaches outside `home`. */
+export function isolatedEnv(home: string, extra: Record<string, string> = {}): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) if (value !== undefined && !LEAKY.test(key)) env[key] = value;
+  return { ...env, HOME: home, ...extra };
+}
+
 export class Sandbox {
   home = mkdtempSync(`${tmpdir()}/tern-awui-server-`);
   token = "test-only-bridge-token";
+  access = "test-only-access-token";
   session = "test-session";
   login = "phone@example.test";
   base = "";
   proc?: Bun.Subprocess;
-  transcript = new Transcript(this.session);
+  transcript = new Transcript(this.session, `${this.home}/alpha`);
   prompt: string;
   leaf: string;
   tree: Message;
@@ -33,6 +43,7 @@ export class Sandbox {
     for (const rel of ["bin", "alpha", "beta", ".config/tern-mobile", ".omp/agent/sessions/project", ".omp/agent/blobs", ".local/state/tern/notes"])
       mkdirSync(`${this.home}/${rel}`, { recursive: true });
     writeFileSync(`${this.home}/.config/tern-mobile/bridge-token`, this.token);
+    writeFileSync(`${this.home}/.config/tern-mobile/access-token`, this.access);
     writeFileSync(`${this.home}/.omp/agent/blobs/${HASH}`, "image-bytes");
     writeFileSync(`${this.home}/.local/state/tern/notes/abc.md`, "# Note\n");
     this.prompt = this.transcript.user("Fix the build", 1000);
@@ -84,15 +95,15 @@ esac
   }
   clearCalls() { writeFileSync(`${this.home}/calls`, ""); }
 
-  async start() {
+  async start(extraEnv: Record<string, string> = {}) {
     const reservation = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
     const port = reservation.port!;
     reservation.stop(true);
     this.base = `http://127.0.0.1:${port}`;
     this.proc = Bun.spawn([process.execPath, `${import.meta.dir}/../server.ts`], {
       cwd: this.home,
-      env: { ...process.env, HOME: this.home, PATH: `${this.home}/bin:${process.env.PATH}`, TERN_FAKE_DIR: this.home,
-        TERN_MOBILE_PORT: String(port), TERN_MOBILE_ALLOW: ` ${this.login}, second@example.test `, TERN_MOBILE_DEV: "0" },
+      env: isolatedEnv(this.home, { PATH: `${this.home}/bin:${process.env.PATH}`, TERN_FAKE_DIR: this.home,
+        TERN_MOBILE_PORT: String(port), TERN_MOBILE_ALLOW: ` ${this.login}, second@example.test `, TERN_MOBILE_DEV: "0", ...extraEnv }),
       stdout: "ignore", stderr: "inherit",
     });
     await until(async () => {
@@ -100,9 +111,11 @@ esac
     }, "server startup", 5000);
   }
 
-  get(path: string) { return fetch(this.base + path, { headers: { "tailscale-user-login": this.login } }); }
+  /** A paired phone's headers: an allowed Tailscale login and the access cookie. */
+  get headers() { return { "tailscale-user-login": this.login, cookie: `tern_awui=${this.access}` }; }
+  get(path: string) { return fetch(this.base + path, { headers: this.headers }); }
   post(path: string, body: unknown = {}) {
-    return fetch(this.base + path, { method: "POST", headers: { "tailscale-user-login": this.login, "x-tern-mobile": "1", "content-type": "application/json" }, body: JSON.stringify(body) });
+    return fetch(this.base + path, { method: "POST", headers: { ...this.headers, "x-tern-mobile": "1", "content-type": "application/json" }, body: JSON.stringify(body) });
   }
   action(block: number, action: string, body: unknown = {}) { return this.post(`/api/blocks/${block}/${action}`, body); }
   async state(): Promise<Message> { return obj(await (await this.get("/api/state")).json()); }
@@ -175,7 +188,7 @@ export class Events {
   reading?: Promise<void>;
   async open(s: Sandbox, query = "") {
     s.streams.push(this);
-    const r = await fetch(`${s.base}/api/stream${query}`, { headers: { "tailscale-user-login": s.login }, signal: this.abort.signal });
+    const r = await fetch(`${s.base}/api/stream${query}`, { headers: s.headers, signal: this.abort.signal });
     if (!r.ok) throw new Error(`SSE ${r.status}`);
     this.reading = (async () => {
       let buf = "";

@@ -22,14 +22,27 @@ export type BridgeState = {
   levels: string[];
   tiers: string[];
   tier: string;
+  /** The extension's bridge protocol; 0 for extensions from before versioning. */
+  protocol: number;
+  /** What this omp supports, from the extension's feature detection; null when it sent none. */
+  caps: Caps | null;
 };
 export type Context = { tokens: number; window: number; percent: number };
 export type Queued = { text: string; followUp: boolean };
 export type Job = { id: string; type: string; label: string; agent: string; since: number };
+export const CAPS = ["models", "tiers", "jobs", "queue", "rewind", "btw", "complete", "levels"] as const;
+export type Caps = Record<(typeof CAPS)[number], boolean>;
 
 /** A connection that hasn't reported yet. */
 export function emptyState(now: number): BridgeState {
-  return { sessionId: "", text: "", model: "", thinking: "", status: "", since: now, context: null, queued: [], jobs: [], leaf: "", levels: [], tiers: [], tier: "" };
+  return { sessionId: "", text: "", model: "", thinking: "", status: "", since: now, context: null, queued: [], jobs: [], leaf: "", levels: [], tiers: [], tier: "", protocol: 0, caps: null };
+}
+
+/** The reported caps; a cap the extension doesn't name (or names oddly) is unsupported. */
+function parseCaps(value: unknown): Caps | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const c = obj(value);
+  return Object.fromEntries(CAPS.map((k) => [k, c[k] === true])) as Caps;
 }
 
 /** A `state` message as the pane's new state; `since` carries over while the status holds. */
@@ -58,6 +71,8 @@ export function parseBridgeState(msg: Obj, before: BridgeState, now: number): Br
       .map((j) => ({ id: str(j.id), type: str(j.type), label: str(j.label), agent: str(j.agent), since: num(j.since) }))
       .filter((j) => j.id),
     leaf: str(msg.leaf),
+    protocol: num(msg.protocol),
+    caps: parseCaps(msg.caps),
   };
 }
 
@@ -70,6 +85,8 @@ export function listChanged(before: BridgeState, after: BridgeState): boolean {
     before.status !== after.status ||
     before.context?.percent !== after.context?.percent ||
     before.sessionId !== after.sessionId ||
+    before.protocol !== after.protocol ||
+    JSON.stringify(before.caps) !== JSON.stringify(after.caps) ||
     JSON.stringify(before.jobs) !== JSON.stringify(after.jobs)
   );
 }

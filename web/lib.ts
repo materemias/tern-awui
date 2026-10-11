@@ -96,6 +96,21 @@ export function extensionOutdated(live: Live | null | undefined): boolean {
   return !!live && live.protocol < PROTOCOL;
 }
 
+// ---------- folders ----------
+
+/**
+ * A folder as the project picker shows it: its name, and its parent with the home folder as `~`.
+ * Paths come from the server's OS: `/` or `\` separators, and Windows compares without case.
+ */
+export function folderLabel(path: string, home: string): { name: string; parent: string } {
+  const cut = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  const parent = cut < 0 ? "" : path.slice(0, cut);
+  const fold = (s: string) => (/^[A-Za-z]:/.test(home) ? s.toLowerCase() : s);
+  const head = fold(parent.slice(0, home.length));
+  const underHome = home !== "" && head === fold(home) && (parent.length === home.length || "/\\".includes(parent[home.length]));
+  return { name: path.slice(cut + 1) || path, parent: underHome ? `~${parent.slice(home.length)}` : parent };
+}
+
 /** base64url VAPID key → bytes, as pushManager.subscribe wants it. */
 export function vapidBytes(key: string): Uint8Array<ArrayBuffer> {
   const raw = atob(key.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (key.length % 4)) % 4));
@@ -144,7 +159,8 @@ export function rowText(item: Item, now: number): { sub: string; recap: boolean;
   const idle = item.status === "idle";
   // Idle agents show omp's recap ("Earlier:" once turns followed it); others the last prompt.
   const recap = idle && a?.recap ? `${a.recapStale ? "Earlier: " : ""}${a.recap}` : "";
-  const sub = item.doc ? (item.doc.includes("/tern/notes/") ? "Note" : item.doc) : recap || a?.lastPrompt || item.cwd;
+  // Tern's notes folder on any OS: …/tern/notes/ (Linux), …/Tern/notes/ (macOS), …\Tern\notes\ (Windows).
+  const sub = item.doc ? (/[\\/]tern[\\/]notes[\\/]/i.test(item.doc) ? "Note" : item.doc) : recap || a?.lastPrompt || item.cwd;
   return { sub, recap: !!recap, stale: idle && now - item.since > 86_400_000 };
 }
 

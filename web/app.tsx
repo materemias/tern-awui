@@ -2,7 +2,7 @@ import { render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Mermaid } from "mermaid";
 import { drawCharts } from "./charts";
-import { post, type AdvisorNote, type Ask, type Btw, type CatalogModel, type ChatEntry, type Doc, type Img, type Item, type Job, type Live, type Role, type State, type TodoPhase, type ToolCall } from "./api";
+import { checkPaired, post, type AdvisorNote, type Ask, type Btw, type CatalogModel, type ChatEntry, type Doc, type Img, type Item, type Job, type Live, type Role, type State, type TodoPhase, type ToolCall } from "./api";
 import {
   age,
   askAnswers,
@@ -16,6 +16,7 @@ import {
   duration,
   extensionOutdated,
   fitEdge,
+  folderLabel,
   isAgentJob,
   isOld,
   jobsSummary,
@@ -277,14 +278,18 @@ function Row({ item, now, selected }: { item: Item; now: number; selected?: bool
   );
 }
 
-/** The folders `op` offers (agent-projects.py, active first), filtered as you type. */
+/** The folders a new omp can open in (open blocks and past omp sessions, newest first), filtered as you type. */
 function ProjectSheet({ open, onPick, onClose }: { open: Set<string>; onPick: (dir: string) => void; onClose: () => void }) {
   const [projects, setProjects] = useState<string[] | null>(null);
+  const [home, setHome] = useState("");
   const [q, setQ] = useState("");
   useEffect(() => {
     fetch("/api/projects")
       .then((r) => r.json())
-      .then((d: { projects?: string[] }) => setProjects(d.projects ?? []))
+      .then((d: { projects?: string[]; home?: string }) => {
+        setProjects(d.projects ?? []);
+        setHome(d.home ?? "");
+      })
       .catch(() => setProjects([]));
   }, []);
   const shown = (projects ?? []).filter((p) => matchesWords(q, p));
@@ -298,13 +303,13 @@ function ProjectSheet({ open, onPick, onClose }: { open: Set<string>; onPick: (d
         <input class="sheet-filter" type="search" autoFocus placeholder="Filter projects" value={q} onInput={(e) => setQ(e.currentTarget.value)} />
         <div class="sheet-list">
           {shown.map((p) => {
-            const cut = p.lastIndexOf("/");
+            const { name, parent } = folderLabel(p, home);
             return (
               <button key={p} class="sheet-row" onClick={() => onPick(p)}>
-                <span class="role">{p.slice(cut + 1) || p}</span>
+                <span class="role">{name}</span>
                 <span class="muted small">
                   {open.has(p) && <span class="c-working">open · </span>}
-                  {p.slice(0, cut).replace(/^\/home\/[^/]+/, "~")}
+                  {parent}
                 </span>
               </button>
             );
@@ -1653,9 +1658,35 @@ function Session({ block }: { block: string }) {
   );
 }
 
+/** This browser's pairing: null while unknown, false once the server says "not paired". */
+function usePaired(): boolean | null {
+  const [paired, setPaired] = useState<boolean | null>(null);
+  useEffect(() => {
+    // Recheck on return to the app: the pairing link may have been opened in the meantime.
+    const check = () => document.visibilityState === "visible" && void checkPaired().then(setPaired);
+    check();
+    document.addEventListener("visibilitychange", check);
+    return () => document.removeEventListener("visibilitychange", check);
+  }, []);
+  return paired;
+}
+
+function NotPaired() {
+  return (
+    <div class="empty">
+      <p>
+        Not paired: open the pairing link from the installer on this device. On the desktop, <code>bun server.ts pair</code> in the
+        tern-awui folder prints its path.
+      </p>
+    </div>
+  );
+}
+
 function App() {
   const block = useRoute();
   const wide = useWide();
+  const paired = usePaired();
+  if (paired === false) return <NotPaired />;
   if (!wide) return block ? <Session key={block} block={block} /> : <Home />;
   return (
     <div class="desk">

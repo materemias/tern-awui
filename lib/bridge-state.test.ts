@@ -18,6 +18,8 @@ const snapshot = {
   queued: [{ text: "steer", followUp: false }, { text: "later", followUp: true }],
   jobs: [{ id: "bg_1", type: "task", label: "Scout", agent: "scout", since: 5 }],
   leaf: "e012",
+  protocol: 1,
+  caps: { models: true, tiers: false, jobs: true, queue: true, rewind: true, btw: true, complete: true, levels: true },
 };
 
 describe("parseBridgeState", () => {
@@ -36,6 +38,8 @@ describe("parseBridgeState", () => {
       queued: snapshot.queued,
       jobs: snapshot.jobs,
       leaf: "e012",
+      protocol: 1,
+      caps: snapshot.caps,
     });
   });
 
@@ -71,6 +75,19 @@ describe("parseBridgeState", () => {
     expect(s.levels).toEqual(["off"]);
     expect(s.tiers).toEqual(["", ""]);
   });
+
+  test("an extension from before versioning: protocol 0, no caps", () => {
+    const { protocol: _p, caps: _c, ...older } = snapshot;
+    const s = parseBridgeState(older, fresh, 1);
+    expect(s.protocol).toBe(0);
+    expect(s.caps).toBeNull();
+    expect(parseBridgeState({ ...snapshot, caps: [true], protocol: "2" }, fresh, 1)).toMatchObject({ caps: null, protocol: 0 });
+  });
+
+  test("caps keep the known names; unnamed or non-true caps are unsupported, extras dropped", () => {
+    const s = parseBridgeState({ ...snapshot, caps: { models: true, rewind: "yes", future: true } }, fresh, 1);
+    expect(s.caps).toEqual({ models: true, tiers: false, jobs: false, queue: false, rewind: false, btw: false, complete: false, levels: false });
+  });
 });
 
 describe("listChanged", () => {
@@ -86,6 +103,9 @@ describe("listChanged", () => {
     expect(changed({ context: null })).toBe(true);
     expect(changed({ sessionId: "other" })).toBe(true);
     expect(changed({ jobs: [] })).toBe(true);
+    expect(changed({ protocol: 2 })).toBe(true);
+    expect(changed({ caps: { ...base.caps!, rewind: false } })).toBe(true);
+    expect(changed({ caps: null })).toBe(true);
   });
 
   test("not drafts, queue, leaf or token counts at the same percent", () => {

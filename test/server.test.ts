@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { appendFileSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { arr, obj } from "../lib/json";
-import { HASH, T0 } from "./fixtures";
+import { HASH, T0, Transcript } from "./fixtures";
 import { Events, Extension, Sandbox, item, until } from "./server-harness";
 
 const s = new Sandbox();
@@ -12,14 +12,49 @@ afterAll(() => s.close());
 test("HTTP identity and POST CSRF gates reject missing/wrong credentials", async () => {
   expect((await fetch(`${s.base}/api/state`)).status).toBe(403);
   expect((await fetch(`${s.base}/api/state`, { headers: { "tailscale-user-login": "wrong" } })).status).toBe(403);
-  expect((await fetch(`${s.base}/api/state`, { headers: { "tailscale-user-login": "second@example.test" } })).status).toBe(200);
-  const denied = await fetch(`${s.base}/api/blocks/2/submit`, { method: "POST", headers: { "tailscale-user-login": s.login }, body: '{}' });
+  const cookie = `tern_awui=${s.access}`;
+  expect((await fetch(`${s.base}/api/state`, { headers: { "tailscale-user-login": "second@example.test", cookie } })).status).toBe(200);
+  const denied = await fetch(`${s.base}/api/blocks/2/submit`, { method: "POST", headers: { "tailscale-user-login": s.login, cookie }, body: '{}' });
   expect(denied.status).toBe(403);
   expect(await denied.json()).toEqual({ error: "missing header" });
   expect(s.calls()).toEqual([]);
 });
 
-test("bridge WebSocket upgrades require the local token", async () => {
+test("the API and its stream need the pairing cookie; /pair sets it; the app's files don't need it", async () => {
+  const login = { "tailscale-user-login": s.login };
+  for (const headers of [login, { ...login, cookie: "tern_awui=wrong" }, { ...login, cookie: `other=${s.access}` }]) {
+    for (const path of ["/api/state", "/api/stream"]) {
+      const r = await fetch(s.base + path, { headers });
+      expect(r.status).toBe(401);
+      expect(await r.json()).toEqual({ error: "not paired" });
+    }
+  }
+  const posted = await fetch(`${s.base}/api/blocks/2/submit`, { method: "POST", headers: { ...login, "x-tern-mobile": "1" }, body: '{"text":"x"}' });
+  expect(posted.status).toBe(401);
+  expect(s.calls()).toEqual([]);
+  // The app's files load without the cookie (404 only in an unbuilt checkout), so it can show how to pair.
+  for (const path of ["/", "/manifest.webmanifest", "/sw.js"]) {
+    const r = await fetch(s.base + path, { headers: login });
+    expect([200, 404]).toContain(r.status);
+    expect(await r.text()).not.toContain("not paired");
+  }
+  expect((await fetch(`${s.base}/pair?code=${s.access}`, { redirect: "manual" })).status).toBe(403);
+  const wrong = await fetch(`${s.base}/pair?code=wrong`, { headers: login, redirect: "manual" });
+  expect(wrong.status).toBe(403);
+  expect(wrong.headers.get("set-cookie")).toBeNull();
+  expect(await wrong.text()).toContain("Wrong pairing code");
+  expect((await fetch(`${s.base}/pair`, { headers: login, redirect: "manual" })).status).toBe(403);
+  const paired = await fetch(`${s.base}/pair?code=${encodeURIComponent(s.access)}`, { headers: login, redirect: "manual" });
+  expect(paired.status).toBe(302);
+  expect(paired.headers.get("location")).toBe("/");
+  const setCookie = paired.headers.get("set-cookie") ?? "";
+  expect(setCookie.split(";")[0]).toBe(`tern_awui=${s.access}`);
+  for (const flag of ["HttpOnly", "Secure", "SameSite=Strict", "Path=/"]) expect(setCookie).toContain(flag);
+  expect(Number(/Max-Age=(\d+)/.exec(setCookie)?.[1])).toBeGreaterThan(86_400 * 300);
+  expect((await fetch(`${s.base}/api/state`, { headers: { ...login, cookie: setCookie.split(";")[0] } })).status).toBe(200);
+});
+
+test("bridge WebSocket upgrades require the local token (and no pairing cookie)", async () => {
   for (const token of ["", "wrong-token"]) {
     const headers = { "x-tern-mobile-bridge": token };
     expect((await fetch(`${s.base}/bridge`, { headers })).status).toBe(403);
@@ -42,6 +77,15 @@ test("state groups by project, parses title/icon/tag and exposes configured role
   expect(item(state, 4).title).toBe("htop");
   expect(item(state, 3)).toMatchObject({ doc: `${s.home}/.local/state/tern/notes/abc.md`, branch: null });
   expect(state.roles).toEqual([{ role: "smart", spec: "test/smart:high" }, { role: "fast", spec: "test/fast:low" }]);
+});
+
+test("projects default to open block cwds, then omp session cwds newest first, existing folders only", async () => {
+  mkdirSync(`${s.home}/gamma`);
+  mkdirSync(`${s.home}/.omp/agent/sessions/other`);
+  writeFileSync(`${s.home}/.omp/agent/sessions/other/date_gamma.jsonl`, new Transcript("gamma", `${s.home}/gamma`).text());
+  writeFileSync(`${s.home}/.omp/agent/sessions/other/date_gone.jsonl`, new Transcript("gone", `${s.home}/gone`).text());
+  // The note block (3) has no folder of its own; the session in alpha adds nothing new.
+  expect(await (await s.get("/api/projects")).json()).toEqual({ projects: [`${s.home}/beta`, `${s.home}/alpha`, `${s.home}/gamma`], home: s.home });
 });
 
 test("push subscriptions persist, replace by endpoint and unsubscribe without sending push", async () => {
@@ -125,6 +169,8 @@ test("a bridge snapshot creates an agent, reads transcript facts/recap and reord
   expect(arr(obj(arr(state.projects)[0]).items).map((i) => obj(i).block)).toEqual(["1", "4"]);
   expect(item(state, 1).agent).toEqual({ sessionId: s.session, lastPrompt: "Which route?", recap: "Earlier recap", recapStale: true, lastActivity: T0 + 4000 });
   expect(obj(item(state, 1).live).context).toEqual({ tokens: 40000, window: 200000, percent: 20, compactAt: 80 });
+  // A snapshot without them is an extension from before versioning.
+  expect(obj(item(state, 1).live)).toMatchObject({ protocol: 0, caps: null });
   expect(state.counts).toEqual({ working: 1, blocked: 0, idle: 0 });
 });
 
@@ -205,6 +251,29 @@ test("model catalog and model/thinking/tier commands correlate sequenced bridge 
   await s.action(1, "tier", { tier: "priority" });
   expect((await agent.take("tier")).tier).toBe("priority");
   expect((await s.action(1, "tier", { tier: "invalid" })).status).toBe(502);
+});
+
+test("reported caps reach the list and refuse rewind, models and tier when off", async () => {
+  const all = { models: true, tiers: true, jobs: true, queue: true, rewind: true, btw: true, complete: true, levels: true };
+  agent.report({ protocol: 1, caps: { ...all, rewind: false, models: false, tiers: false } });
+  // The list cache lives 15 s; seeing the caps at once means the change invalidated it.
+  const live = obj(item(await until(async () => {
+    const state = await s.state();
+    return obj(item(state, 1).live).protocol === 1 ? state : null;
+  }, "caps in the list"), 1).live);
+  expect(live.caps).toEqual({ ...all, rewind: false, models: false, tiers: false });
+  agent.inbox = [];
+  for (const [action, body, word] of [["rewind", { entry: s.prompt }, "rewind"], ["models", {}, "models"], ["tier", { tier: "priority" }, "tiers"]] as const) {
+    const r = await s.action(1, action, body);
+    expect(r.status).toBe(409);
+    expect(obj(await r.json()).error).toContain(word);
+  }
+  expect(agent.inbox.filter((m) => m.t !== "watch")).toEqual([]);
+  // Thinking has no cap: it still goes through.
+  await s.action(1, "thinking", { level: "high" });
+  expect((await agent.take("thinking")).level).toBe("high");
+  agent.report({ caps: all });
+  await until(async () => obj(obj(item(await s.state(), 1).live).caps).rewind === true, "caps restored");
 });
 
 test("completion, side question and abort endpoints speak the extension protocol", async () => {
@@ -343,4 +412,13 @@ test("subscriptions and VAPID keys survive a server restart in the isolated HOME
   expect(JSON.parse(readFileSync(path, "utf8"))).toEqual([second]);
   await s.post("/api/push/unsubscribe", second);
   expect(JSON.parse(readFileSync(path, "utf8"))).toEqual([]);
+});
+
+test("TERN_MOBILE_PROJECTS replaces the default list with a command's absolute, existing folders", async () => {
+  writeFileSync(`${s.home}/bin/projects`, `#!/bin/bash\nprintf '%s\\n' '${s.home}/alpha' relative/dir '${s.home}/missing' '  ${s.home}/beta  '\n`);
+  chmodSync(`${s.home}/bin/projects`, 0o755);
+  s.proc!.kill();
+  await s.proc!.exited;
+  await s.start({ TERN_MOBILE_PROJECTS: `${s.home}/bin/projects` });
+  expect(await (await s.get("/api/projects")).json()).toEqual({ projects: [`${s.home}/alpha`, `${s.home}/beta`], home: s.home });
 });

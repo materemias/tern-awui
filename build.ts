@@ -1,13 +1,15 @@
-// Bundles web/app.tsx and copies the static files into dist/.
+// Bundles web/app.tsx and copies the static files and the prebuilt assets (see assets.ts) into dist/.
 import { rmSync, mkdirSync, copyFileSync } from "node:fs";
+import { join } from "node:path";
 
-const root = new URL(".", import.meta.url).pathname;
-rmSync(`${root}dist`, { recursive: true, force: true });
-mkdirSync(`${root}dist`);
+const root = import.meta.dir;
+const dist = join(root, "dist");
+rmSync(dist, { recursive: true, force: true });
+mkdirSync(dist);
 
 const result = await Bun.build({
-  entrypoints: [`${root}web/app.tsx`],
-  outdir: `${root}dist`,
+  entrypoints: [join(root, "web", "app.tsx")],
+  outdir: dist,
   // mermaid loads as its own chunks, only when a diagram shows up.
   splitting: true,
   minify: true,
@@ -18,15 +20,6 @@ if (!result.success) {
   process.exit(1);
 }
 
-for (const f of ["index.html", "style.css", "manifest.webmanifest", "icon.svg", "sw.js"]) copyFileSync(`${root}web/${f}`, `${root}dist/${f}`);
-for (const size of [192, 512]) {
-  const r = Bun.spawnSync(["rsvg-convert", "-w", String(size), "-h", String(size), `${root}web/icon.svg`, "-o", `${root}dist/icon-${size}.png`]);
-  if (r.exitCode !== 0) throw new Error(`rsvg-convert failed for ${size}px`);
-}
-// Pane titles start with Nerd Font icons; ship the symbols font, private use areas only.
-const font = process.env.TERN_MOBILE_SYMBOLS_FONT ?? "/usr/share/fonts/TTF/SymbolsNerdFont-Regular.ttf";
-const subset = Bun.spawnSync([
-  "pyftsubset", font, "--unicodes=U+E000-F8FF,U+F0000-F1FFF", "--flavor=woff2", `--output-file=${root}dist/symbols.woff2`,
-]);
-if (subset.exitCode !== 0) throw new Error(`pyftsubset failed: ${subset.stderr.toString()}`);
+for (const f of ["index.html", "style.css", "manifest.webmanifest", "icon.svg", "sw.js"]) copyFileSync(join(root, "web", f), join(dist, f));
+for (const f of ["icon-192.png", "icon-512.png", "symbols.woff2"]) copyFileSync(join(root, "assets", f), join(dist, f));
 console.log("built dist/");

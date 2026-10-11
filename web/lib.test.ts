@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import type { Caps, CatalogModel, Item, Job, Live, Project, Role } from "./api";
+import { afterEach, describe, expect, test } from "bun:test";
+import { checkPaired, type Caps, type CatalogModel, type Item, type Job, type Live, type Project, type Role } from "./api";
 import {
   OLD_MS,
   age,
@@ -14,6 +14,7 @@ import {
   duration,
   extensionOutdated,
   fitEdge,
+  folderLabel,
   isOld,
   jobsSummary,
   langOf,
@@ -349,6 +350,8 @@ describe("rowText", () => {
     expect(rowText(item({ status: null }), NOW).sub).toBe("/home/u/code/app");
     expect(rowText(item({ doc: "/home/u/.local/state/tern/notes/x.md" }), NOW).sub).toBe("Note");
     expect(rowText(item({ doc: "/home/u/todo.txt" }), NOW).sub).toBe("/home/u/todo.txt");
+    expect(rowText(item({ doc: "/Users/u/Library/Application Support/Tern/notes/x.md" }), NOW).sub).toBe("Note");
+    expect(rowText(item({ doc: "C:\\Users\\u\\AppData\\Local\\Tern\\notes\\x.md" }), NOW).sub).toBe("Note");
   });
   test("only idle rows go stale after a day", () => {
     expect(rowText(item({ since: NOW - 86_400_001 }), NOW).stale).toBe(true);
@@ -540,5 +543,40 @@ describe("pasted images", () => {
     expect(fitEdge(1000, 500)).toEqual({ width: 1000, height: 500 });
     expect(fitEdge(2048, 2048)).toEqual({ width: 2048, height: 2048 });
     expect(fitEdge(8192, 2)).toEqual({ width: 2048, height: 1 });
+  });
+});
+
+describe("folderLabel", () => {
+  test("name and parent, home as ~ with either separator", () => {
+    expect(folderLabel("/home/u/code/app", "/home/u")).toEqual({ name: "app", parent: "~/code" });
+    expect(folderLabel("/home/u/app", "/home/u")).toEqual({ name: "app", parent: "~" });
+    expect(folderLabel("C:\\Users\\u\\code\\app", "C:\\Users\\u")).toEqual({ name: "app", parent: "~\\code" });
+    expect(folderLabel("c:\\users\\u\\app", "C:\\Users\\u")).toEqual({ name: "app", parent: "~" });
+  });
+  test("outside home, a look-alike prefix, or no home: the parent as it is", () => {
+    expect(folderLabel("/home/user2/app", "/home/u")).toEqual({ name: "app", parent: "/home/user2" });
+    expect(folderLabel("/srv/app", "/home/u")).toEqual({ name: "app", parent: "/srv" });
+    expect(folderLabel("/home/u/app", "")).toEqual({ name: "app", parent: "/home/u" });
+    expect(folderLabel("/", "/home/u")).toEqual({ name: "/", parent: "" });
+  });
+});
+
+describe("checkPaired", () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => (globalThis.fetch = realFetch));
+  const answer = (r: Response | Error) =>
+    (globalThis.fetch = (async () => {
+      if (r instanceof Error) throw r;
+      return r;
+    }) as unknown as typeof fetch);
+  test("only the server's 401 'not paired' means unpaired", async () => {
+    answer(Response.json({ error: "not paired" }, { status: 401 }));
+    expect(await checkPaired()).toBe(false);
+    answer(Response.json({ key: "k" }));
+    expect(await checkPaired()).toBe(true);
+    answer(new Response("unauthorized", { status: 401 }));
+    expect(await checkPaired()).toBe(true);
+    answer(new Error("offline"));
+    expect(await checkPaired()).toBe(true);
   });
 });

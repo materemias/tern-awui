@@ -2,6 +2,8 @@
 // tern-mobile server, and applies drafts and model picks typed on the phone.
 // Loaded by omp from ~/.omp/agent/extensions (symlink); does nothing outside a Tern pane.
 import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 const POLL_MS = 100;
 const RETRY_MS = 5000;
@@ -157,8 +159,10 @@ export default function ternMobile(pi: Pi): void {
 	const PANE = process.env.TERN_PANE;
 	if (!PANE) return;
 	const BRIDGE_URL = process.env.TERN_MOBILE_BRIDGE ?? "ws://127.0.0.1:4380/bridge";
-	// The override lets tests and throwaway servers use their own token.
-	const TOKEN_FILE = process.env.TERN_MOBILE_TOKEN_FILE ?? `${process.env.HOME}/.config/tern-mobile/bridge-token`;
+	// The server's config dir (`$TERN_MOBILE_CONFIG`, else ~/.config/tern-mobile on every OS); the
+	// file override lets tests and throwaway servers use their own token.
+	const TOKEN_FILE =
+		process.env.TERN_MOBILE_TOKEN_FILE ?? join(process.env.TERN_MOBILE_CONFIG || join(homedir(), ".config", "tern-mobile"), "bridge-token");
 	let ctx: Ctx | null = null;
 	let ws: WebSocket | null = null;
 	let sent = ""; // last snapshot sent, as JSON

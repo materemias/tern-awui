@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, setSystemTime, jest } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import ternMobile from "./tern-mobile";
 import { bridgeFixture, type Completion } from "./bridge-fixture";
 
@@ -10,7 +12,7 @@ const reasoning: Model = { provider: "openai", id: "reasoner", reasoning: true, 
 // Bun has no omp pi-ai shim: fallback thinking works, but native levels discovery is absent.
 const capsWithoutShim = { models: true, tiers: true, jobs: true, queue: true, rewind: true, btw: true, complete: true, levels: false };
 const cleanup: (() => void)[] = [];
-const originalEnv = { TERN_PANE: process.env.TERN_PANE, TERN_MOBILE_BRIDGE: process.env.TERN_MOBILE_BRIDGE, TERN_MOBILE_TOKEN_FILE: process.env.TERN_MOBILE_TOKEN_FILE };
+const originalEnv = { TERN_PANE: process.env.TERN_PANE, TERN_MOBILE_BRIDGE: process.env.TERN_MOBILE_BRIDGE, TERN_MOBILE_TOKEN_FILE: process.env.TERN_MOBILE_TOKEN_FILE, TERN_MOBILE_CONFIG: process.env.TERN_MOBILE_CONFIG };
 let now: number;
 beforeEach(() => { now = 2_000_000_000_000; setSystemTime(now); });
 afterEach(() => {
@@ -22,13 +24,23 @@ afterEach(() => {
 	}
 });
 function advance(ms: number) { now += ms; setSystemTime(now); }
-function fixture(options: { pane?: boolean; hasUI?: boolean; sub?: boolean } = {}) {
+/** `configDir`: no file override; the token sits in `$TERN_MOBILE_CONFIG/bridge-token`. */
+function fixture(options: { pane?: boolean; hasUI?: boolean; sub?: boolean; configDir?: boolean } = {}) {
 	const bridge = bridgeFixture();
 	cleanup.push(() => bridge.close());
 	process.env.TERN_PANE = "test-pane";
 	if (options.pane === false) delete process.env.TERN_PANE;
 	process.env.TERN_MOBILE_BRIDGE = bridge.url;
 	process.env.TERN_MOBILE_TOKEN_FILE = bridge.tokenFile;
+	delete process.env.TERN_MOBILE_CONFIG;
+	if (options.configDir) {
+		// Bun reads the home folder once at startup, so ~/.config itself can't be redirected here.
+		delete process.env.TERN_MOBILE_TOKEN_FILE;
+		const dir = join(bridge.dir, "config");
+		mkdirSync(dir);
+		writeFileSync(join(dir, "bridge-token"), "config-dir-secret\n");
+		process.env.TERN_MOBILE_CONFIG = dir;
+	}
 	const handlers = new Map<string, Handler>();
 	const commands = new Map<string, Command>();
 	const state = {
@@ -120,6 +132,12 @@ describe("omp extension bridge contract", () => {
 		expect((await f.bridge.inbox.next()).sessionId).toBe("session-456");
 		expect(f.state.intervals).toEqual([100]);
 		expect(f.bridge.connections).toHaveLength(1);
+	});
+
+	test("without the file override, the token comes from $TERN_MOBILE_CONFIG", async () => {
+		const f = fixture({ configDir: true });
+		await f.start();
+		expect(f.bridge.connections[0].data.token).toBe("config-dir-secret");
 	});
 
 	test("samples context and handles absent model/context/leaf", async () => {

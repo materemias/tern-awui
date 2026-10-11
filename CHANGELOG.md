@@ -1,0 +1,36 @@
+# Changelog
+
+## 0.1.0 (2026-10-11)
+
+First release. tern-awui is a phone-sized web app (PWA) for the Tern panes on one machine, served over Tailscale.
+
+### App
+
+- Session list grouped by git root or folder, newest activity first: live status (working, blocked, idle), the title's Nerd Font icon, omp's recap or the last prompt, time in status. Projects fold; sessions idle for over a day can be hidden.
+- Chat for omp agents laid out like Tern's: prompts, markdown replies, grouped tool lines with intents, per-turn footers, tables with bar charts, inline SVG and mermaid figures, advisor notes, todo lists, images and image paste, live text while the agent writes, queued steers and follow-ups, subagents and background jobs.
+- Control: send, steer, follow-up, stop, `/btw` side questions, answering `ask` dialogs, rewinding to before a prompt, omp's own command and file autocomplete, the key bar, and a model picker with effort and priority tiers.
+- Screen capture for terminals with live typing on the shell's line; read-only notes and files; new omp tabs in any project; closing blocks; the git branch and the context-window gauge in the session.
+- Web Push notifications for sessions that need you or finished, an unseen-updates badge and haptics.
+- Desktop browser layout at 1000 px and wider.
+- Updates over one SSE stream per screen, open only while the app is visible.
+
+### omp extension
+
+- `omp-extension/tern-mobile.ts` bridges each omp in a Tern pane to the server over a local WebSocket: draft mirroring, status, model, thinking and tier, context usage, live text, queue, session leaf, jobs, rewind and autocomplete.
+- Capabilities and protocol: the extension reports its bridge protocol version and the features it detects in the running omp (model list, service tiers, jobs, queue, rewind, `/btw`, autocomplete, thinking levels). The server refuses and the phone turns off what that omp lacks, and the phone flags an extension older than its protocol so the omp gets restarted. Extensions from before versioning keep working as before.
+
+### Security
+
+- Pairing: besides an allowed Tailscale login, every `/api` request and stream needs the `tern_awui` cookie, which a one-time visit to `/pair?code=<access token>` sets (HttpOnly, Secure, SameSite=Strict). The server creates the token (`access-token` in the config dir) on first start; `bun server.ts pair` prints the link's path. Unpaired browsers see a "Not paired" screen.
+- `TERN_MOBILE_DEV=1` still turns off all auth and is documented as unsafe.
+
+### Install and build
+
+- `install.ts` (`bun run install-service`): builds, installs the omp extension (symlink on Linux/macOS, copy on Windows), reads the allowed login and DNS name from Tailscale, writes and starts a per-user service (systemd user unit on Linux, LaunchAgent on macOS, a logon scheduled task on Windows), runs `tailscale serve` and prints the pairing link. `--dry-run` prints the plan, `--uninstall` reverses it.
+- Cross-platform paths: the config dir is `~/.config/tern-mobile` on every OS (`TERN_MOBILE_CONFIG`), found via the OS home directory rather than `$HOME`; omp's data dir follows omp's own resolution (`TERN_MOBILE_OMP_DIR`); Tern's notes dir is per OS (`TERN_MOBILE_NOTES_DIR`); the **+ omp** project list defaults to the open blocks' and sessions' folders (`TERN_MOBILE_PROJECTS`); the VAPID subject defaults to the first allowed login.
+- The icon PNGs and the Nerd Font symbols subset are committed in `assets/` (with the Nerd Fonts license), so `bun run build` needs only Bun; `bun run assets` regenerates them with `rsvg-convert` and `pyftsubset`.
+- The hardcoded `tern-mobile.service` is gone from the repo; the installer writes the unit.
+
+### Tests
+
+- `bun test` covers the server (HTTP API, auth, bridge, SSE) against fixtures, the omp extension against a fake omp, the web client's logic and components under happy-dom, the pure modules in `lib/`, and the installer's plans for Linux, macOS and Windows.
