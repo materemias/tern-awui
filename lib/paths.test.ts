@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join, resolve } from "node:path";
-import { configDir, ompDataDir, ternNotesDir } from "./paths";
+import { configDir, installedExtension, ompDataDir, ternNotesDir } from "./paths";
 
 const HOME = "/home/u";
 const none = () => false;
@@ -34,6 +34,15 @@ describe("ompDataDir", () => {
     expect(ompDataDir({ XDG_DATA_HOME: "/xdg" }, HOME, "linux", none)).toBe(join(HOME, ".omp", "agent"));
     expect(ompDataDir({ XDG_DATA_HOME: "/xdg" }, HOME, "win32", exists)).toBe(join(HOME, ".omp", "agent"));
     expect(ompDataDir({ XDG_DATA_HOME: "/xdg", PI_CODING_AGENT_DIR: "/agent" }, HOME, "linux", exists)).toBe(resolve("/agent"));
+  });
+});
+
+describe("installedExtension", () => {
+  test("where install.ts links or copies it: ~/.omp/agent/extensions, or under $TERN_MOBILE_OMP_DIR", () => {
+    expect(installedExtension({}, HOME)).toBe(join(HOME, ".omp", "agent", "extensions", "tern-mobile.ts"));
+    // omp's XDG data folder holds sessions, not extensions.
+    expect(installedExtension({ XDG_DATA_HOME: "/xdg" }, HOME)).toBe(join(HOME, ".omp", "agent", "extensions", "tern-mobile.ts"));
+    expect(installedExtension({ TERN_MOBILE_OMP_DIR: "/data/omp" }, HOME)).toBe(join(resolve("/data/omp"), "extensions", "tern-mobile.ts"));
   });
 });
 

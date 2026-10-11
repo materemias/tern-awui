@@ -138,6 +138,8 @@ export class Extension {
   ws!: WebSocket;
   inbox: Message[] = [];
   silent = false;
+  /** Whether this fake omp has `/restart`, as its autocomplete answers. */
+  restart = false;
   snapshot: Message;
   constructor(private sandbox: Sandbox, pane = "1", model = "test/initial") {
     this.snapshot = { t: "state", pane, sessionId: sandbox.session, text: "", model, thinking: "medium", status: "working",
@@ -165,6 +167,7 @@ export class Extension {
         if (msg.tier === "invalid") return reply({ error: "this model has no such tier" });
         this.snapshot.tier = msg.tier;
       }
+      if (msg.t === "complete" && msg.text === "/restart") return reply({ prefix: "/restart", items: this.restart ? [{ value: "restart", label: "restart" }] : [] });
       if (msg.t === "complete") return reply({ prefix: "/he", items: [{ value: "/help", label: "help" }] });
       if (msg.t === "apply") return reply(msg.value === "bad" ? {} : { text: "/help " });
       this.send({ ...this.snapshot, seq: msg.seq });

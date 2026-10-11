@@ -1,14 +1,29 @@
 // tern-mobile bridge: mirrors this omp session's prompt draft, model and busy state to the
 // tern-mobile server, and applies drafts and model picks typed on the phone.
 // Loaded by omp from ~/.omp/agent/extensions (symlink); does nothing outside a Tern pane.
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const POLL_MS = 100;
 const RETRY_MS = 5000;
-/** The bridge protocol this extension speaks; the server asks for a restart when it is older. */
-export const PROTOCOL = 1;
+/** The bridge protocol this extension speaks; the server flags whichever side is older. 2: `build`. */
+export const PROTOCOL = 2;
+/**
+ * This file's identity, read once when omp loads it, so a later `git pull` doesn't change what a
+ * running session reports: the first 16 hex digits of its sha256, as the server computes for its
+ * checkout's copy (lib/extension-check.ts `buildId`). omp imports extensions from their real path,
+ * so `import.meta.path` is the repo file for a symlinked install. "" when the file can't be read.
+ */
+export const BUILD = (() => {
+	try {
+		return createHash("sha256").update(readFileSync(import.meta.path ?? fileURLToPath(import.meta.url))).digest("hex").slice(0, 16);
+	} catch {
+		return "";
+	}
+})();
 
 /** The part of omp's Model this bridge reads; the rest varies by provider. */
 type Model = {
@@ -242,6 +257,7 @@ export default function ternMobile(pi: Pi): void {
 			// `-`: no entry (rewound past the first prompt).
 			leaf: ctx.sessionManager.getLeafId ? (ctx.sessionManager.getLeafId() ?? "-") : "",
 			protocol: PROTOCOL,
+			build: BUILD,
 			// What this omp offers beyond the core API; the server and phone turn the rest off.
 			caps: {
 				models: typeof ctx.modelRegistry.getAvailable === "function",

@@ -31,6 +31,14 @@ export function ompDataDir(env: Env, home: string, platform: NodeJS.Platform, ex
 }
 
 /**
+ * Where install.ts puts the omp extension: `extensions/tern-mobile.ts` under `$TERN_MOBILE_OMP_DIR`,
+ * else under ~/.omp/agent (not the XDG data folder).
+ */
+export function installedExtension(env: Env, home: string): string {
+  return join(env.TERN_MOBILE_OMP_DIR ? resolve(env.TERN_MOBILE_OMP_DIR) : join(home, ".omp", "agent"), "extensions", "tern-mobile.ts");
+}
+
+/**
  * Tern's notes (`note:<id>` → `<dir>/<id>.md`); `$TERN_MOBILE_NOTES_DIR` overrides. Linux:
  * `$XDG_STATE_HOME/tern/notes`, else ~/.local/state/tern/notes (verified). macOS and Windows are
  * read off the tern binary's directory lookup (Application Support, %LOCALAPPDATA%, an app

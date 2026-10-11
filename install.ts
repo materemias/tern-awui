@@ -188,15 +188,22 @@ export function psString(s: string): string {
   return `'${s.replaceAll("'", "''")}'`;
 }
 
+export type OurProcesses = { bun: string; server: string; launcher: string };
+
 /**
- * Stops only tern-awui's own processes (the launcher's wscript and the bun it started, which outlives
- * `schtasks /End`), matched by our server.ts / .vbs paths on the command line. Never stops by port: on
- * install, anything still listening afterwards is someone else's, so it fails with a conflict instead.
+ * Stops only tern-awui's own processes: bun (by name or our bun path) with our server.ts as an argument, and
+ * wscript/cscript with our .vbs as an argument (the launcher; its bun outlives `schtasks /End`). Excludes
+ * this helper ($PID), whose own command line contains both paths, and e.g. an editor open on server.ts.
+ * Never stops by port: on install, anything still listening afterwards is someone else's, so it fails instead.
  */
-export function windowsStopScript(port: number, ours: string[], checkConflict: boolean): string {
+export function windowsStopScript(port: number, ours: OurProcesses, checkConflict: boolean): string {
   const lines = [
-    `$ours = @(${ours.map(psString).join(", ")})`,
-    "$mine = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $c = $_.CommandLine; $c -and @($ours | Where-Object { $c.Contains($_) }).Count -gt 0 })",
+    // Paths are case-insensitive on Windows; an argument is the exact path, quoted or space-delimited.
+    "function Test-Arg($c, $p) { $c = $c.ToLowerInvariant(); $p = $p.ToLowerInvariant(); $c.Contains('\"' + $p + '\"') -or $c.EndsWith(' ' + $p) -or $c.Contains(' ' + $p + ' ') }",
+    `$bun = ${psString(ours.bun)}; $server = ${psString(ours.server)}; $vbs = ${psString(ours.launcher)}`,
+    "$mine = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and (" +
+      "(($_.Name -eq 'bun.exe' -or $_.ExecutablePath -eq $bun) -and (Test-Arg $_.CommandLine $server)) -or " +
+      "(@('wscript.exe', 'cscript.exe') -contains $_.Name -and (Test-Arg $_.CommandLine $vbs))) })",
     "$mine | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
   ];
   if (checkConflict) {
@@ -209,7 +216,7 @@ export function windowsStopScript(port: number, ours: string[], checkConflict: b
   return lines.join("; ");
 }
 
-function windowsStopServer(port: number, ours: string[], install: boolean): Action {
+function windowsStopServer(port: number, ours: OurProcesses, install: boolean): Action {
   const ps = windowsStopScript(port, ours, install);
   return { kind: "run", argv: ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps], ...(install ? {} : { mayFail: true }) };
 }
@@ -228,7 +235,7 @@ export function plan(input: PlanInput): Action[] {
   const launcher = p.join(input.configDir, "tern-awui.vbs");
   const taskXml = p.join(input.configDir, "tern-awui-task.xml");
   const endTask: Action = { kind: "run", argv: ["schtasks", "/End", "/TN", TASK_NAME], mayFail: true };
-  const ours = [p.join(input.repo, "server.ts"), launcher];
+  const ours: OurProcesses = { bun: input.bun, server: p.join(input.repo, "server.ts"), launcher };
 
   if (input.uninstall) {
     const service: Action[] =

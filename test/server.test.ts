@@ -1,8 +1,14 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { appendFileSync, chmodSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, copyFileSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { arr, obj } from "../lib/json";
+import { PROTOCOL } from "../lib/bridge-state";
+import { buildId } from "../lib/extension-check";
 import { HASH, T0, Transcript, call } from "./fixtures";
 import { Events, Extension, Sandbox, item, until } from "./server-harness";
+
+const REPO = resolve(import.meta.dir, "..");
+const EXTENSION_SOURCE = `${REPO}/omp-extension/tern-mobile.ts`;
 
 const s = new Sandbox();
 let agent: Extension;
@@ -170,7 +176,7 @@ test("a bridge snapshot creates an agent, reads transcript facts/recap and reord
   expect(item(state, 1).agent).toEqual({ sessionId: s.session, lastPrompt: "Which route?", recap: "Earlier recap", recapStale: true, lastActivity: T0 + 4000, subagents: 0 });
   expect(obj(item(state, 1).live).context).toEqual({ tokens: 40000, window: 200000, percent: 20, compactAt: 80 });
   // A snapshot without them is an extension from before versioning.
-  expect(obj(item(state, 1).live)).toMatchObject({ protocol: 0, caps: null });
+  expect(obj(item(state, 1).live)).toMatchObject({ protocol: 0, caps: null, build: "", mismatch: "older", restart: false });
   expect(state.counts).toEqual({ working: 1, blocked: 0, idle: 0 });
 });
 
@@ -383,6 +389,83 @@ test("reported caps reach the list and refuse rewind, models and tier when off",
   expect((await agent.take("thinking")).level).toBe("high");
   agent.report({ caps: all });
   await until(async () => obj(obj(item(await s.state(), 1).live).caps).rewind === true, "caps restored");
+});
+
+test("the installed extension's status and the fix's checkout reach the list, rechecked as the file changes", async () => {
+  const installed = `${s.home}/.omp/agent/extensions/tern-mobile.ts`;
+  const status = async (want: string) => obj(await until(async () => {
+    s.signal(); // any Tern event rebuilds the list, which rechecks the file
+    const state = await s.state();
+    return obj(state.extension).status === want ? state.extension : null;
+  }, `install ${want}`));
+  expect(await status("missing")).toEqual({ status: "missing", target: "", path: installed, repo: REPO, windows: false });
+  mkdirSync(`${s.home}/.omp/agent/extensions`);
+  symlinkSync(EXTENSION_SOURCE, installed);
+  expect(await status("ok")).toMatchObject({ target: "", repo: REPO });
+  rmSync(installed);
+  writeFileSync(installed, `// before git pull\n${readFileSync(EXTENSION_SOURCE, "utf8")}`);
+  await status("stale");
+  rmSync(installed);
+  writeFileSync(`${s.home}/other-checkout.ts`, readFileSync(EXTENSION_SOURCE));
+  symlinkSync(`${s.home}/other-checkout.ts`, installed);
+  expect(await status("foreign")).toMatchObject({ target: `${s.home}/other-checkout.ts` });
+  rmSync(installed);
+  copyFileSync(EXTENSION_SOURCE, installed);
+  await status("ok");
+});
+
+test("each bridged session is classified against the checkout's build and the server's protocol", async () => {
+  const current = buildId(readFileSync(EXTENSION_SOURCE));
+  const ext = new Extension(s, "4");
+  ext.restart = true;
+  await ext.connect();
+  const live = (want: Record<string, unknown>, description: string) =>
+    until(async () => {
+      const l = obj(item(await s.state(), 4).live);
+      return Object.entries(want).every(([k, v]) => l[k] === v) ? l : null;
+    }, description);
+  // No protocol: from before versioning, so older; its omp's autocomplete offers /restart.
+  await live({ protocol: 0, mismatch: "older", restart: true }, "older, restartable");
+  expect((await ext.take("complete")).text).toBe("/restart");
+  ext.report({ protocol: PROTOCOL, build: current });
+  await live({ build: current, mismatch: null }, "current");
+  ext.report({ build: "0000000000000000" });
+  await live({ build: "0000000000000000", mismatch: "older" }, "another build");
+  ext.report({ protocol: PROTOCOL + 1 });
+  await live({ mismatch: "newer" }, "newer protocol");
+  // A build the extension couldn't read proves nothing.
+  ext.report({ protocol: PROTOCOL, build: "" });
+  await live({ build: "", mismatch: null }, "unknown build");
+  // Asked once per connection, not on every rebuild.
+  expect(ext.inbox.filter((m) => m.t === "complete")).toEqual([]);
+  // Rows without a bridge are never flagged: terminals and notes.
+  const state = await s.state();
+  expect(item(state, 2).live).toBeNull();
+  expect(item(state, 3).live).toBeNull();
+  ext.ws.close();
+  await until(async () => item(await s.state(), 4).live === null, "pane 4 unbridged");
+});
+
+test("an older omp without /restart, or without autocomplete, gets no Reload", async () => {
+  const plain = new Extension(s, "4");
+  await plain.connect();
+  await until(async () => obj(item(await s.state(), 4).live).mismatch === "older", "older session");
+  expect((await plain.take("complete")).text).toBe("/restart");
+  expect(obj(item(await s.state(), 4).live).restart).toBe(false);
+  plain.ws.close();
+  await until(async () => item(await s.state(), 4).live === null, "pane 4 unbridged");
+  const noCompletion = new Extension(s, "4");
+  noCompletion.restart = true;
+  Object.assign(noCompletion.snapshot, { protocol: 1, caps: { models: true, tiers: true, jobs: true, queue: true, rewind: true, btw: true, complete: false, levels: true } });
+  await noCompletion.connect();
+  await until(async () => obj(item(await s.state(), 4).live).mismatch === "older", "older session without completion");
+  // A probe would have gone out with that rebuild; anything the server sends later arrives after it.
+  await s.action(4, "thinking", { level: "high" });
+  await noCompletion.take("thinking");
+  expect(noCompletion.inbox.filter((m) => m.t === "complete")).toEqual([]);
+  expect(obj(item(await s.state(), 4).live).restart).toBe(false);
+  noCompletion.ws.close();
+  await until(async () => item(await s.state(), 4).live === null, "pane 4 unbridged");
 });
 
 test("completion, side question and abort endpoints speak the extension protocol", async () => {

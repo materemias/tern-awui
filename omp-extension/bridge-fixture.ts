@@ -10,7 +10,7 @@ export type State = {
 	levels: string[]; jobs: unknown[]; queued: unknown[]; leaf: string; status: string; tier: string;
 	context: { tokens: number; window: number; percent: number }; models: CatalogModel[];
 	items: Completion[]; done: boolean;
-	protocol: number;
+	protocol: number; build: string;
 	caps: Record<"models" | "tiers" | "jobs" | "queue" | "rewind" | "btw" | "complete" | "levels", boolean>;
 };
 export type RpcFrame = {

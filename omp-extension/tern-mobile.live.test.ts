@@ -3,8 +3,11 @@
 // rpc-ui keeps hasUI=true; --no-session and a temp cwd keep the session disposable.
 // RPC has no editor/autocomplete provider, so completion's empty fallback is asserted.
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { bridgeFixture, Inbox, type RpcFrame } from "./bridge-fixture";
+import { PROTOCOL } from "./tern-mobile";
+import { buildId } from "../lib/extension-check";
 
 const enabled = process.env.TERN_AWUI_LIVE === "1" && Bun.which("omp") !== null;
 test.skipIf(!enabled)("real omp: bridge state, pi-ai capabilities, model catalog/switch, thinking and rewind", async () => {
@@ -49,7 +52,9 @@ test.skipIf(!enabled)("real omp: bridge state, pi-ai capabilities, model catalog
 		expect(initial.sessionId).toMatch(/^[a-f0-9-]{36}$/i);
 		expect(initial.model).toMatch(/^[^/]+\/.+/);
 		expect(initial.status).toBe("idle");
-		expect(initial.protocol).toBe(1);
+		expect(initial.protocol).toBe(PROTOCOL);
+		// omp's loader gives the extension its real path: the build is this file's.
+		expect(initial.build).toBe(buildId(readFileSync(resolve(import.meta.dir, "tern-mobile.ts"))));
 		expect(initial.caps).toEqual({ models: true, tiers: true, jobs: true, queue: true, rewind: true, btw: true, complete: false, levels: true });
 		expect(bridge.connections[0].data.token).toBe("test-bridge-secret");
 		const realState = await request({ type: "get_state" });

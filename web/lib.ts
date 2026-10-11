@@ -1,5 +1,5 @@
 // The app's pure logic: formatting, list filtering, model search, and the payloads it sends.
-import type { AskQuestion, Caps, CatalogModel, Item, Job, Live, Project, Role, TodoPhase } from "./api";
+import type { AskQuestion, Caps, CatalogModel, Install, Item, Job, Live, Project, Role, TodoPhase } from "./api";
 
 // ---------- formatting ----------
 
@@ -78,9 +78,6 @@ export function currentRole(roles: Role[], model: string, thinking: string): str
 
 // ---------- the bridge ----------
 
-/** The bridge protocol this client speaks; an omp reporting less runs an outdated extension. */
-export const PROTOCOL = 1;
-
 /**
  * Whether the session's omp supports `cap`. Without a bridge nothing works; an extension from
  * before feature detection (no caps) is taken to support everything, as it did.
@@ -91,9 +88,69 @@ export function can(live: Live | null | undefined, cap: keyof Caps): boolean {
   return live.caps === null || live.caps[cap] === true;
 }
 
-/** A bridged omp whose extension predates this client's protocol: restarting it loads the new one. */
-export function extensionOutdated(live: Live | null | undefined): boolean {
-  return !!live && live.protocol < PROTOCOL;
+// ---------- the extension ----------
+
+/** One argument of a POSIX shell or PowerShell command, quoted only when it needs it. */
+export function shellArg(value: string, windows: boolean): string {
+  if (/^[\w@%+=:,./\\~-]+$/.test(value)) return value;
+  return windows ? `'${value.replaceAll("'", "''")}'` : `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
+/** Commands run in the checkout: `&&` in a POSIX shell; Windows PowerShell 5.1 has no `&&`, so `;` there. */
+function inRepo(install: Install, ...steps: string[]): string {
+  return [`cd ${shellArg(install.repo, install.windows)}`, ...steps].join(install.windows ? "; " : " && ");
+}
+
+/** What to tell the user, the command that fixes it, and whether a Reload button can (omp's `/restart`). */
+export type Notice = { text: string; command: string | null; reload: boolean };
+
+/** The list's banner when omp's extension file isn't this checkout's: the installer puts it right. */
+export function installNotice(install: Install): Notice | null {
+  if (install.status === "ok") return null;
+  const problem = {
+    missing: `No tern-mobile extension at ${install.path}, so omp sessions don't connect to tern-mobile.`,
+    stale: `The tern-mobile extension at ${install.path} is an outdated copy.`,
+    foreign: `The tern-mobile extension at ${install.path} links to ${install.target}, not this checkout.`,
+  }[install.status];
+  return {
+    text: `${problem} Install it from the checkout (running omp sessions load it once restarted):`,
+    command: inRepo(install, "bun install.ts"),
+    reload: false,
+  };
+}
+
+/**
+ * A session's notice when its extension isn't the server's. `newer`: the server is behind, so
+ * tern-awui gets updated. `older`: omp loaded the extension before the checkout changed, so omp
+ * restarts: Reload (omp's `/restart`, offered when this omp has it and is idle, the installed file
+ * being current), else quitting and resuming by hand. Sessions without a bridge get none.
+ */
+export function sessionNotice(item: Item, install: Install): Notice | null {
+  const live = item.live;
+  if (!live?.mismatch) return null;
+  if (live.mismatch === "newer")
+    return {
+      text: "This omp runs a newer tern-mobile extension than the server. Update tern-awui:",
+      command: inRepo(install, "git pull", "bun install.ts"),
+      reload: false,
+    };
+  const older = "This omp loaded an older tern-mobile extension than the checkout's, so some of it may not work from here.";
+  if (install.status !== "ok")
+    return { text: `${older} The installed file is outdated too: reinstall it, then restart this omp.`, command: inRepo(install, "bun install.ts"), reload: false };
+  if (live.restart) {
+    const idle = item.status === "idle";
+    return {
+      text: `${older} Reload restarts omp in this pane with /restart and resumes the session${idle ? "." : " (once it is idle)."}`,
+      command: null,
+      reload: idle,
+    };
+  }
+  const id = item.agent?.sessionId;
+  return {
+    text: `${older} Quit omp in this pane and start it again; this continues the session:`,
+    command: id ? `omp --resume ${shellArg(id, install.windows)}` : "omp --continue",
+    reload: false,
+  };
 }
 
 // ---------- routes ----------

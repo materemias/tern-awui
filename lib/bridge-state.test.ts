@@ -18,7 +18,8 @@ const snapshot = {
   queued: [{ text: "steer", followUp: false }, { text: "later", followUp: true }],
   jobs: [{ id: "bg_1", type: "task", label: "Scout", agent: "scout", since: 5 }],
   leaf: "e012",
-  protocol: 1,
+  protocol: 2,
+  build: "0123456789abcdef",
   caps: { models: true, tiers: false, jobs: true, queue: true, rewind: true, btw: true, complete: true, levels: true },
 };
 
@@ -38,7 +39,8 @@ describe("parseBridgeState", () => {
       queued: snapshot.queued,
       jobs: snapshot.jobs,
       leaf: "e012",
-      protocol: 1,
+      protocol: 2,
+      build: "0123456789abcdef",
       caps: snapshot.caps,
     });
   });
@@ -76,12 +78,13 @@ describe("parseBridgeState", () => {
     expect(s.tiers).toEqual(["", ""]);
   });
 
-  test("an extension from before versioning: protocol 0, no caps", () => {
-    const { protocol: _p, caps: _c, ...older } = snapshot;
+  test("an extension from before versioning: protocol 0, no caps, no build", () => {
+    const { protocol: _p, caps: _c, build: _b, ...older } = snapshot;
     const s = parseBridgeState(older, fresh, 1);
     expect(s.protocol).toBe(0);
     expect(s.caps).toBeNull();
-    expect(parseBridgeState({ ...snapshot, caps: [true], protocol: "2" }, fresh, 1)).toMatchObject({ caps: null, protocol: 0 });
+    expect(s.build).toBe("");
+    expect(parseBridgeState({ ...snapshot, caps: [true], protocol: "2", build: 7 }, fresh, 1)).toMatchObject({ caps: null, protocol: 0, build: "" });
   });
 
   test("caps keep the known names; unnamed or non-true caps are unsupported, extras dropped", () => {
@@ -103,7 +106,8 @@ describe("listChanged", () => {
     expect(changed({ context: null })).toBe(true);
     expect(changed({ sessionId: "other" })).toBe(true);
     expect(changed({ jobs: [] })).toBe(true);
-    expect(changed({ protocol: 2 })).toBe(true);
+    expect(changed({ protocol: 3 })).toBe(true);
+    expect(changed({ build: "fedcba9876543210" })).toBe(true);
     expect(changed({ caps: { ...base.caps!, rewind: false } })).toBe(true);
     expect(changed({ caps: null })).toBe(true);
   });

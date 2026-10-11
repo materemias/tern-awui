@@ -9,7 +9,6 @@ import {
   composerKey,
   ctxShort,
   currentRole,
-  extensionOutdated,
   fitEdge,
   folderLabel,
   isOld,
@@ -36,6 +35,7 @@ import {
 import { Chat, Markdown } from "./chat";
 import { screenHtml } from "./markdown";
 import { buzz, Dot } from "./parts";
+import { ExtensionBanner, ExtensionNotice } from "./extension";
 import { JobsStrip, SubagentChat, SubagentList } from "./subagents";
 
 /** The app icon counts updates not seen yet: finished turns and waits on you. */
@@ -250,6 +250,11 @@ function Row({ item, now, selected }: { item: Item; now: number; selected?: bool
       </div>
       {/* Like Tern's tab icon: an unseen update colors the row's icon; rows without one get a dot. */}
       {item.unseen && !iconOf(item) && <span class={`new-dot new-${item.unseen}`} title="New since you last looked" />}
+      {item.live?.mismatch && (
+        <span class="ext-mark" title={`Runs ${item.live.mismatch === "newer" ? "a newer" : "an older"} tern-mobile extension: open it for the fix`}>
+          !
+        </span>
+      )}
       <span class={`age${state === "working" ? " age-hot" : state === "blocked" ? " age-blocked" : ""}`}>
         {item.status ? age(item.since, now) : ""}
       </span>
@@ -412,6 +417,8 @@ function Home({ wide = false, selected = null }: { wide?: boolean; selected?: st
     setHideOld(!hideOld);
   }
   const oldCount = state ? state.projects.reduce((n, p) => n + p.items.filter((i) => isOld(i, now, selected)).length, 0) : 0;
+  // Sessions whose omp runs another extension build than the server's (rows marked with !).
+  const outdated = state ? state.projects.reduce((n, p) => n + p.items.filter((i) => i.live?.mismatch).length, 0) : 0;
   const projects = useMemo(
     () => (state ? listProjects(state.projects, needle, hideOld, now, selected) : []),
     [state, needle, hideOld, now, selected],
@@ -453,6 +460,15 @@ function Home({ wide = false, selected = null }: { wide?: boolean; selected?: st
         <span class="spacer" />
         {state && (
           <span class="counts">
+            {outdated > 0 && (
+              <span
+                class="ext-chip"
+                title={`${outdated === 1 ? "1 session runs" : `${outdated} sessions run`} another tern-mobile extension than the server (marked !)`}
+              >
+                <b>!</b>
+                {outdated}
+              </span>
+            )}
             {state.counts.blocked > 0 && <span class="c-blocked">{state.counts.blocked} blocked</span>}
             <span class="c-working">{state.counts.working ?? 0} working</span>
             <span class="muted">{state.counts.idle ?? 0} idle</span>
@@ -500,6 +516,7 @@ function Home({ wide = false, selected = null }: { wide?: boolean; selected?: st
       </div>
       <main class="list">
         {!state && <div class="empty">Connecting…</div>}
+        {state && <ExtensionBanner install={state.extension} />}
         {projects.map((p) => {
           // A filter shows its matches even in collapsed projects.
           const shut = collapsed.has(p.name) && !needle;
@@ -1294,7 +1311,6 @@ function Session({ block }: { block: string }) {
             )}
             {!online && <span class="c-blocked">offline</span>}
           </div>
-          {extensionOutdated(item?.live) && <div class="muted small">extension outdated — restart this omp</div>}
         </div>
         <button class="ghost" title="Show this pane on the desktop" onClick={() => post(`/api/blocks/${block}/focus`, {})}>
           ⌖
@@ -1317,6 +1333,7 @@ function Session({ block }: { block: string }) {
           </button>
         )}
       </header>
+      {item && state && <ExtensionNotice item={item} install={state.extension} />}
       <div
         class="scroll"
         ref={scroller}

@@ -10,6 +10,7 @@
   --working: #3fcf8e;
   --blocked: #ff5d5d;
   --idle: #6b7280;
+  --warn: #e5b454;
   --claude: #e8915b;
   --gpt: #b392f0;
   /* The symbols font fills in prompt glyphs (powerline, Nerd Font icons) the phone lacks. */
@@ -262,6 +263,7 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
   .desk-main .scroll { padding-inline: max(24px, calc((100% - 780px) / 2)); }
   .desk-main .composer-wrap { padding-inline: max(16px, calc((100% - 804px) / 2)); }
   .desk-main .session-bar { padding-inline: max(16px, calc((100% - 804px) / 2)); }
+  .desk-main .ext-session { margin-inline: max(12px, calc((100% - 780px) / 2)); }
 }
 
 /* Images pasted into the composer, waiting to be sent. */
@@ -346,6 +348,20 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 /* Hide-old toggle: how many sessions it hides. */
 .icon-btn { position: relative; }
 .icon-count { position: absolute; top: 1px; right: 0; min-width: 14px; padding: 0 3px; border-radius: 7px; background: var(--raise); border: 1px solid var(--line); color: var(--muted); font: 600 9.5px/12px var(--mono); }
+
+/* The extension doesn't match the server: a banner on the list, a notice under a session's header,
+   a chip in the list header counting such sessions and a mark on their rows. */
+.ext-note { margin: 10px 12px 2px; padding: 9px 11px; border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--warn) 8%, var(--panel)); font-size: 13px; line-height: 1.4; }
+.ext-note p { margin: 0; }
+.ext-session { margin: 8px 12px 0; }
+.ext-cmd { display: flex; align-items: flex-start; gap: 8px; margin-top: 7px; }
+/* Wraps rather than scrolls, so the whole command shows on a phone; one tap selects all of it. */
+.ext-cmd code { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; padding: 6px 8px; border-radius: 6px; background: var(--bg); font: 12px/1.4 var(--mono); user-select: all; }
+.ext-cmd button, .ext-reload { flex: none; border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px; background: var(--raise); color: var(--fg); font-size: 12.5px; }
+.ext-reload { display: block; margin-top: 8px; border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); color: var(--warn); }
+.ext-chip { display: inline-flex; align-items: center; gap: 4px; padding: 0 7px; border-radius: 999px; background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); font-weight: 600; font-variant-numeric: tabular-nums; }
+.ext-chip b { font: 700 11px/1 var(--mono); }
+.ext-mark { flex: none; align-self: flex-start; display: grid; place-items: center; width: 15px; height: 15px; margin-top: 2px; border-radius: 50%; background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); font: 700 10px/1 var(--mono); }
 
 /* Sheets: a bottom sheet on phones, capped in width and height everywhere so a desktop window
    gets a panel, not a full-width strip. */

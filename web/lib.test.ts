@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { checkPaired, type Caps, type CatalogModel, type Item, type Job, type Live, type Project, type Role } from "./api";
+import { checkPaired, type Caps, type CatalogModel, type Install, type Item, type Job, type Live, type Project, type Role } from "./api";
 import {
   OLD_MS,
   age,
@@ -13,10 +13,10 @@ import {
   ctxShort,
   currentRole,
   duration,
-  extensionOutdated,
   fitEdge,
   folderLabel,
   isAbove,
+  installNotice,
   isOld,
   jobsSummary,
   langOf,
@@ -32,6 +32,8 @@ import {
   priceShort,
   routeHash,
   rowText,
+  sessionNotice,
+  shellArg,
   searchModels,
   todoSummary,
   toggled,
@@ -203,20 +205,24 @@ describe("currentRole", () => {
   });
 });
 
+const caps: Caps = { models: true, tiers: true, jobs: true, queue: true, rewind: true, btw: true, complete: true, levels: true };
+const live = (over: Partial<Live> = {}): Live => ({
+  model: "anthropic/claude-opus-5-5",
+  thinking: "medium",
+  levels: [],
+  tiers: [],
+  tier: "",
+  context: null,
+  jobs: [],
+  protocol: 2,
+  caps,
+  build: "0123456789abcdef",
+  mismatch: null,
+  restart: false,
+  ...over,
+});
+
 describe("bridge capabilities", () => {
-  const caps: Caps = { models: true, tiers: true, jobs: true, queue: true, rewind: true, btw: true, complete: true, levels: true };
-  const live = (over: Partial<Live> = {}): Live => ({
-    model: "anthropic/claude-opus-5-5",
-    thinking: "medium",
-    levels: [],
-    tiers: [],
-    tier: "",
-    context: null,
-    jobs: [],
-    protocol: 1,
-    caps,
-    ...over,
-  });
   test("a reported cap decides, per feature", () => {
     const l = live({ caps: { ...caps, rewind: false, btw: false } });
     expect(can(l, "rewind")).toBe(false);
@@ -235,12 +241,82 @@ describe("bridge capabilities", () => {
     const { complete: _, ...older } = caps;
     expect(can(live({ caps: older as Caps }), "complete")).toBe(false);
   });
-  test("outdated only for a bridged omp below protocol 1", () => {
-    expect(extensionOutdated(live({ protocol: 0, caps: null }))).toBe(true);
-    expect(extensionOutdated(live({ protocol: 1 }))).toBe(false);
-    expect(extensionOutdated(live({ protocol: 2 }))).toBe(false);
-    expect(extensionOutdated(null)).toBe(false);
-    expect(extensionOutdated(undefined)).toBe(false);
+});
+
+describe("extension notices", () => {
+  const install = (over: Partial<Install> = {}): Install => ({
+    status: "ok",
+    path: "/home/u/.omp/agent/extensions/tern-mobile.ts",
+    target: "",
+    repo: "/home/u/code/tern-awui",
+    windows: false,
+    ...over,
+  });
+  const session = (over: Partial<Live>, status = "idle") => item({ status, agent: agent({ sessionId: "019a-c0de" }), live: live(over) });
+
+  test("an installed file that is this checkout's gets no banner", () => {
+    expect(installNotice(install())).toBeNull();
+  });
+  test("missing, stale and foreign installs say what's wrong and run the installer in the checkout", () => {
+    const fix = "cd /home/u/code/tern-awui && bun install.ts";
+    expect(installNotice(install({ status: "missing" }))).toEqual({
+      text: "No tern-mobile extension at /home/u/.omp/agent/extensions/tern-mobile.ts, so omp sessions don't connect to tern-mobile. Install it from the checkout (running omp sessions load it once restarted):",
+      command: fix,
+      reload: false,
+    });
+    expect(installNotice(install({ status: "stale" }))).toMatchObject({ text: expect.stringContaining("is an outdated copy"), command: fix });
+    expect(installNotice(install({ status: "foreign", target: "/home/u/old/tern-awui/omp-extension/tern-mobile.ts" }))).toMatchObject({
+      text: expect.stringContaining("links to /home/u/old/tern-awui/omp-extension/tern-mobile.ts, not this checkout"),
+      command: fix,
+    });
+  });
+  test("the fix quotes an odd checkout path for its shell; Windows gets PowerShell's form", () => {
+    expect(installNotice(install({ status: "missing", repo: "/home/u/My Code/it's" }))?.command).toBe("cd '/home/u/My Code/it'\\''s' && bun install.ts");
+    expect(installNotice(install({ status: "stale", repo: "C:\\Users\\Ann\\My Code\\tern-awui", windows: true }))?.command).toBe(
+      "cd 'C:\\Users\\Ann\\My Code\\tern-awui'; bun install.ts",
+    );
+    expect(installNotice(install({ status: "stale", repo: "C:\\Users\\Ann\\tern-awui", windows: true }))?.command).toBe("cd C:\\Users\\Ann\\tern-awui; bun install.ts");
+    expect(shellArg("C:\\Ann's", true)).toBe("'C:\\Ann''s'");
+  });
+
+  test("matching sessions and sessions without a bridge get none", () => {
+    expect(sessionNotice(session({}), install())).toBeNull();
+    expect(sessionNotice(item({ status: null }), install())).toBeNull();
+  });
+  test("an older extension in an omp with /restart: Reload, offered only while idle", () => {
+    const idle = sessionNotice(session({ mismatch: "older", restart: true }), install());
+    expect(idle).toEqual({
+      text: "This omp loaded an older tern-mobile extension than the checkout's, so some of it may not work from here. Reload restarts omp in this pane with /restart and resumes the session.",
+      command: null,
+      reload: true,
+    });
+    for (const status of ["working", "blocked"]) {
+      const busy = sessionNotice(session({ mismatch: "older", restart: true }, status), install());
+      expect(busy).toMatchObject({ reload: false, command: null, text: expect.stringContaining("(once it is idle).") });
+    }
+  });
+  test("an older extension in an omp without /restart: quit and resume this session by id", () => {
+    expect(sessionNotice(session({ mismatch: "older" }), install())).toEqual({
+      text: "This omp loaded an older tern-mobile extension than the checkout's, so some of it may not work from here. Quit omp in this pane and start it again; this continues the session:",
+      command: "omp --resume 019a-c0de",
+      reload: false,
+    });
+    expect(sessionNotice(item({ status: "idle", live: live({ mismatch: "older" }) }), install())?.command).toBe("omp --continue");
+  });
+  test("an older extension while the installed file is outdated too: reinstall first, no Reload", () => {
+    expect(sessionNotice(session({ mismatch: "older", restart: true }), install({ status: "stale" }))).toMatchObject({
+      text: expect.stringContaining("The installed file is outdated too: reinstall it, then restart this omp."),
+      command: "cd /home/u/code/tern-awui && bun install.ts",
+      reload: false,
+    });
+  });
+  test("a newer extension than the server: update tern-awui", () => {
+    expect(sessionNotice(session({ mismatch: "newer", restart: true }), install())).toEqual({
+      text: "This omp runs a newer tern-mobile extension than the server. Update tern-awui:",
+      command: "cd /home/u/code/tern-awui && git pull && bun install.ts",
+      reload: false,
+    });
+    expect(sessionNotice(session({ mismatch: "newer" }), install({ windows: true, repo: "C:\\tern-awui" }))?.command).toBe("cd C:\\tern-awui; git pull; bun install.ts");
   });
 });
 

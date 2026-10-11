@@ -25,6 +25,15 @@ export type Live = {
   protocol: number;
   /** What this omp supports, from its feature detection; null (older extension) means everything. */
   caps: Caps | null;
+  /** The extension's build id; "" when it reported none. */
+  build: string;
+  /**
+   * How this session's extension differs from the server's: `older` (omp loaded it before the
+   * checkout changed; restarting omp loads the installed one), `newer` (the server is older); null: same.
+   */
+  mismatch: "older" | "newer" | null;
+  /** This omp has `/restart` (restarts it in its pane, resuming the session); asked only when `older`. */
+  restart: boolean;
 };
 export type Caps = {
   models: boolean;
@@ -66,7 +75,15 @@ export type State = {
   /** Unseen updates across sessions. */
   badge: number;
   at: number;
+  /** The extension file omp loads (`<omp dir>/extensions/tern-mobile.ts`) against this checkout. */
+  extension: Install;
 };
+/**
+ * `ok`: a link to the checkout's file or an identical copy; `missing`; `stale`: a copy that differs;
+ * `foreign`: a link to another file (`target`). `repo`: the checkout, where `bun install.ts` fixes it;
+ * `windows`: the fix is a PowerShell command.
+ */
+export type Install = { status: "ok" | "missing" | "stale" | "foreign"; path: string; target: string; repo: string; windows: boolean };
 /** A side question's answer as it streams from omp (`done` once complete). */
 export type Btw = { id: string; question: string; text: string; done: boolean; error: string };
 

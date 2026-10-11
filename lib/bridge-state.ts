@@ -2,6 +2,12 @@
 
 import { arr, num, obj, str, type Obj } from "./json";
 
+/**
+ * The bridge protocol this server speaks; omp-extension/tern-mobile.ts declares the same (a test
+ * keeps them equal). 2: the extension reports its `build`.
+ */
+export const PROTOCOL = 2;
+
 /** `status`: blocked while an ask dialog or tool approval waits on the user; `since` when it last changed. */
 export type BridgeState = {
   sessionId: string;
@@ -24,6 +30,8 @@ export type BridgeState = {
   tier: string;
   /** The extension's bridge protocol; 0 for extensions from before versioning. */
   protocol: number;
+  /** The extension's build id (see lib/extension-check.ts); "" when it sent none or couldn't read its file. */
+  build: string;
   /** What this omp supports, from the extension's feature detection; null when it sent none. */
   caps: Caps | null;
 };
@@ -35,7 +43,7 @@ export type Caps = Record<(typeof CAPS)[number], boolean>;
 
 /** A connection that hasn't reported yet. */
 export function emptyState(now: number): BridgeState {
-  return { sessionId: "", text: "", model: "", thinking: "", status: "", since: now, context: null, queued: [], jobs: [], leaf: "", levels: [], tiers: [], tier: "", protocol: 0, caps: null };
+  return { sessionId: "", text: "", model: "", thinking: "", status: "", since: now, context: null, queued: [], jobs: [], leaf: "", levels: [], tiers: [], tier: "", protocol: 0, build: "", caps: null };
 }
 
 /** The reported caps; a cap the extension doesn't name (or names oddly) is unsupported. */
@@ -72,6 +80,7 @@ export function parseBridgeState(msg: Obj, before: BridgeState, now: number): Br
       .filter((j) => j.id),
     leaf: str(msg.leaf),
     protocol: num(msg.protocol),
+    build: str(msg.build),
     caps: parseCaps(msg.caps),
   };
 }
@@ -86,6 +95,7 @@ export function listChanged(before: BridgeState, after: BridgeState): boolean {
     before.context?.percent !== after.context?.percent ||
     before.sessionId !== after.sessionId ||
     before.protocol !== after.protocol ||
+    before.build !== after.build ||
     JSON.stringify(before.caps) !== JSON.stringify(after.caps) ||
     JSON.stringify(before.jobs) !== JSON.stringify(after.jobs)
   );

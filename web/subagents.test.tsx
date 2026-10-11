@@ -33,7 +33,7 @@ function item(jobs: Job[]): Item {
     project: "w",
     branch: null,
     agent: { sessionId: "s", lastPrompt: "", recap: "", recapStale: false, lastActivity: 0, subagents: 2 },
-    live: { model: "m", thinking: "", levels: [], tiers: [], tier: "", context: null, jobs, protocol: 1, caps: null },
+    live: { model: "m", thinking: "", levels: [], tiers: [], tier: "", context: null, jobs, protocol: 2, caps: null, build: "", mismatch: null, restart: false },
     status: "working",
     since: NOW,
     doc: null,

@@ -20,8 +20,9 @@ import { compactAtPercent, type Compaction } from "./lib/compaction";
 import { branchOf, projectOf } from "./lib/git";
 import { queryRecaps } from "./lib/recaps";
 import { answerSteps, KEYS, promptImages, type PromptImage } from "./lib/input";
-import { emptyState, listChanged, parseBridgeState, type BridgeState, type Caps, type Context, type Job } from "./lib/bridge-state";
-import { configDir, ompDataDir, ternNotesDir } from "./lib/paths";
+import { emptyState, listChanged, parseBridgeState, PROTOCOL, type BridgeState, type Caps, type Context, type Job } from "./lib/bridge-state";
+import { extensionCheck, offersCommand, sessionMismatch, type InstallStatus, type Mismatch } from "./lib/extension-check";
+import { configDir, installedExtension, ompDataDir, ternNotesDir } from "./lib/paths";
 import { cookieValue, ensureToken, PAIR_COOKIE, sameToken } from "./lib/auth";
 import { recentProjects } from "./lib/projects";
 import { vapidSubject } from "./lib/push";
@@ -51,6 +52,11 @@ const DIST = fileURLToPath(new URL("./dist/", import.meta.url));
 /** Browsers cap cookie lifetimes at 400 days. */
 const PAIR_MAX_AGE_S = 400 * 24 * 3600;
 
+/** This checkout. The phone shows it in the command that (re)installs the extension. */
+const REPO = import.meta.dir;
+/** Where omp loads the extension from, and the checkout's file it should be (or link to). */
+const INSTALLED_EXTENSION = installedExtension(process.env, HOME);
+const extension = extensionCheck(INSTALLED_EXTENSION, join(REPO, "omp-extension", "tern-mobile.ts"));
 /** The list is rebuilt on events (Tern, bridges, history.db); this is only the cache's backstop. */
 const STATE_TTL_MS = 15_000;
 /** Events arriving within this window share one rebuild. */
@@ -180,6 +186,8 @@ type Bridge = {
   waiting: Map<number, (reply: Obj) => void>;
   /** The assistant message omp is writing right now, while a phone watches; null between messages. */
   live: { text: string; done: boolean } | null;
+  /** Whether this omp has `/restart`, asked once its extension turns out older (see `askRestart`). */
+  restart: "unasked" | "asking" | boolean;
 };
 const bridges = new Map<string, Bridge>();
 /** The phones watching each pane: draft, live text and btw events go to them as they happen. */
@@ -236,6 +244,21 @@ function bridgeRequest(b: Bridge, msg: Obj): Promise<Obj | null> {
   });
   b.ws.send(JSON.stringify({ ...msg, seq }));
   return promise;
+}
+
+/**
+ * Asks whether a session's omp has `/restart` (restarts omp in its pane, resuming the session, so
+ * the installed extension loads): its own autocomplete, which every extension version answers
+ * (an unknown request gets a snapshot, which offers nothing). Once per connection; the list
+ * updates when the answer is yes.
+ */
+function askRestart(b: Bridge) {
+  if (b.restart !== "unasked" || b.state.caps?.complete === false) return;
+  b.restart = "asking";
+  void bridgeRequest(b, { t: "complete", text: "/restart" }).then((reply) => {
+    b.restart = offersCommand(reply, "restart");
+    if (b.restart) invalidateState();
+  });
 }
 
 /** `omp config get KEY` as parsed JSON; null when omp is missing or the key is unset. */
@@ -314,6 +337,12 @@ type Item = {
     /** The extension's bridge protocol (0: older than versioning) and its feature caps (null: none sent). */
     protocol: number;
     caps: Caps | null;
+    /** The extension's build id; "" when it reported none. */
+    build: string;
+    /** How the extension differs from this server's (lib/extension-check.ts); null when it matches. */
+    mismatch: Mismatch | null;
+    /** This omp has `/restart`, which reloads the extension in place (asked only when `older`). */
+    restart: boolean;
   } | null;
   /** working / blocked / idle, from the session's bridge; null without one. */
   status: string | null;
@@ -332,6 +361,18 @@ type State = {
   /** Unseen updates across sessions: the app icon's badge. */
   badge: number;
   at: number;
+  /** The extension as installed for omp; the phone shows a banner unless `ok`. */
+  extension: {
+    status: InstallStatus;
+    /** `<omp dir>/extensions/tern-mobile.ts`. */
+    path: string;
+    /** Where a `foreign` link points. */
+    target: string;
+    /** This checkout, where `bun install.ts` fixes it. */
+    repo: string;
+    /** The fix is a PowerShell command. */
+    windows: boolean;
+  };
 };
 
 // Nerd-font icons live in the private use areas; the app ships the symbols font for them.
@@ -395,6 +436,8 @@ async function buildState(): Promise<State> {
   } catch {}
   const groups = new Map<string, Item[]>();
   const counts: Record<string, number> = { working: 0, blocked: 0, idle: 0 };
+  // What a session's extension should be: this server's protocol and the checkout's file.
+  const current = { protocol: PROTOCOL, build: extension.build() };
   for (const s of arr(tree.sessions).map(obj))
     for (const t of arr(s.tabs).map(obj))
       for (const b of arr(t.blocks).map(obj)) {
@@ -414,6 +457,9 @@ async function buildState(): Promise<State> {
         // The bridge's clock starts at its connect; an idle session dates from its last entry.
         const since = status === "idle" && agent?.lastActivity ? agent.lastActivity : (bridge?.state.since ?? 0);
         if (status) counts[status] = (counts[status] ?? 0) + 1;
+        // A bridge that hasn't reported yet (no status) has nothing to compare.
+        const mismatch = bridge?.state.status ? sessionMismatch(bridge.state, current) : null;
+        if (bridge && mismatch === "older") askRestart(bridge);
         const list = groups.get(project) ?? [];
         list.push({
           block: id,
@@ -435,6 +481,9 @@ async function buildState(): Promise<State> {
                 jobs: bridge.state.jobs,
                 protocol: bridge.state.protocol,
                 caps: bridge.state.caps,
+                build: bridge.state.build,
+                mismatch,
+                restart: bridge.restart === true,
               }
             : null,
           status,
@@ -452,7 +501,14 @@ async function buildState(): Promise<State> {
   const activity = (i: Item) => i.since;
   const projects = [...groups].map(([name, items]) => ({ name, items: items.sort((x, y) => activity(y) - activity(x)) }));
   projects.sort((x, y) => activity(y.items[0]) - activity(x.items[0]));
-  return { projects, counts, roles: modelRoles(), badge: unseen.size, at: Date.now() };
+  return {
+    projects,
+    counts,
+    roles: modelRoles(),
+    badge: unseen.size,
+    at: Date.now(),
+    extension: { ...extension.install(), path: INSTALLED_EXTENSION, repo: REPO, windows: process.platform === "win32" },
+  };
 }
 
 let stateCache: { at: number; value: Promise<State> } | null = null;
@@ -688,7 +744,7 @@ function stream(req: Request, block: string | null, view: string, sub: string | 
 
         const step = async () => {
           const s = await getState();
-          const key = JSON.stringify([s.projects, s.counts, s.roles]);
+          const key = JSON.stringify([s.projects, s.counts, s.roles, s.extension]);
           if (key !== lastState) {
             lastState = key;
             send("state", s);
@@ -994,6 +1050,7 @@ function registerBridge(pane: string, ws: ServerWebSocket<{ pane: string | null 
     state: emptyState(Date.now()),
     waiting: new Map(),
     live: null,
+    restart: "unasked",
   });
   invalidateState();
   // A fresh connection starts unwatched; tell it if a phone already looks at this pane.

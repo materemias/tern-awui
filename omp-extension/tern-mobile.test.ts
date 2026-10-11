@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test, setSystemTime, jest } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import ternMobile from "./tern-mobile";
+import ternMobile, { BUILD, PROTOCOL } from "./tern-mobile";
 import { bridgeFixture, type Completion } from "./bridge-fixture";
+import { PROTOCOL as SERVER_PROTOCOL } from "../lib/bridge-state";
+import { buildId } from "../lib/extension-check";
 
 type Model = { provider: string; id: string; name?: string; reasoning?: boolean; api?: string; contextWindow?: number; input?: string[]; cost?: { input: number; output: number } };
 type Handler = (...args: unknown[]) => unknown;
@@ -24,8 +27,8 @@ afterEach(() => {
 	}
 });
 function advance(ms: number) { now += ms; setSystemTime(now); }
-/** `configDir`: no file override; the token sits in `$TERN_MOBILE_CONFIG/bridge-token`. */
-function fixture(options: { pane?: boolean; hasUI?: boolean; sub?: boolean; configDir?: boolean } = {}) {
+/** `configDir`: no file override; the token sits in `$TERN_MOBILE_CONFIG/bridge-token`. `factory`: another copy of the extension. */
+function fixture(options: { pane?: boolean; hasUI?: boolean; sub?: boolean; configDir?: boolean; factory?: typeof ternMobile } = {}) {
 	const bridge = bridgeFixture();
 	cleanup.push(() => bridge.close());
 	process.env.TERN_PANE = "test-pane";
@@ -90,7 +93,7 @@ function fixture(options: { pane?: boolean; hasUI?: boolean; sub?: boolean; conf
 	};
 	// Event names determine handler argument types in omp; the recorder stores them uniformly.
 	const api = pi as unknown as Parameters<typeof ternMobile>[0];
-	ternMobile(api);
+	(options.factory ?? ternMobile)(api);
 	cleanup.push(() => handlers.get("session_shutdown")?.({}, ctx));
 	return {
 		bridge, state, ctx, pi, handlers, commands, provider,
@@ -118,7 +121,7 @@ describe("omp extension bridge contract", () => {
 
 	test("authenticates and snapshots all fields, sends only changes, and replaces main session context", async () => {
 		const f = fixture();
-		expect<unknown>(await f.start()).toEqual({ t: "state", pane: "test-pane", sessionId: "session-123", text: "desktop draft", model: "openai/reasoner", thinking: "medium", levels: ["off", "minimal", "low", "medium", "high", "xhigh"], tiers: ["", "flex", "priority"], tier: "", status: "idle", jobs: [], context: { tokens: 1234, window: 10000, percent: 12 }, queued: [], leaf: "entry-1", protocol: 1, caps: capsWithoutShim });
+		expect<unknown>(await f.start()).toEqual({ t: "state", pane: "test-pane", sessionId: "session-123", text: "desktop draft", model: "openai/reasoner", thinking: "medium", levels: ["off", "minimal", "low", "medium", "high", "xhigh"], tiers: ["", "flex", "priority"], tier: "", status: "idle", jobs: [], context: { tokens: 1234, window: 10000, percent: 12 }, queued: [], leaf: "entry-1", protocol: PROTOCOL, build: BUILD, caps: capsWithoutShim });
 		expect(f.bridge.connections[0].data.token).toBe("test-bridge-secret");
 		expect(f.state.intervals).toEqual([100]);
 		f.state.poll!();
@@ -138,6 +141,23 @@ describe("omp extension bridge contract", () => {
 		const f = fixture({ configDir: true });
 		await f.start();
 		expect(f.bridge.connections[0].data.token).toBe("config-dir-secret");
+	});
+
+	test("reports the build of the file omp loaded, as the server computes it, and the server's protocol", async () => {
+		expect(PROTOCOL).toBe(SERVER_PROTOCOL);
+		expect(BUILD).toMatch(/^[0-9a-f]{16}$/);
+		expect(BUILD).toBe(buildId(readFileSync(join(import.meta.dir, "tern-mobile.ts"))));
+		// A copy that differs only in a comment, as a session started before a `git pull` runs it.
+		const dir = mkdtempSync(join(tmpdir(), "tern-mobile-copy-"));
+		cleanup.push(() => rmSync(dir, { recursive: true, force: true }));
+		const source = `// an older edit\n${readFileSync(join(import.meta.dir, "tern-mobile.ts"), "utf8")}`;
+		writeFileSync(join(dir, "tern-mobile.ts"), source);
+		// The copy's path exists only at run time, and loading it the way omp does is the point.
+		const copy: { BUILD: typeof BUILD; default: typeof ternMobile } = await import(join(dir, "tern-mobile.ts"));
+		expect(copy.BUILD).toBe(buildId(source));
+		expect(copy.BUILD).not.toBe(BUILD);
+		const f = fixture({ factory: copy.default });
+		expect(await f.start()).toMatchObject({ protocol: PROTOCOL, build: copy.BUILD });
 	});
 
 	test("samples context and handles absent model/context/leaf", async () => {

@@ -183,7 +183,11 @@ describe("plan: win32", () => {
     expect(r[1]).toEqual(["schtasks", "/End", "/TN", "tern-awui"]);
     expect(r[2][0]).toBe("powershell.exe");
     expect(r[2].at(-1)).toBe(
-      windowsStopScript(4380, ["C:\\Users\\Ann\\My Code\\tern-awui\\server.ts", "C:\\Users\\Ann\\.config\\tern-mobile\\tern-awui.vbs"], true),
+      windowsStopScript(4380, {
+        bun: "C:\\Users\\Ann\\.bun\\bin\\bun.exe",
+        server: "C:\\Users\\Ann\\My Code\\tern-awui\\server.ts",
+        launcher: "C:\\Users\\Ann\\.config\\tern-mobile\\tern-awui.vbs",
+      }, true),
     );
     expect(r.slice(3)).toEqual([
       ["schtasks", "/Create", "/TN", "tern-awui", "/XML", "C:\\Users\\Ann\\.config\\tern-mobile\\tern-awui-task.xml", "/F"],
@@ -233,34 +237,46 @@ describe("plan: win32", () => {
     expect(u.every((a) => a.kind !== "run" || a.mayFail)).toBe(true);
   });
 
-  test("install stops only our processes by path and fails on a foreign listener instead of killing it", () => {
+  test("install stops only our bun server and launcher and fails on a foreign listener instead of killing it", () => {
     const stop = actions.find((a) => a.kind === "run" && a.argv[0] === "powershell.exe") as Extract<Action, { kind: "run" }>;
     expect(stop.mayFail).toBeUndefined();
     const ps = stop.argv.at(-1)!;
-    expect(ps).toContain("$ours = @('C:\\Users\\Ann\\My Code\\tern-awui\\server.ts', 'C:\\Users\\Ann\\.config\\tern-mobile\\tern-awui.vbs')");
-    // The only Stop-Process targets the path-matched set, never a port owner.
+    expect(ps).toContain(
+      "$bun = 'C:\\Users\\Ann\\.bun\\bin\\bun.exe'; $server = 'C:\\Users\\Ann\\My Code\\tern-awui\\server.ts'; $vbs = 'C:\\Users\\Ann\\.config\\tern-mobile\\tern-awui.vbs'",
+    );
+    // Selection: never this helper, bun with server.ts as an argument, wscript/cscript with our .vbs as an argument.
+    expect(ps).toContain("$_.ProcessId -ne $PID");
+    expect(ps).toContain("($_.Name -eq 'bun.exe' -or $_.ExecutablePath -eq $bun) -and (Test-Arg $_.CommandLine $server)");
+    expect(ps).toContain("@('wscript.exe', 'cscript.exe') -contains $_.Name -and (Test-Arg $_.CommandLine $vbs)");
+    // The only Stop-Process targets that set, never a port owner.
     expect(ps.match(/Stop-Process -Id \$\S+/g)).toEqual(["Stop-Process -Id $_.ProcessId"]);
     expect(ps).toContain("$mine | ForEach-Object { Stop-Process");
     expect(ps).toMatch(/Get-NetTCPConnection -LocalPort 4380 .*Port 4380 is in use by another program.*exit 1/);
   });
 
   test("uninstall stops only our processes and never checks or touches the port", () => {
-    const ps = windowsStopScript(4380, ["C:\\a.ts"], false);
+    const ps = windowsStopScript(4380, { bun: "b", server: "s", launcher: "v" }, false);
     expect(ps).not.toContain("Get-NetTCPConnection");
     expect(ps).not.toContain("exit 1");
   });
 
   test("psString escapes quotes for a PowerShell literal", () => {
     expect(psString("C:\\Ann's Code\\server.ts")).toBe("'C:\\Ann''s Code\\server.ts'");
-    expect(windowsStopScript(1, ["C:\\Ann's $x \"q\"\\s.ts"], false)).toContain("@('C:\\Ann''s $x \"q\"\\s.ts')");
+    expect(windowsStopScript(1, { bun: "b", server: "C:\\Ann's $x \"q\"\\s.ts", launcher: "v" }, false)).toContain(
+      "$server = 'C:\\Ann''s $x \"q\"\\s.ts'",
+    );
   });
 });
 
 const pwsh = Bun.which("pwsh");
 describe.skipIf(!pwsh)("windowsStopScript under pwsh with fake processes", () => {
-  const ours = ["C:\\Ann's Code\\tern-awui\\server.ts", "C:\\Users\\Ann\\.config\\tern-mobile\\tern-awui.vbs"];
-  const run = (procs: { id: number; cmd: string; port?: number }[], install: boolean) => {
-    const fake = procs.map((p) => `[pscustomobject]@{ ProcessId = ${p.id}; CommandLine = ${psString(p.cmd)}; Port = ${p.port ?? 0} }`).join(", ");
+  const ours = { bun: "C:\\Users\\Ann\\.bun\\bin\\bun.exe", server: "C:\\Ann's Code\\tern-awui\\server.ts", launcher: "C:\\Users\\Ann\\.config\\tern-mobile\\tern-awui.vbs" };
+  type Proc = { id: number | "$PID"; name: string; cmd: string; exe?: string; port?: number };
+  const run = (procs: Proc[], install: boolean) => {
+    const script = windowsStopScript(4380, ours, install);
+    const fake = procs
+      .map((p) => `[pscustomobject]@{ ProcessId = ${p.id}; Name = ${psString(p.name)}; ExecutablePath = ${psString(p.exe ?? "")}; CommandLine = ${psString(p.cmd)}; Port = ${p.port ?? 0} }`)
+      .join(", ");
     const mocks = [
       `$global:procs = [System.Collections.ArrayList]@(${fake})`,
       "function Get-CimInstance { [CmdletBinding()] param([string]$ClassName) $global:procs.ToArray() }",
@@ -268,30 +284,35 @@ describe.skipIf(!pwsh)("windowsStopScript under pwsh with fake processes", () =>
       "function Start-Sleep { [CmdletBinding()] param([int]$Seconds) }",
       "function Get-NetTCPConnection { [CmdletBinding()] param([int]$LocalPort, [string]$State) $global:procs | Where-Object { $_.Port -eq $LocalPort } | ForEach-Object { [pscustomobject]@{ OwningProcess = $_.ProcessId } } }",
     ].join("; ");
-    const r = spawnSync(pwsh!, ["-NoProfile", "-NonInteractive", "-Command", `${mocks}; ${windowsStopScript(4380, ours, install)}`], { encoding: "utf8" });
-    return { code: r.status, out: r.stdout, err: r.stderr };
+    const r = spawnSync(pwsh!, ["-NoProfile", "-NonInteractive", "-Command", `${mocks}; ${script}`], { encoding: "utf8" });
+    return { code: r.status, stopped: r.stdout.trim().split(/\r?\n/).filter(Boolean).sort(), err: r.stderr };
   };
-  const server = { id: 10, cmd: `"C:\\bun.exe" "${ours[0]}"`, port: 4380 };
-  const wscript = { id: 11, cmd: `wscript.exe //B //NoLogo "${ours[1]}"` };
-  const other = { id: 20, cmd: "C:\\other\\app.exe --listen", port: 4380 };
-  const bystander = { id: 30, cmd: "notepad.exe" };
+  const server: Proc = { id: 10, name: "bun.exe", exe: ours.bun, cmd: `"${ours.bun}" "${ours.server}"`, port: 4380 };
+  const wscript: Proc = { id: 11, name: "wscript.exe", cmd: `wscript.exe //B //NoLogo "${ours.launcher}"` };
+  // The helper itself: its command line holds both paths (single-quoted in the script).
+  const self: Proc = { id: "$PID", name: "powershell.exe", cmd: `powershell.exe -NoProfile -Command ${windowsStopScript(4380, ours, true)}` };
+  const editor: Proc = { id: 21, name: "Code.exe", cmd: `"C:\\VSCode\\Code.exe" "${ours.server}"` };
+  const notepad: Proc = { id: 22, name: "notepad.exe", cmd: `notepad.exe ${ours.launcher}` };
+  const otherBun: Proc = { id: 23, name: "bun.exe", cmd: `bun.exe "${ours.server}.bak"` };
+  const other: Proc = { id: 20, name: "app.exe", cmd: "C:\\other\\app.exe --listen", port: 4380 };
+  const survivors = [self, editor, notepad, otherBun];
 
-  test("install stops our server and launcher, then succeeds on a free port", () => {
-    const r = run([server, wscript, bystander], true);
-    expect(r.out.trim().split(/\r?\n/).sort()).toEqual(["stopped 10", "stopped 11"]);
+  test("install stops our server and launcher only, then succeeds on a free port", () => {
+    const r = run([server, wscript, ...survivors], true);
+    expect(r.stopped).toEqual(["stopped 10", "stopped 11"]);
     expect(r.code).toBe(0);
   });
 
   test("install fails on an unrelated listener and leaves it running", () => {
-    const r = run([other, bystander], true);
-    expect(r.out).not.toContain("stopped");
+    const r = run([server, other, ...survivors], true);
+    expect(r.stopped).toEqual(["stopped 10"]);
     expect(r.err).toContain("Port 4380 is in use by another program (PID 20)");
     expect(r.code).toBe(1);
   });
 
   test("uninstall stops ours and ignores an unrelated listener", () => {
-    const r = run([server, other], false);
-    expect(r.out.trim()).toBe("stopped 10");
+    const r = run([server, wscript, other, ...survivors], false);
+    expect(r.stopped).toEqual(["stopped 10", "stopped 11"]);
     expect(r.code).toBe(0);
   });
 });
