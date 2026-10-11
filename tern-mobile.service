@@ -1,0 +1,15 @@
+[Unit]
+Description=tern-mobile: phone control surface for Tern panes
+After=default.target
+
+[Service]
+WorkingDirectory=%h/tern-awui
+Environment=PATH=%h/bin:%h/.local/bin:/usr/local/bin:/usr/bin
+Environment=TERN_MOBILE_PORT=4380
+Environment=TERN_MOBILE_ALLOW=you@example.com
+ExecStart=/usr/bin/bun server.ts
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,23 @@
+{
+  "name": "tern-awui",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "bun build.ts",
+    "start": "bun server.ts",
+    "dev": "bun build.ts && TERN_MOBILE_DEV=1 bun server.ts"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.16",
+    "marked": "^18.1.0",
+    "mermaid": "^12.1.0",
+    "preact": "^11.0.1",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@types/web-push": "^3.6.4",
+    "bun-types": "^1.4.2",
+    "typescript": "^7.0.2"
+  }
+}
