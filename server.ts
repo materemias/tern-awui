@@ -11,6 +11,13 @@ import { existsSync, mkdirSync, readFileSync, statSync, watch, writeFileSync, ty
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { ServerWebSocket } from "bun";
 import webpush, { type PushSubscription } from "web-push";
+import { arr, num, obj, str, type Obj } from "./lib/json";
+import { IMAGE_MIMES, readChatFile, recapStale, scanFacts, type ChatEntry, type Facts } from "./lib/transcript";
+import { compactAtPercent, type Compaction } from "./lib/compaction";
+import { branchOf, projectOf } from "./lib/git";
+import { queryRecaps } from "./lib/recaps";
+import { answerSteps, KEYS, promptImages, type PromptImage } from "./lib/input";
+import { emptyState, listChanged, parseBridgeState, type BridgeState, type Context, type Job } from "./lib/bridge-state";
 
 const HOME = process.env.HOME ?? "";
 const PORT = Number(process.env.TERN_MOBILE_PORT ?? 4380);
@@ -34,7 +41,6 @@ const SAFETY_MS = 15_000;
 const PING_MS = 12_000;
 const TERN_EVENTS_RETRY_MS = 2000;
 const ROLES_TTL_MS = 5 * 60_000;
-const CHAT_TAIL_BYTES = 4 * 1024 * 1024;
 const SCREEN_LINES = 160;
 const BRIDGE_REPLY_MS = 2000;
 
@@ -127,23 +133,6 @@ function onStatusChange(pane: string, from: string, to: string, sessionId: strin
     );
 }
 
-// ---------- untyped JSON from tern and omp ----------
-
-type Obj = Record<string, unknown>;
-/** Narrows parsed JSON to an object; anything else reads as empty. */
-function obj(v: unknown): Obj {
-  return v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Obj) : {};
-}
-function arr(v: unknown): unknown[] {
-  return Array.isArray(v) ? v : [];
-}
-function str(v: unknown, fallback = ""): string {
-  return typeof v === "string" ? v : fallback;
-}
-function num(v: unknown): number {
-  return typeof v === "number" ? v : 0;
-}
-
 // ---------- tern CLI ----------
 
 /**
@@ -169,30 +158,6 @@ async function tern(args: string[], timeoutMs = 10_000): Promise<{ out: string; 
 
 // ---------- omp bridge ----------
 
-/** `status`: blocked while an ask dialog or tool approval waits on the user; `since` when it last changed. */
-type BridgeState = {
-  sessionId: string;
-  text: string;
-  model: string;
-  thinking: string;
-  status: string;
-  since: number;
-  /** Context-window use, as omp's status line estimates it. */
-  context: Context | null;
-  /** Prompts waiting in omp's queue, oldest first: steers, or follow-ups held until the turn ends. */
-  queued: Queued[];
-  /** Background jobs running for the session: subagents (`task`, `eval`) and backgrounded bash. */
-  jobs: Job[];
-  /** The session's current leaf entry: after a rewind it sits earlier than the file's last line. */
-  leaf: string;
-  /** The current model's thinking levels ("off" first) and serving tiers ("" = standard). */
-  levels: string[];
-  tiers: string[];
-  tier: string;
-};
-type Context = { tokens: number; window: number; percent: number };
-type Queued = { text: string; followUp: boolean };
-type Job = { id: string; type: string; label: string; agent: string; since: number };
 type Bridge = {
   ws: ServerWebSocket<{ pane: string | null }>;
   state: BridgeState;
@@ -282,7 +247,6 @@ function modelRoles(): Role[] {
   return value;
 }
 
-type Compaction = { enabled: boolean; thresholdTokens: number; thresholdPercent: number; reserveTokens: number | null };
 let compactionCache: { at: number; value: Compaction } | null = null;
 function compactionSettings(): Compaction {
   if (compactionCache && Date.now() - compactionCache.at < ROLES_TTL_MS) return compactionCache.value;
@@ -295,26 +259,6 @@ function compactionSettings(): Compaction {
   };
   compactionCache = { at: Date.now(), value };
   return value;
-}
-
-/**
- * Where auto-compaction fires, as a percent of `window`; null when it is off. Mirrors omp's
- * resolveThresholdTokens (pi-agent-core compaction.ts): fixed tokens, else a percent, else the
- * window minus a reserve of max(15 %, reserveTokens ?? 16384). Per-model thresholds are not read.
- */
-function compactAtPercent(window: number): number | null {
-  const s = compactionSettings();
-  if (!s.enabled || !(window > 0)) return null;
-  let tokens: number;
-  if (s.thresholdTokens > 0) tokens = Math.min(window - 1, Math.max(1, s.thresholdTokens));
-  else if (s.thresholdPercent > 0) tokens = Math.floor(window * (Math.min(99, Math.max(1, s.thresholdPercent)) / 100));
-  else {
-    const proportional = Math.max(1, Math.floor(window * 0.15));
-    let reserve = Math.max(Math.floor(window * 0.15), s.reserveTokens ?? 16384);
-    if ((s.reserveTokens === null && reserve >= window - proportional) || reserve >= window) reserve = proportional;
-    tokens = Math.max(0, Math.min(window - 1, window - reserve));
-  }
-  return tokens > 0 ? (tokens / window) * 100 : null;
 }
 
 // ---------- state ----------
@@ -373,100 +317,30 @@ type State = {
 // Nerd-font icons live in the private use areas; the app ships the symbols font for them.
 const PUA = /[\u{E000}-\u{F8FF}\u{F0000}-\u{10FFFF}]/u;
 
-/** `git -C cwd ARGS` output; null outside a repo or without git. */
-function gitOut(cwd: string, args: string[]): string | null {
-  try {
-    const r = Bun.spawnSync(["git", "-C", cwd, ...args], { stderr: "ignore" });
-    return r.exitCode === 0 ? r.stdout.toString().trim() : null;
-  } catch {
-    return null;
-  }
-}
-
-const projectCache = new Map<string, string>();
-function projectOf(cwd: string): string {
-  const hit = projectCache.get(cwd);
-  if (hit) return hit;
-  const top = gitOut(cwd, ["rev-parse", "--show-toplevel"]);
-  const name = (top && basename(top)) || (cwd === HOME ? "~" : basename(cwd) || cwd);
-  projectCache.set(cwd, name);
-  return name;
-}
-
-const BRANCH_TTL_MS = 10_000;
-const branchCache = new Map<string, { at: number; value: string | null }>();
-function branchOf(cwd: string): string | null {
-  const hit = branchCache.get(cwd);
-  if (hit && Date.now() - hit.at < BRANCH_TTL_MS) return hit.value;
-  const current = gitOut(cwd, ["branch", "--show-current"]);
-  const value = current === null ? null : current || gitOut(cwd, ["rev-parse", "--short", "HEAD"]);
-  branchCache.set(cwd, { at: Date.now(), value });
-  return value;
-}
-
-/** What the list shows of a transcript, scanned from where the previous scan stopped. */
-type Facts = { offset: number; lastPrompt: string; lastTurn: number; lastActivity: number };
 const factsCache = new Map<string, Facts>();
-const NEWLINE = 0x0a;
 
+/** What the list shows of a session's transcript, scanned from where the previous scan stopped. */
 async function sessionFacts(sessionId: string): Promise<Facts | null> {
   const path = transcriptPath(sessionId);
   if (!path) return null;
-  const size = statSync(path).size;
-  let facts = factsCache.get(path);
-  const fresh = !facts || size < facts.offset;
-  if (!facts || fresh) facts = { offset: Math.max(0, size - CHAT_TAIL_BYTES), lastPrompt: "", lastTurn: 0, lastActivity: 0 };
-  if (size > facts.offset) {
-    const bytes = new Uint8Array(await Bun.file(path).slice(facts.offset, size).arrayBuffer());
-    const end = bytes.lastIndexOf(NEWLINE) + 1; // a line still being written waits for the next scan
-    const lines = new TextDecoder().decode(bytes.subarray(0, end)).split("\n");
-    if (fresh && facts.offset > 0) lines.shift(); // the tail starts mid-line
-    for (const line of lines) {
-      if (!line.startsWith('{"type":"message"')) continue;
-      let row: Obj;
-      try {
-        row = obj(JSON.parse(line));
-      } catch {
-        continue;
-      }
-      const msg = obj(row.message);
-      const ts = Date.parse(str(row.timestamp)) || num(msg.timestamp);
-      facts.lastActivity = Math.max(facts.lastActivity, ts);
-      if (msg.role !== "user") continue;
-      // Any prompt starts a turn (an image-only one too); only text replaces the shown prompt.
-      facts.lastTurn = ts;
-      const text = textOf(msg.content).replace(/\s+/g, " ").trim();
-      if (text) facts.lastPrompt = text.slice(0, 300);
-    }
-    facts.offset += end;
-  }
+  const facts = await scanFacts(path, factsCache.get(path));
   factsCache.set(path, facts);
   return facts;
 }
 
-const RECAP_CHARS = 600;
 let historyDb: Database | null = null;
 /** The newest recap omp wrote for each session, with its time (whole seconds). */
 function readRecaps(ids: string[]): Map<string, { text: string; createdAt: number }> {
-  const out = new Map<string, { text: string; createdAt: number }>();
-  if (!ids.length) return out;
+  if (!ids.length) return new Map();
   try {
     historyDb ??= new Database(HISTORY_DB, { readonly: true });
-    // Oldest first, so the newest recap of each session wins; `id` orders recaps within a second.
-    const rows = historyDb
-      .query(`SELECT session_id, recap, created_at FROM session_recaps WHERE session_id IN (${ids.map(() => "?").join(",")}) ORDER BY created_at, id`)
-      .all(...ids);
-    for (const raw of rows) {
-      const r = obj(raw);
-      const text = str(r.recap).replace(/\s+/g, " ").trim();
-      if (text) out.set(str(r.session_id), { text: text.slice(0, RECAP_CHARS), createdAt: num(r.created_at) });
-    }
+    return queryRecaps(historyDb, ids);
   } catch {
     // No history.db yet, or a schema this omp doesn't have: rows go without recaps.
     historyDb?.close();
     historyDb = null;
+    return new Map();
   }
-  return out;
 }
 
 /** The omp session of every pane whose omp is connected to the bridge. */
@@ -483,8 +357,7 @@ async function readAgents(): Promise<Map<string, Agent>> {
         sessionId,
         lastPrompt: facts?.lastPrompt ?? "",
         recap: recap?.text ?? "",
-        // `created_at` holds whole seconds, so it may trail the turn by one.
-        recapStale: !!recap && (recap.createdAt + 1) * 1000 < (facts?.lastTurn ?? 0),
+        recapStale: recapStale(recap, facts?.lastTurn ?? 0),
         lastActivity: facts?.lastActivity ?? 0,
       });
     }),
@@ -514,7 +387,7 @@ async function buildState(): Promise<State> {
         const icon = PUA.exec(raw)?.[0] ?? null;
         const clean = raw.replace(new RegExp(PUA.source, "gu"), "").trim();
         const m = /^([\p{Lu}\d_-]{2,14}):\s+(.*)$/u.exec(clean);
-        const project = projectOf(cwd);
+        const project = projectOf(cwd, HOME);
         const status = bridge?.state.status || null;
         // The bridge's clock starts at its connect; an idle session dates from its last entry.
         const since = status === "idle" && agent?.lastActivity ? agent.lastActivity : (bridge?.state.since ?? 0);
@@ -536,7 +409,7 @@ async function buildState(): Promise<State> {
                 levels: bridge.state.levels,
                 tiers: bridge.state.tiers,
                 tier: bridge.state.tier,
-                context: bridge.state.context && { ...bridge.state.context, compactAt: compactAtPercent(bridge.state.context.window) },
+                context: bridge.state.context && { ...bridge.state.context, compactAt: compactAtPercent(compactionSettings(), bridge.state.context.window) },
                 jobs: bridge.state.jobs,
               }
             : null,
@@ -620,31 +493,6 @@ async function findItem(block: string): Promise<Item | undefined> {
 
 // ---------- transcript ----------
 
-type ToolCall = { name: string; intent: string; error?: boolean };
-/** omp's todo list after a `todo` call: phases of tasks (pending, in_progress, completed, blocked…). */
-type TodoPhase = { name: string; tasks: { content: string; status: string; blocker?: string }[] };
-type AskQuestion = {
-  question: string;
-  options: { label: string; description: string }[];
-  multi: boolean;
-  recommended: number;
-};
-/**
- * An image the session saw, as a URL for <img>: omp keeps most bytes in ~/.omp/agent/blobs/<hash>
- * (served by /api/blob), and small ones inline in the transcript (sent as a data: URL).
- */
-type Img = { src: string };
-const INLINE_IMAGE_CHARS = 256 * 1024;
-type ChatEntry =
-  | { role: "user"; id: string; text: string; images: Img[]; ts: number }
-  | { role: "assistant"; text: string; ts: number }
-  | { role: "tools"; calls: ToolCall[]; images: Img[]; todo: TodoPhase[] | null; ts: number }
-  | { role: "ask"; id: string; questions: AskQuestion[]; answer: string | null; ts: number }
-  | { role: "turn"; ms: number; model: string; ts: number }
-  | { role: "advisor"; notes: AdvisorNote[]; ts: number };
-/** A note from omp's advisor model: `Key:`/`Evidence:`/`Impact:`/`Fix:` lines. */
-type AdvisorNote = { advisor: string; severity: string; note: string };
-
 const sessionPaths = new Map<string, string>();
 function transcriptPath(sessionId: string): string | null {
   const hit = sessionPaths.get(sessionId);
@@ -658,132 +506,12 @@ function transcriptPath(sessionId: string): string | null {
   return null;
 }
 
-// `title` is eval's intent; `code` (its first line) only when a call carries nothing better.
-const INTENT_KEYS = ["i", "title", "command", "path", "pattern", "query", "url", "description", "code"];
-
-function textOf(content: unknown): string {
-  if (typeof content === "string") return content;
-  return arr(content)
-    .map(obj)
-    .filter((p) => p.type === "text")
-    .map((p) => str(p.text))
-    .join("\n");
-}
-
-const IMAGE_MIMES: Record<string, true> = { "image/png": true, "image/jpeg": true, "image/webp": true, "image/gif": true };
-
-function imagesOf(content: unknown): Img[] {
-  return arr(content)
-    .map(obj)
-    .filter((p) => p.type === "image" && IMAGE_MIMES[str(p.mimeType)])
-    .map((p) => {
-      const data = str(p.data);
-      const mime = str(p.mimeType);
-      const hash = /^blob:sha256:([0-9a-f]{64})$/.exec(data)?.[1];
-      if (hash) return { src: `/api/blob/${hash}?type=${encodeURIComponent(mime)}` };
-      const inline = data.length <= INLINE_IMAGE_CHARS && /^[A-Za-z0-9+/]+=*$/.test(data);
-      return { src: inline ? `data:${mime};base64,${data}` : "" };
-    })
-    .filter((i) => i.src);
-}
-
 async function readChat(sessionId: string, limit: number): Promise<{ entries: ChatEntry[] } | null> {
   const path = transcriptPath(sessionId);
   if (!path) return null;
-  const size = statSync(path).size;
-  const start = Math.max(0, size - CHAT_TAIL_BYTES);
-  const lines = (await Bun.file(path).slice(start, size).text()).split("\n");
-  if (start > 0) lines.shift(); // partial line
-  const entries: ChatEntry[] = [];
-  const callsById = new Map<string, ToolCall>();
-  const groupByCall = new Map<string, Extract<ChatEntry, { role: "tools" }>>();
-  const asksById = new Map<string, Extract<ChatEntry, { role: "ask" }>>();
-  // The file is a tree: a rewind leaves the abandoned path in place and continues from an
-  // earlier entry. Only the active path shows, walked back from the leaf: the session's own
-  // (its bridge knows it, even before anything is appended after a rewind), else the last line.
-  const rows = lines.flatMap((line) => {
-    try {
-      return [obj(JSON.parse(line))];
-    } catch {
-      return [];
-    }
-  });
-  const parentOf = new Map(rows.filter((r) => str(r.id)).map((r) => [str(r.id), str(r.parentId)]));
-  // `-`: rewound past the first prompt, nothing is on the path. Older extensions send no leaf.
-  const known = [...bridges.values()].find((b) => b.state.sessionId === sessionId)?.state.leaf ?? "";
-  let id = known === "-" ? "" : parentOf.has(known) ? known : str(rows.findLast((r) => parentOf.has(str(r.id)))?.id);
-  const active = new Set<string>();
-  for (; parentOf.has(id) && !active.has(id); id = parentOf.get(id) ?? "") active.add(id);
-  // A turn runs from a user prompt to the assistant message that stops without calling tools.
-  let turnStart: number | null = null;
-  for (const row of rows) {
-    const advisor = row.type === "custom_message" && row.customType === "advisor";
-    if ((!advisor && row.type !== "message") || !active.has(str(row.id))) continue;
-    const msg = obj(row.message);
-    const ts = Date.parse(str(row.timestamp)) || num(msg.timestamp);
-    if (advisor) {
-      const notes = arr(obj(row.details).notes)
-        .map(obj)
-        .map((n) => ({ advisor: str(n.advisor), severity: str(n.severity, "note"), note: str(n.note).trim() }))
-        .filter((n) => n.note);
-      if (notes.length) entries.push({ role: "advisor", notes, ts });
-      continue;
-    }
-    if (msg.role === "user") {
-      const text = textOf(msg.content).trim();
-      const images = imagesOf(msg.content);
-      if (text || images.length) entries.push({ role: "user", id: str(row.id), text, images, ts });
-      turnStart = ts;
-    } else if (msg.role === "assistant") {
-      for (const part of arr(msg.content).map(obj)) {
-        if (part.type === "text" && str(part.text).trim()) entries.push({ role: "assistant", text: str(part.text), ts });
-        if (part.type !== "toolCall") continue;
-        const args = obj(part.arguments);
-        if (part.name === "ask" && Array.isArray(args.questions)) {
-          const questions = arr(args.questions).map(obj).map((q) => ({
-            question: str(q.question),
-            multi: q.multi === true,
-            recommended: num(q.recommended),
-            options: arr(q.options).map((o) => ({ label: str(obj(o).label, str(o)), description: str(obj(o).description) })),
-          }));
-          const ask = { role: "ask" as const, id: str(part.id), questions, answer: null, ts };
-          asksById.set(ask.id, ask);
-          entries.push(ask);
-          continue;
-        }
-        const key = INTENT_KEYS.find((k) => typeof args[k] === "string");
-        const intent = key ? str(args[key]).trim().split("\n")[0] : "";
-        const call: ToolCall = { name: str(part.name), intent: intent.slice(0, 160) };
-        callsById.set(str(part.id), call);
-        const last = entries[entries.length - 1];
-        const group = last?.role === "tools" ? last : { role: "tools" as const, calls: [], images: [], todo: null, ts };
-        if (group !== last) entries.push(group);
-        group.calls.push(call);
-        groupByCall.set(str(part.id), group);
-      }
-      if (turnStart !== null && msg.stopReason !== "toolUse") {
-        entries.push({ role: "turn", ms: ts - turnStart, model: str(msg.model), ts });
-        turnStart = null;
-      }
-    } else if (msg.role === "toolResult") {
-      const ask = asksById.get(str(msg.toolCallId));
-      if (ask) ask.answer = textOf(msg.content).trim() || "answered";
-      const call = callsById.get(str(msg.toolCallId));
-      if (call && msg.isError === true) call.error = true;
-      const group = groupByCall.get(str(msg.toolCallId));
-      group?.images.push(...imagesOf(msg.content));
-      // The list as this call left it; a group keeps the newest.
-      const phases = arr(obj(msg.details).phases).map(obj);
-      if (group && msg.toolName === "todo" && phases.length)
-        group.todo = phases.map((p) => ({
-          name: str(p.name),
-          tasks: arr(p.tasks)
-            .map(obj)
-            .map((t) => ({ content: str(t.content), status: str(t.status, "pending"), ...(t.blocker ? { blocker: str(t.blocker) } : {}) })),
-        }));
-    }
-  }
-  return { entries: entries.slice(-limit) };
+  // The session's own leaf: its bridge knows it even before anything is appended after a rewind.
+  const leaf = [...bridges.values()].find((b) => b.state.sessionId === sessionId)?.state.leaf ?? "";
+  return readChatFile(path, leaf, limit);
 }
 
 /**
@@ -799,36 +527,14 @@ async function readScreen(block: string, agent: boolean): Promise<{ text: string
 
 // ---------- input ----------
 
-const KEYS: Record<string, true> = {
-  Enter: true, Escape: true, Tab: true, "shift+Tab": true, Up: true, Down: true, Left: true, Right: true,
-  Backspace: true, space: true, "ctrl+c": true, "ctrl+d": true, "ctrl+l": true, "ctrl+p": true,
-  PageUp: true, PageDown: true, "1": true, "2": true, "3": true, "4": true, "5": true, y: true, n: true,
-};
-
 async function sendKeys(block: string, keys: string[]): Promise<string | null> {
-  const bad = keys.find((k) => !KEYS[k]);
+  const bad = keys.find((k) => KEYS[k] !== true);
   if (bad !== undefined) return `key not allowed: ${bad}`;
   return keys.length ? (await tern(["send", block, "keys", ...keys])).error : null;
 }
 
 async function sendText(block: string, text: string): Promise<string | null> {
   return (await tern(["send", block, text.includes("\n") ? "paste" : "text", text])).error;
-}
-
-type PromptImage = { data: string; mimeType: string };
-const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
-const MAX_PROMPT_IMAGES = 8;
-/** Base64 characters across a prompt's images (~15 MB decoded). */
-const MAX_IMAGE_CHARS = 20 * 1024 * 1024;
-
-/** The pasted images of a submit body; a string when one doesn't qualify. */
-function promptImages(raw: unknown): PromptImage[] | string {
-  if (raw === undefined) return [];
-  if (!Array.isArray(raw) || raw.length > MAX_PROMPT_IMAGES) return `at most ${MAX_PROMPT_IMAGES} images`;
-  const images = raw.map((r) => ({ data: str(obj(r).data), mimeType: str(obj(r).mimeType) }));
-  if (images.some((i) => !IMAGE_TYPES.has(i.mimeType) || !/^[A-Za-z0-9+/]+=*$/.test(i.data))) return "unsupported image";
-  if (images.reduce((n, i) => n + i.data.length, 0) > MAX_IMAGE_CHARS) return "images too large";
-  return images;
 }
 
 /**
@@ -846,58 +552,12 @@ async function submit(block: string, text: string, images: PromptImage[], follow
   return sendKeys(block, ["Enter"]);
 }
 
-/**
- * Answers the pending ask dialog the way its keyboard works (pi-tui ask-dialog): each question
- * opens on its recommended row; Enter picks a single option and moves on, Space toggles a multi
- * option and Enter moves on; "Other…" follows the options and opens a prompt for typed text.
- * Dialogs with several questions end on a Review tab that Enter submits.
- */
+/** Answers the pending ask dialog by typing its keys (see `answerSteps`). */
 async function answer(block: string, item: Item, body: Obj): Promise<string | null> {
   const chat = item.agent ? await readChat(item.agent.sessionId, 80) : null;
   const ask = chat?.entries.findLast((e) => e.role === "ask");
-  if (ask?.role !== "ask" || ask.answer !== null || ask.id !== str(body.id)) return "this question is no longer open";
-  const answers = arr(body.answers).map(obj);
-  if (answers.length !== ask.questions.length) return "answer every question";
-  const invalid = ask.questions.findIndex((q, i) => {
-    const a = answers[i];
-    if (str(a.other).trim()) return false;
-    if (q.multi) return !Array.isArray(a.picks);
-    return typeof a.option !== "number" || a.option < 0 || a.option >= q.options.length;
-  });
-  if (invalid >= 0) return `question ${invalid + 1} has no valid answer`;
-
-  // Each step is keys, or text typed into a prompt that the previous keys opened.
-  const steps: ({ keys: string[] } | { text: string })[] = [];
-  ask.questions.forEach((q, i) => {
-    const a = answers[i];
-    const otherRow = q.options.length;
-    // The desktop may have moved the cursor; Up clamps at the first row, so enough of them
-    // put it on row 0 whatever its position, and navigation is absolute from there.
-    const reset: string[] = Array(otherRow).fill("Up");
-    let at = 0;
-    const moveTo = (row: number) => {
-      const keys: string[] = [...reset.splice(0)];
-      for (; at < row; at++) keys.push("Down");
-      for (; at > row; at--) keys.push("Up");
-      return keys;
-    };
-    const other = str(a.other).trim();
-    if (q.multi) {
-      const picks = arr(a.picks).filter((n): n is number => typeof n === "number" && n >= 0 && n < otherRow);
-      const keys = [...new Set(picks)].sort((x, y) => x - y).flatMap((p) => [...moveTo(p), "space"]);
-      if (other) {
-        steps.push({ keys: [...keys, ...moveTo(otherRow), "Enter"] }, { text: other }, { keys: ["Enter"] });
-        // A lone multi question jumps to Review after a typed answer; Enter there submits.
-        if (ask.questions.length === 1) steps.push({ keys: ["Enter"] });
-      } else steps.push({ keys: [...keys, ...reset.splice(0), "Enter"] });
-    } else if (other) {
-      steps.push({ keys: [...moveTo(otherRow), "Enter"] }, { text: other }, { keys: ["Enter"] });
-    } else {
-      steps.push({ keys: [...moveTo(num(a.option)), "Enter"] });
-    }
-  });
-  if (ask.questions.length > 1) steps.push({ keys: ["Enter"] });
-
+  const steps = answerSteps(ask?.role === "ask" ? ask : undefined, body);
+  if (typeof steps === "string") return steps;
   for (const step of steps) {
     const err = "keys" in step ? await sendKeys(block, step.keys) : await sendText(block, step.text);
     if (err) return err;
@@ -1074,7 +734,7 @@ async function handleApi(req: Request, url: URL): Promise<Response> {
   if (req.method === "GET" && blob) {
     const type = url.searchParams.get("type") ?? "";
     const file = Bun.file(`${BLOBS_DIR}/${blob[1]}`);
-    if (!IMAGE_MIMES[type] || !(await file.exists())) return json({ error: "no such image" }, 404);
+    if (IMAGE_MIMES[type] !== true || !(await file.exists())) return json({ error: "no such image" }, 404);
     // Content-addressed: the bytes behind a hash never change.
     return new Response(file, { headers: { "content-type": type, "cache-control": "private, max-age=31536000, immutable" } });
   }
@@ -1232,7 +892,7 @@ const paneSockets = new Map<string, Set<ServerWebSocket<{ pane: string | null }>
 function registerBridge(pane: string, ws: ServerWebSocket<{ pane: string | null }>) {
   bridges.set(pane, {
     ws,
-    state: { sessionId: "", text: "", model: "", thinking: "", status: "", since: Date.now(), context: null, queued: [], jobs: [], leaf: "", levels: [], tiers: [], tier: "" },
+    state: emptyState(Date.now()),
     waiting: new Map(),
     live: null,
   });
@@ -1328,46 +988,12 @@ Bun.serve<{ pane: string | null }>({
       const b = bridges.get(pane);
       if (!b || b.ws !== ws) return;
       const before = b.state;
-      // Extensions from before `status` existed send only `idle`.
-      const status = str(msg.status) || (msg.idle === false ? "working" : "idle");
-      b.state = {
-        sessionId: str(msg.sessionId),
-        text: str(msg.text),
-        model: str(msg.model),
-        thinking: str(msg.thinking),
-        levels: arr(msg.levels).map((l) => str(l)).filter(Boolean),
-        tiers: arr(msg.tiers).map((t) => str(t)),
-        tier: str(msg.tier),
-        status,
-        since: status === before.status ? before.since : Date.now(),
-        context: (() => {
-          const c = obj(msg.context);
-          const window = num(c.window);
-          return window > 0 ? { tokens: num(c.tokens), window, percent: num(c.percent) } : null;
-        })(),
-        // Extensions before follow-ups send plain strings (all steers).
-        queued: arr(msg.queued)
-          .map((q) => (typeof q === "string" ? { text: q, followUp: false } : { text: str(obj(q).text), followUp: obj(q).followUp === true }))
-          .filter((q) => q.text),
-        jobs: arr(msg.jobs)
-          .map(obj)
-          .map((j) => ({ id: str(j.id), type: str(j.type), label: str(j.label), agent: str(j.agent), since: num(j.since) }))
-          .filter((j) => j.id),
-        leaf: str(msg.leaf),
-      };
+      b.state = parseBridgeState(msg, before, Date.now());
+      const status = b.state.status;
       // A rewind moves the leaf without writing to the file: the open chat must re-read.
       if (before.leaf !== b.state.leaf) emit(pane, "leaf", null);
       if (JSON.stringify(before.queued) !== JSON.stringify(b.state.queued)) emit(pane, "queued", b.state.queued);
-      if (
-        before.model !== b.state.model ||
-        before.thinking !== b.state.thinking ||
-        before.tier !== b.state.tier ||
-        before.status !== status ||
-        before.context?.percent !== b.state.context?.percent ||
-        before.sessionId !== b.state.sessionId ||
-        JSON.stringify(before.jobs) !== JSON.stringify(b.state.jobs)
-      )
-        invalidateState();
+      if (listChanged(before, b.state)) invalidateState();
       // `before.status` is empty on a fresh connection: a restarted omp is not a finished turn.
       if (before.status && before.status !== status) onStatusChange(pane, before.status, status, b.state.sessionId);
       notifyBridge(pane);

@@ -3,11 +3,10 @@
 // Loaded by omp from ~/.omp/agent/extensions (symlink); does nothing outside a Tern pane.
 import { readFileSync } from "node:fs";
 
-const PANE = process.env.TERN_PANE;
-const BRIDGE_URL = process.env.TERN_MOBILE_BRIDGE ?? "ws://127.0.0.1:4380/bridge";
-const TOKEN_FILE = `${process.env.HOME}/.config/tern-mobile/bridge-token`;
 const POLL_MS = 100;
 const RETRY_MS = 5000;
+/** The bridge protocol this extension speaks; the server asks for a restart when it is older. */
+export const PROTOCOL = 1;
 
 /** The part of omp's Model this bridge reads; the rest varies by provider. */
 type Model = {
@@ -154,7 +153,12 @@ function textOf(message: Message): string {
 }
 
 export default function ternMobile(pi: Pi): void {
+	// Read when omp loads the extension (tests load it once and call this per scenario).
+	const PANE = process.env.TERN_PANE;
 	if (!PANE) return;
+	const BRIDGE_URL = process.env.TERN_MOBILE_BRIDGE ?? "ws://127.0.0.1:4380/bridge";
+	// The override lets tests and throwaway servers use their own token.
+	const TOKEN_FILE = process.env.TERN_MOBILE_TOKEN_FILE ?? `${process.env.HOME}/.config/tern-mobile/bridge-token`;
 	let ctx: Ctx | null = null;
 	let ws: WebSocket | null = null;
 	let sent = ""; // last snapshot sent, as JSON
@@ -233,6 +237,18 @@ export default function ternMobile(pi: Pi): void {
 			queued: queued.map((q) => ({ text: q.text, followUp: q.followUp })),
 			// `-`: no entry (rewound past the first prompt).
 			leaf: ctx.sessionManager.getLeafId ? (ctx.sessionManager.getLeafId() ?? "-") : "",
+			protocol: PROTOCOL,
+			// What this omp offers beyond the core API; the server and phone turn the rest off.
+			caps: {
+				models: typeof ctx.modelRegistry.getAvailable === "function",
+				tiers: typeof pi.setServiceTier === "function",
+				jobs: typeof ctx.getAsyncJobSnapshot === "function",
+				queue: typeof ctx.hasPendingMessages === "function",
+				rewind: typeof ctx.sessionManager.getLeafId === "function",
+				btw: typeof ctx.runEphemeralTurn === "function",
+				complete: completer !== null,
+				levels: typeof ai.getSupportedThinkingLevels === "function",
+			},
 		};
 	};
 

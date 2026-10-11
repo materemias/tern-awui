@@ -4,8 +4,8 @@
 // deterministic "X is best on N of M measures" is shown.
 
 type Dim = "bytes" | "time" | "percent" | "money" | "count";
-type Cell = { value: number; text: string; dim: Dim };
-type Series = { name: string; points: (Cell | null)[]; best: number | null };
+export type Cell = { value: number; text: string; dim: Dim };
+export type Series = { name: string; points: (Cell | null)[]; best: number | null };
 
 const UNITS: Record<string, [Dim, number]> = {
   b: ["bytes", 1], kb: ["bytes", 1e3], kib: ["bytes", 1024], mb: ["bytes", 1e6], mib: ["bytes", 1024 ** 2],
@@ -16,7 +16,7 @@ const UNITS: Record<string, [Dim, number]> = {
 // A number or range, an optional unit, then nothing but a parenthetical: "0.23–1.04 MB (+29%)".
 const CELL = /^[~≈<>]?\s*(\$)?\s*(-?[\d,]*\.?\d+)(?:\s*(?:–|—|-|to)\s*\$?(-?[\d,]*\.?\d+))?\s*([a-zµ%×]{1,3})?\s*(\(.*\))?\s*$/i;
 
-function parseCell(raw: string): Cell | null {
+export function parseCell(raw: string): Cell | null {
   const m = CELL.exec(raw.trim());
   if (!m) return null;
   const unit = (m[4] ?? "").toLowerCase();
@@ -46,7 +46,7 @@ function bestOf(s: Series): number | null {
 }
 
 /** Rows are measures when each row keeps one dimension and the columns mix them. */
-function seriesOf(header: string[], rows: string[][]): { categories: string[]; series: Series[] } | null {
+export function seriesOf(header: string[], rows: string[][]): { categories: string[]; series: Series[] } | null {
   const grid = rows.map((r) => r.slice(1).map(parseCell));
   const numeric = grid.flat().filter(Boolean).length;
   if (numeric < 4) return null;
@@ -66,7 +66,7 @@ function seriesOf(header: string[], rows: string[][]): { categories: string[]; s
   return { categories, series };
 }
 
-function headline(categories: string[], series: Series[]): string {
+export function headline(categories: string[], series: Series[]): string {
   const wins = new Map<number, string[]>();
   for (const s of series) if (s.best !== null) wins.set(s.best, [...(wins.get(s.best) ?? []), s.name]);
   const [top] = [...wins].sort((a, b) => b[1].length - a[1].length);

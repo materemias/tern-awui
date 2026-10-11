@@ -1,12 +1,14 @@
 {
   "name": "tern-awui",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "build": "bun build.ts",
     "start": "bun server.ts",
-    "dev": "bun build.ts && TERN_MOBILE_DEV=1 bun server.ts"
+    "dev": "bun build.ts && TERN_MOBILE_DEV=1 bun server.ts",
+    "test": "bun test",
+    "typecheck": "tsc -p ."
   },
   "dependencies": {
     "dompurify": "^3.4.16",
@@ -16,8 +18,11 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@happy-dom/global-registrator": "^20.14.6",
     "@types/web-push": "^3.6.4",
     "bun-types": "^1.4.2",
+    "happy-dom": "^20.14.6",
     "typescript": "^7.0.2"
-  }
+  },
+  "license": "MIT"
 }

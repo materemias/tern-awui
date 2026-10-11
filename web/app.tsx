@@ -1,46 +1,44 @@
 import { render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { marked } from "marked";
-import DOMPurify from "dompurify";
 import type { Mermaid } from "mermaid";
 import { drawCharts } from "./charts";
-
-// ---------- API shapes (mirror server.ts) ----------
-
-/** The omp session in a pane (present while its omp is connected to the bridge). */
-type Agent = {
-  sessionId: string;
-  lastPrompt: string;
-  recap: string;
-  recapStale: boolean;
-  lastActivity: number;
-};
-type Live = {
-  model: string;
-  thinking: string;
-  /** The current model's thinking levels ("off" first) and serving tiers ("" = standard). */
-  levels: string[];
-  tiers: string[];
-  tier: string;
-  /** `compactAt`: percent of the window where omp auto-compacts; null when off. */
-  context: { tokens: number; window: number; percent: number; compactAt: number | null } | null;
-  /** Background jobs: subagents (`task`, `eval`) and backgrounded bash. */
-  jobs: Job[];
-};
-type Job = { id: string; type: string; label: string; agent: string; since: number };
-
-/** What's running in the background, one line: "2 subagents · 1 background job". */
-function jobsSummary(jobs: Job[]): string {
-  const agents = jobs.filter(isAgentJob).length;
-  const other = jobs.length - agents;
-  return [
-    agents ? `${agents} subagent${agents > 1 ? "s" : ""}` : "",
-    other ? `${other} background job${other > 1 ? "s" : ""}` : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
-}
-const isAgentJob = (j: Job) => j.type === "task" || j.type === "eval";
+import { post, type AdvisorNote, type Ask, type Btw, type CatalogModel, type ChatEntry, type Doc, type Img, type Item, type Job, type Live, type Role, type State, type TodoPhase, type ToolCall } from "./api";
+import {
+  age,
+  askAnswers,
+  askReady,
+  btwQuestion,
+  can,
+  clock,
+  composerKey,
+  ctxShort,
+  currentRole,
+  duration,
+  extensionOutdated,
+  fitEdge,
+  isAgentJob,
+  isOld,
+  jobsSummary,
+  langOf,
+  lineEdit,
+  listProjects,
+  matchesWords,
+  needsReencode,
+  parseAdvisorNote,
+  parseCollapsed,
+  parseRecent,
+  prettyModel,
+  priceShort,
+  rowText,
+  searchModels,
+  toggled,
+  tokensShort,
+  vapidBytes,
+  withRecent,
+  type AskPick,
+} from "./lib";
+import { renderMarkdown, screenHtml } from "./markdown";
+import { buzz, Thumbs, Todo, UserMsg } from "./parts";
 
 /** The session's running background jobs under the transcript: names only, no drill-down. */
 function JobsStrip({ jobs, now }: { jobs: Job[]; now: number }) {
@@ -59,110 +57,14 @@ function JobsStrip({ jobs, now }: { jobs: Job[]; now: number }) {
   );
 }
 
-type Item = {
-  block: string;
-  icon: string | null;
-  tag: string | null;
-  title: string;
-  cwd: string;
-  project: string;
-  branch: string | null;
-  agent: Agent | null;
-  live: Live | null;
-  /** working / blocked / idle; null for shells and files. */
-  status: string | null;
-  since: number;
-  doc: string | null;
-  /** A finished turn or a wait on you that the phone hasn't opened yet. */
-  unseen: "done" | "blocked" | null;
-};
-type Role = { role: string; spec: string };
-type State = {
-  projects: { name: string; items: Item[] }[];
-  counts: Record<string, number>;
-  roles: Role[];
-  /** Unseen updates across sessions. */
-  badge: number;
-  at: number;
-};
-/** A side question's answer as it streams from omp (`done` once complete). */
-type Btw = { id: string; question: string; text: string; done: boolean; error: string };
-
-/** A short buzz confirming a tap that reached the desktop (Android; iOS ignores it). */
-function buzz(ms = 12) {
-  navigator.vibrate?.(ms);
-}
-
 /** The app icon counts updates not seen yet: finished turns and waits on you. */
 function setBadge(count: number) {
   if (!("setAppBadge" in navigator)) return;
   void (count > 0 ? navigator.setAppBadge(count) : navigator.clearAppBadge()).catch(() => {});
 }
-type ToolCall = { name: string; intent: string; error?: boolean };
-type TodoPhase = { name: string; tasks: { content: string; status: string; blocker?: string }[] };
-type AskQuestion = {
-  question: string;
-  options: { label: string; description: string }[];
-  multi: boolean;
-  recommended: number;
-};
-type Ask = { role: "ask"; id: string; questions: AskQuestion[]; answer: string | null; ts: number };
-type ChatEntry =
-  | { role: "user"; id: string; text: string; images: Img[]; ts: number }
-  | { role: "assistant"; text: string; ts: number }
-  | { role: "tools"; calls: ToolCall[]; images: Img[]; todo: TodoPhase[] | null; ts: number }
-  | Ask
-  | { role: "turn"; ms: number; model: string; ts: number }
-  | { role: "advisor"; notes: { advisor: string; severity: string; note: string }[]; ts: number };
+
 type Draft = { live: boolean; text: string };
 type View = "chat" | "screen";
-type Img = { src: string };
-type Doc = { text: string; markdown: boolean; missing: boolean; clipped: boolean };
-
-// Raw HTML in agent output is shown as text, never parsed. Transcripts carry text from
-// web pages and mail, so the rendered HTML is also sanitized: a `javascript:` link
-// tapped here would run with this page's shell-control rights.
-const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
-marked.use({
-  gfm: true,
-  breaks: true,
-  renderer: {
-    html: ({ text }) => escapeHtml(text),
-    // omp's figures: ```svg drawn inline (the sanitizer drops scripts and handlers), ```mermaid
-    // left as its source, which <Markdown> swaps for the diagram once the mermaid chunk loads.
-    code: ({ text, lang }) => {
-      if (lang === "svg") return `<div class="figure">${text}</div>`;
-      if (lang === "mermaid") return `<div class="figure mermaid-src"><pre>${escapeHtml(text)}</pre></div>`;
-      // Other fences: a plain code block whose language shows in its corner.
-      const name = /^[\w+#.-]{1,16}$/.test(lang ?? "") ? ` data-lang="${lang}"` : "";
-      return `<pre${name}><code>${escapeHtml(text)}</code></pre>\n`;
-    },
-  },
-});
-
-async function post(path: string, body: unknown): Promise<string | null> {
-  try {
-    const r = await fetch(path, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-tern-mobile": "1" },
-      body: JSON.stringify(body),
-    });
-    if (r.ok) return null;
-    const data: { error?: string } = await r.json().catch(() => ({}));
-    return data.error ?? `HTTP ${r.status}`;
-  } catch (err) {
-    return String(err);
-  }
-}
-
-function age(ms: number, now: number): string {
-  if (!ms) return "";
-  const s = Math.max(0, Math.round((now - ms) / 1000));
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  return `${Math.floor(s / 86400)}d`;
-}
 
 function useNow(intervalMs: number): number {
   const [now, setNow] = useState(Date.now());
@@ -182,13 +84,6 @@ function useRoute(): string | null {
     return () => removeEventListener("hashchange", on);
   }, []);
   return block;
-}
-
-/** 1234 → "1.2k", 200000 → "200k", 1000000 → "1M". */
-function tokensShort(n: number): string {
-  if (n >= 1e6) return `${+(n / 1e6).toFixed(1)}M`;
-  if (n >= 1e3) return `${n >= 1e4 ? Math.round(n / 1e3) : +(n / 1e3).toFixed(1)}k`;
-  return String(n);
 }
 
 const SESSION_HASH = /^#\/b\/\d+$/;
@@ -336,12 +231,6 @@ function useStream(block: string | null, view: View) {
   return { state, chat, live, queued, btw, setBtw, screen, draft, doc, online };
 }
 
-/** The ⟨role⟩ whose model is the session's current one, if any. */
-function currentRole(roles: Role[], model: string, thinking: string): string | null {
-  const matches = roles.filter((r) => r.spec.split(":")[0] === model || r.spec.split(":")[0].endsWith(`/${model}`));
-  return (matches.find((r) => r.spec.split(":")[1] === thinking) ?? matches[0])?.role ?? null;
-}
-
 // ---------- pieces ----------
 
 function Dot({ state }: { state: string | undefined }) {
@@ -366,12 +255,8 @@ function Title({ item }: { item: Item }) {
 }
 
 function Row({ item, now, selected }: { item: Item; now: number; selected?: boolean }) {
-  const a = item.agent;
   const state = item.status ?? undefined;
-  const stale = state === "idle" && now - item.since > 86_400_000;
-  // Idle agents show omp's recap ("Earlier:" once turns followed it); others the last prompt.
-  const recap = state === "idle" && a?.recap ? `${a.recapStale ? "Earlier: " : ""}${a.recap}` : "";
-  const sub = item.doc ? (item.doc.includes("/tern/notes/") ? "Note" : item.doc) : recap || a?.lastPrompt || item.cwd;
+  const { sub, recap, stale } = rowText(item, now);
   return (
     <a
       class={`row st-${state ?? "shell"}${stale ? " stale" : ""}${item.unseen ? ` unseen-${item.unseen}` : ""}${selected ? " selected" : ""}`}
@@ -402,8 +287,7 @@ function ProjectSheet({ open, onPick, onClose }: { open: Set<string>; onPick: (d
       .then((d: { projects?: string[] }) => setProjects(d.projects ?? []))
       .catch(() => setProjects([]));
   }, []);
-  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-  const shown = (projects ?? []).filter((p) => words.every((w) => p.toLowerCase().includes(w)));
+  const shown = (projects ?? []).filter((p) => matchesWords(q, p));
   return (
     <div class="sheet-backdrop" onClick={onClose}>
       <div class="sheet tall" onClick={(e) => e.stopPropagation()}>
@@ -429,12 +313,6 @@ function ProjectSheet({ open, onPick, onClose }: { open: Set<string>; onPick: (d
       </div>
     </div>
   );
-}
-
-/** base64url VAPID key → bytes, as pushManager.subscribe wants it. */
-function vapidBytes(key: string): Uint8Array<ArrayBuffer> {
-  const raw = atob(key.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (key.length % 4)) % 4));
-  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
 }
 
 /**
@@ -534,7 +412,6 @@ function usePush(): [PushState, () => void] {
 
 const COLLAPSED_KEY = "tern-mobile:collapsed-projects";
 const HIDE_OLD_KEY = "tern-mobile:hide-old";
-const OLD_MS = 24 * 3600_000;
 
 /** The session list. `wide`: shown beside the open session, which `selected` marks. */
 function Home({ wide = false, selected = null }: { wide?: boolean; selected?: string | null }) {
@@ -550,32 +427,18 @@ function Home({ wide = false, selected = null }: { wide?: boolean; selected?: st
     localStorage.setItem(HIDE_OLD_KEY, hideOld ? "off" : "on");
     setHideOld(!hideOld);
   }
-  const isOld = (i: Item) =>
-    i.since > 0 && now - i.since > OLD_MS && i.status !== "working" && i.status !== "blocked" && !i.unseen && i.block !== selected;
-  const oldCount = state ? state.projects.reduce((n, p) => n + p.items.filter(isOld).length, 0) : 0;
-  const projects = useMemo(() => {
-    if (!state) return [];
-    const keep = (p: State["projects"][number], i: Item) =>
-      needle
-        ? [p.name, i.tag ?? "", i.title, i.agent?.lastPrompt ?? ""].join(" ").toLowerCase().includes(needle)
-        : !hideOld || !isOld(i);
-    if (!needle && !hideOld) return state.projects;
-    return state.projects.map((p) => ({ ...p, items: p.items.filter((i) => keep(p, i)) })).filter((p) => p.items.length);
-  }, [state, needle, hideOld, now, selected]);
+  const oldCount = state ? state.projects.reduce((n, p) => n + p.items.filter((i) => isOld(i, now, selected)).length, 0) : 0;
+  const projects = useMemo(
+    () => (state ? listProjects(state.projects, needle, hideOld, now, selected) : []),
+    [state, needle, hideOld, now, selected],
+  );
 
   const [picker, setPicker] = useState(false);
   // Collapsed projects, remembered on this device.
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
-    try {
-      return new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? "[]") as string[]);
-    } catch {
-      return new Set();
-    }
-  });
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => parseCollapsed(localStorage.getItem(COLLAPSED_KEY)));
   function toggleProject(name: string) {
     setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (!next.delete(name)) next.add(name);
+      const next = toggled(prev, name);
       localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next]));
       return next;
     });
@@ -697,17 +560,6 @@ function Home({ wide = false, selected = null }: { wide?: boolean; selected?: st
   );
 }
 
-/**
- * DOMPurify's default URI check minus the risky schemes: http(s)/mailto links, and values with no
- * scheme at all (relative links, and plain attribute values such as an svg's `x="10"`, which a
- * schemes-only pattern would strip). `javascript:`/`data:` links would run with shell-control rights.
- */
-const SAFE_URI = /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i;
-/** Agent and note markdown. Raw HTML is already escaped by the marked renderer above. */
-function renderMarkdown(text: string): string {
-  return DOMPurify.sanitize(marked.parse(text, { async: false }), { ALLOWED_URI_REGEXP: SAFE_URI });
-}
-
 let mermaidReady: Promise<Mermaid> | null = null;
 const mermaidSvgs = new Map<string, string | null>();
 let mermaidSeq = 0;
@@ -738,17 +590,6 @@ async function drawMermaid(root: HTMLElement) {
   }
 }
 
-/**
- * The language hyphenation should use. Hungarian-only letters (ő, ű) or a high share of accented
- * vowels mark a message as Hungarian; everything else hyphenates as English.
- */
-function langOf(text: string): "hu" | "en" {
-  if (/[őűŐŰ]/.test(text)) return "hu";
-  const letters = text.match(/\p{L}/gu)?.length ?? 0;
-  const accented = text.match(/[áéíóöúüÁÉÍÓÖÚÜ]/g)?.length ?? 0;
-  return letters > 0 && accented / letters > 0.02 ? "hu" : "en";
-}
-
 function Markdown({ text, class: cls }: { text: string; class: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const html = useMemo(() => renderMarkdown(text), [text]);
@@ -762,7 +603,7 @@ function Markdown({ text, class: cls }: { text: string; class: string }) {
 }
 
 /** omp's advisor notes: severity, then `Key:`, `Evidence:`, `Impact:`, `Fix:` lines; tap to expand. */
-function AdvisorCard({ notes }: { notes: { advisor: string; severity: string; note: string }[] }) {
+function AdvisorCard({ notes }: { notes: AdvisorNote[] }) {
   const [open, setOpen] = useState(false);
   return (
     <div class="advisor" onClick={() => setOpen(!open)}>
@@ -774,8 +615,7 @@ function AdvisorCard({ notes }: { notes: { advisor: string; severity: string; no
         </span>
       </div>
       {notes.map((n, i) => {
-        const fields = n.note.split("\n").map((l) => /^(\w[\w ]{0,15}):\s*(.*)$/.exec(l));
-        const key = fields.find((f) => f?.[1] === "Key")?.[2] ?? n.note.split("\n")[0];
+        const { key, lines } = parseAdvisorNote(n.note);
         return (
           <div key={i} class="advisor-note">
             <div class="advisor-line">
@@ -784,39 +624,21 @@ function AdvisorCard({ notes }: { notes: { advisor: string; severity: string; no
             </div>
             {open && (
               <div class="advisor-body">
-                {n.note.split("\n").map((l, j) => {
-                  const f = fields[j];
-                  if (f?.[1] === "Key") return null;
-                  return f ? (
+                {lines.map((l, j) =>
+                  l.label ? (
                     <p key={j}>
-                      <b>{f[1]}:</b> {f[2]}
+                      <b>{l.label}:</b> {l.text}
                     </p>
                   ) : (
-                    <p key={j}>{l}</p>
-                  );
-                })}
+                    <p key={j}>{l.text}</p>
+                  ),
+                )}
                 <div class="muted small">{n.advisor}</div>
               </div>
             )}
           </div>
         );
       })}
-    </div>
-  );
-}
-
-function Thumbs({ images }: { images: Img[] }) {
-  const [open, setOpen] = useState<Img | null>(null);
-  return (
-    <div class="thumbs" onClick={(e) => e.stopPropagation()}>
-      {images.map((i, n) => (
-        <img key={n} class="thumb" src={i.src} loading="lazy" alt="" onClick={() => setOpen(i)} />
-      ))}
-      {open && (
-        <div class="lightbox" onClick={() => setOpen(null)}>
-          <img src={open.src} alt="" />
-        </div>
-      )}
     </div>
   );
 }
@@ -850,75 +672,6 @@ function Tools({ calls, images, todo, latestTodo }: { calls: ToolCall[]; images:
   );
 }
 
-const TODO_MARK: Record<string, string> = { completed: "✓", in_progress: "▸", blocked: "!", pending: "○" };
-
-/**
- * omp's todo list as a `todo` call left it. The newest one in the chat shows every task; older
- * ones show one progress line (tap for the list), so a long session isn't a wall of checklists.
- */
-function Todo({ phases, full }: { phases: TodoPhase[]; full: boolean }) {
-  // Follows `full` (a newer list collapses this one) until the user taps it.
-  const [toggled, setToggled] = useState<boolean | null>(null);
-  const open = toggled ?? full;
-  const tasks = phases.flatMap((p) => p.tasks);
-  const done = tasks.filter((t) => t.status === "completed").length;
-  const blocked = tasks.filter((t) => t.status === "blocked").length;
-  const current = tasks.find((t) => t.status === "in_progress") ?? tasks.find((t) => t.status === "blocked");
-  return (
-    <div
-      class="todo"
-      onClick={(e) => {
-        e.stopPropagation();
-        setToggled(!open);
-      }}
-    >
-      <div class="todo-head">
-        <span class="todo-count">
-          {done}/{tasks.length}
-        </span>
-        {blocked > 0 && <span class="todo-blocked">{blocked} blocked</span>}
-        <span class="todo-current">{done === tasks.length ? "all done" : (current?.content ?? "")}</span>
-      </div>
-      {open &&
-        phases.map((p, i) => (
-          <div key={i} class="todo-phase">
-            {phases.length > 1 && <div class="todo-phase-name">{p.name}</div>}
-            {p.tasks.map((t, j) => (
-              <div key={j} class={`todo-task st-${t.status}`}>
-                <span class="todo-mark">{TODO_MARK[t.status] ?? "·"}</span>
-                <span>
-                  {t.content}
-                  {t.blocker && <span class="todo-blocker"> — {t.blocker}</span>}
-                </span>
-              </div>
-            ))}
-          </div>
-        ))}
-    </div>
-  );
-}
-
-function duration(ms: number): string {
-  const s = Math.max(0, Math.round(ms / 1000));
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
-  return `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`;
-}
-
-/** `anthropic/claude-opus-5-5` → `Opus 5.5`, `openai-codex/gpt-6.1-sol` → `GPT 6.1 Sol`. */
-function prettyModel(spec: string): string {
-  const parts = (spec.split("/").pop() ?? "").split(":")[0].replace(/^claude-/, "").split("-");
-  const words: string[] = [];
-  for (const p of parts) {
-    const prev = words[words.length - 1];
-    if (/^\d+$/.test(p) && prev && /\d$/.test(prev)) words[words.length - 1] = `${prev}.${p}`;
-    else words.push(p === "gpt" ? "GPT" : p.charAt(0).toUpperCase() + p.slice(1));
-  }
-  return words.join(" ");
-}
-
-type AskPick = { option: number | null; picks: number[]; other: string; otherOpen: boolean };
-
 /** An open ask: tap to answer, like omp's own dialog. One single-choice question sends on tap. */
 function AskCard({ ask, block, pending }: { ask: Ask; block: string; pending: boolean }) {
   const [picks, setPicks] = useState<AskPick[]>(() =>
@@ -940,15 +693,11 @@ function AskCard({ ask, block, pending }: { ask: Ask; block: string; pending: bo
   }
 
   const instant = ask.questions.length === 1 && !ask.questions[0].multi;
-  const ready = picks.every((p, i) =>
-    p.otherOpen ? p.other.trim() !== "" : ask.questions[i].multi ? true : p.option !== null,
-  );
+  const ready = askReady(ask.questions, picks);
 
   async function send(next: AskPick[]) {
     setSending(true);
-    const answers = next.map((p) =>
-      p.otherOpen && p.other.trim() ? { other: p.other.trim(), picks: p.picks } : { option: p.option, picks: p.picks },
-    );
+    const answers = askAnswers(next);
     const err = await post(`/api/blocks/${block}/answer`, { id: ask.id, answers });
     setSending(false);
     setError(err);
@@ -1038,58 +787,15 @@ function AskCard({ ask, block, pending }: { ask: Ask; block: string; pending: bo
   );
 }
 
-const clock = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-
-/**
- * A prompt, with omp's per-prompt actions: time, Copy, and Rewind (back to before this prompt,
- * its text returning to the composer). They show on hover, or on a tap where there's no hover.
- */
-function UserMsg({ entry, block }: { entry: Extract<ChatEntry, { role: "user" }>; block: string }) {
-  const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    await navigator.clipboard.writeText(entry.text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1200);
-  }
-  async function rewind() {
-    if (!confirm("Rewind to before this prompt? Later turns leave the conversation (omp keeps them as a branch) and the prompt returns to the composer."))
-      return;
-    const err = await post(`/api/blocks/${block}/rewind`, { entry: entry.id });
-    if (err) alert(`Rewind failed: ${err}`);
-  }
-  return (
-    <div class={`msg user${open ? " acts-open" : ""}`} onClick={() => setOpen(!open)}>
-      <span class="user-mark">›</span>
-      <span class="user-text">
-        {entry.text}
-        {entry.images.length > 0 && <Thumbs images={entry.images} />}
-      </span>
-      <div class="user-acts" onClick={(ev) => ev.stopPropagation()}>
-        <span class="muted">{clock(entry.ts)}</span>
-        {entry.text && (
-          <button type="button" onClick={copy}>
-            {copied ? "Copied" : "Copy"}
-          </button>
-        )}
-        {entry.id && (
-          <button type="button" onClick={rewind}>
-            Rewind
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Chat({ entries, block }: { entries: ChatEntry[]; block: string }) {
+/** `rewind`: the session's omp can rewind to a prompt. */
+function Chat({ entries, block, rewind }: { entries: ChatEntry[]; block: string; rewind: boolean }) {
   // An ask is open only while nothing was said after it.
   const lastTalk = entries.findLastIndex((e) => e.role === "user" || e.role === "assistant");
   const latestTodo = entries.findLastIndex((e) => e.role === "tools" && e.todo !== null);
   return (
     <>
       {entries.map((e, n) => {
-        if (e.role === "user") return <UserMsg key={n} entry={e} block={block} />;
+        if (e.role === "user") return <UserMsg key={n} entry={e} block={block} rewind={rewind} />;
         if (e.role === "turn")
           return (
             <div key={n} class="turn">
@@ -1119,10 +825,7 @@ const KEY_BAR: [string, string[]][] = [
   ["Space", ["space"]],
 ];
 
-/** A model omp has credentials for, as the bridge lists it. */
-type CatalogModel = { p: string; id: string; name: string; r: boolean; ctx: number; in: number; out: number; img: boolean };
 const RECENT_MODELS_KEY = "tern-mobile:recent-models";
-const RECENT_MAX = 6;
 const SEARCH_MAX = 80;
 const EFFORT_LABEL: Record<string, string> = { off: "Off", minimal: "Min", low: "Low", medium: "Medium", high: "High", xhigh: "XHigh", max: "Max" };
 const TIER_LABEL: Record<string, [string, string]> = {
@@ -1130,26 +833,6 @@ const TIER_LABEL: Record<string, [string, string]> = {
   flex: ["Flex", "cheaper, slower"],
   priority: ["Fast", "priority serving, costs more"],
 };
-
-function recentModels(): string[] {
-  try {
-    return (JSON.parse(localStorage.getItem(RECENT_MODELS_KEY) ?? "[]") as string[]).slice(0, RECENT_MAX);
-  } catch {
-    return [];
-  }
-}
-
-/** `600000` → `600k`, `1048576` → `1M`. */
-function ctxShort(n: number): string {
-  return n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n);
-}
-
-/** `$4·20` per million tokens in and out; "" when the catalog has no price. */
-function priceShort(m: CatalogModel): string {
-  if (!m.in && !m.out) return "";
-  const f = (n: number) => (n >= 10 ? String(Math.round(n)) : String(+n.toFixed(2)));
-  return `$${f(m.in)}·${f(m.out)}`;
-}
 
 function ModelRow({ m, current, onPick }: { m: CatalogModel; current: boolean; onPick: () => void }) {
   const facts = [m.p, m.ctx ? ctxShort(m.ctx) : "", priceShort(m), m.r ? "reasoning" : "", m.img ? "vision" : ""].filter(Boolean);
@@ -1189,13 +872,15 @@ function ModelSheet({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [openProvider, setOpenProvider] = useState<string | null>(null);
+  // An omp without the catalog API still applies roles; it just can't list every model.
+  const listable = can(current, "models");
   useEffect(() => {
-    if (!bridged) return;
+    if (!bridged || !listable) return;
     void fetch(`/api/blocks/${block}/models`, { method: "POST", headers: { "x-tern-mobile": "1" } })
       .then((r) => r.json())
       .then((d: { models?: CatalogModel[]; error?: string }) => (d.models ? setModels(d.models) : setLoadError(d.error ?? "no models")))
       .catch((e) => setLoadError(String(e)));
-  }, [block, bridged]);
+  }, [block, bridged, listable]);
   useEffect(() => {
     const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", esc);
@@ -1206,27 +891,21 @@ function ModelSheet({
   const thinking = current?.thinking ?? "";
   const role = currentRole(roles, model, thinking);
   const needle = q.trim().toLowerCase();
-  const words = needle.split(/\s+/).filter(Boolean);
-  const matches = (text: string) => words.every((w) => text.toLowerCase().includes(w));
   const byKey = useMemo(() => new Map((models ?? []).map((m) => [`${m.p}/${m.id}`, m])), [models]);
   const providers = useMemo(() => {
     const groups = new Map<string, CatalogModel[]>();
     for (const m of models ?? []) groups.set(m.p, [...(groups.get(m.p) ?? []), m]);
     return [...groups].sort((x, y) => x[0].localeCompare(y[0]));
   }, [models]);
-  // Every word must match; the whole query in the name ranks first, then in the id.
-  const rank = (m: CatalogModel) => (m.name.toLowerCase().includes(needle) ? 0 : `${m.p}/${m.id}`.includes(needle) ? 1 : 2);
-  const found = needle
-    ? (models ?? []).filter((m) => matches(`${m.name} ${m.p}/${m.id}`)).sort((x, y) => rank(x) - rank(y))
-    : [];
-  const recent = recentModels()
+  const found = searchModels(models ?? [], q);
+  const recent = parseRecent(localStorage.getItem(RECENT_MODELS_KEY))
     .map((k) => byKey.get(k))
     .filter((m): m is CatalogModel => !!m);
 
   async function pick(spec: string) {
     const err = await send("model", { spec });
     if (err) return;
-    localStorage.setItem(RECENT_MODELS_KEY, JSON.stringify([spec, ...recentModels().filter((k) => k !== spec)].slice(0, RECENT_MAX)));
+    localStorage.setItem(RECENT_MODELS_KEY, JSON.stringify(withRecent(parseRecent(localStorage.getItem(RECENT_MODELS_KEY)), spec)));
     onClose();
   }
   async function pickRole(r: string) {
@@ -1290,9 +969,9 @@ function ModelSheet({
             )}
             <input class="sheet-filter" type="search" placeholder="Search models" value={q} onInput={(e) => setQ(e.currentTarget.value)} />
             <div class="sheet-list">
-              {roles.some((r) => !needle || matches(`${r.role} ${r.spec}`)) && <div class="mp-section">Roles · Ctrl+P</div>}
+              {roles.some((r) => !needle || matchesWords(needle, `${r.role} ${r.spec}`)) && <div class="mp-section">Roles · Ctrl+P</div>}
               {roles
-                .filter((r) => !needle || matches(`${r.role} ${r.spec}`))
+                .filter((r) => !needle || matchesWords(needle, `${r.role} ${r.spec}`))
                 .map((r) => {
                   const [spec, level] = r.spec.split(/:(?=[a-z]+$)/);
                   return (
@@ -1307,28 +986,34 @@ function ModelSheet({
                     </button>
                   );
                 })}
-              {!models && <div class="muted small sheet-note">{loadError ? `Models: ${loadError}` : "Loading models…"}</div>}
-              {needle ? (
-                <>
-                  {found.length > 0 && <div class="mp-section">{found.length > SEARCH_MAX ? `${SEARCH_MAX} of ${found.length}` : found.length} models</div>}
-                  {found.slice(0, SEARCH_MAX).map(row)}
-                </>
+              {!listable ? (
+                <div class="muted small sheet-note">This omp can't list models; roles still work</div>
               ) : (
                 <>
-                  {recent.length > 0 && <div class="mp-section">Recent</div>}
-                  {recent.map(row)}
-                  {providers.length > 0 && <div class="mp-section">All models</div>}
-                  {providers.map(([p, list]) => (
-                    <div key={p}>
-                      <button type="button" class="mp-provider" onClick={() => setOpenProvider(openProvider === p ? null : p)}>
-                        <span class="chev">{openProvider === p ? "▾" : "▸"}</span>
-                        <span>{p}</span>
-                        <span class="muted">{list.length}</span>
-                        {model.startsWith(`${p}/`) && <span class="mp-check">●</span>}
-                      </button>
-                      {openProvider === p && list.map(row)}
-                    </div>
-                  ))}
+                  {!models && <div class="muted small sheet-note">{loadError ? `Models: ${loadError}` : "Loading models…"}</div>}
+                  {needle ? (
+                    <>
+                      {found.length > 0 && <div class="mp-section">{found.length > SEARCH_MAX ? `${SEARCH_MAX} of ${found.length}` : found.length} models</div>}
+                      {found.slice(0, SEARCH_MAX).map(row)}
+                    </>
+                  ) : (
+                    <>
+                      {recent.length > 0 && <div class="mp-section">Recent</div>}
+                      {recent.map(row)}
+                      {providers.length > 0 && <div class="mp-section">All models</div>}
+                      {providers.map(([p, list]) => (
+                        <div key={p}>
+                          <button type="button" class="mp-provider" onClick={() => setOpenProvider(openProvider === p ? null : p)}>
+                            <span class="chev">{openProvider === p ? "▾" : "▸"}</span>
+                            <span>{p}</span>
+                            <span class="muted">{list.length}</span>
+                            {model.startsWith(`${p}/`) && <span class="mp-check">●</span>}
+                          </button>
+                          {openProvider === p && list.map(row)}
+                        </div>
+                      ))}
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -1347,17 +1032,13 @@ const COMPLETABLE = /(^|\s)[/@][^\s]*$/;
 /** A pasted image ready to send: base64 bytes, their type, and an object URL for the preview. */
 type PastedImage = { data: string; mimeType: string; url: string };
 const MAX_PASTED = 8;
-const SENDABLE = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
-/** Bigger pastes (photos, 4K screenshots) are scaled to this long edge and sent as JPEG. */
-const MAX_EDGE = 2048;
-const MAX_RAW_BYTES = 3 * 1024 * 1024;
 
 async function pastedImage(file: File): Promise<PastedImage> {
   let blob: Blob = file;
-  if (!SENDABLE.has(file.type) || file.size > MAX_RAW_BYTES) {
+  if (needsReencode(file.type, file.size)) {
     const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
-    const canvas = new OffscreenCanvas(Math.round(bitmap.width * scale), Math.round(bitmap.height * scale));
+    const { width, height } = fitEdge(bitmap.width, bitmap.height);
+    const canvas = new OffscreenCanvas(width, height);
     canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     bitmap.close();
     blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.88 });
@@ -1416,9 +1097,10 @@ function Composer({
   const hintSeq = useRef(0);
 
   // omp's own autocomplete while the phone types a /command, /skill:… or @path token.
+  const completable = can(item?.live, "complete");
   useEffect(() => {
     const seq = ++hintSeq.current;
-    if (!live || !COMPLETABLE.test(text) || Date.now() - lastEdit.current > 1000) return setHints(null);
+    if (!live || !completable || !COMPLETABLE.test(text) || Date.now() - lastEdit.current > 1000) return setHints(null);
     const timer = window.setTimeout(async () => {
       const r = await fetch(`/api/blocks/${block}/complete`, {
         method: "POST",
@@ -1429,7 +1111,7 @@ function Composer({
       if (seq === hintSeq.current) setHints(data?.items.length ? data : null);
     }, 120);
     return () => clearTimeout(timer);
-  }, [text, live]);
+  }, [text, live, completable]);
 
   async function pick(item: Hints["items"][number]) {
     if (!hints) return;
@@ -1533,14 +1215,9 @@ function Composer({
 
   /** Mirrors the composer onto the shell's prompt: Backspace what changed, type the rest. */
   function typeInto(value: string) {
-    const before = Array.from(typed.current);
-    const after = Array.from(value);
-    let same = 0;
-    while (same < before.length && same < after.length && before[same] === after[same]) same++;
+    const edit = lineEdit(typed.current, value);
     typed.current = value;
-    const back = before.length - same;
-    const add = after.slice(same).join("");
-    if (back || add) void queue("type", { back, text: add });
+    if (edit.back || edit.text) void queue("type", edit);
   }
 
   function terminalKeys(keys: string[]) {
@@ -1576,8 +1253,9 @@ function Composer({
     // and let the one in flight land first.
     outbox.current.next = null;
     if (!(await draftSettled())) return setError("Draft still syncing; send again");
-    const question = /^\/btw\s+([\s\S]+)$/.exec(text.trim())?.[1];
-    if (question && live && !pasted.length && !followUp) {
+    const question = btwQuestion(text);
+    // An omp without side turns gets `/btw …` as a normal prompt.
+    if (question && live && can(item?.live, "btw") && !pasted.length && !followUp) {
       // A side question answered on the phone; the desktop draft is cleared like a sent prompt.
       setSending(true);
       const r = await fetch(`/api/blocks/${block}/btw`, {
@@ -1768,11 +1446,8 @@ function Composer({
           }}
           onPaste={terminal || !a ? undefined : onPaste}
           onKeyDown={(e) => {
-            // A hardware keyboard's Enter sends; Shift+Enter breaks the line; Ctrl+Enter or Ctrl+Q
-            // queues a follow-up while the agent works, as in omp.
-            const queue = e.ctrlKey && (e.key === "Enter" || e.key === "q") && working && live && !terminal;
-            if (queue) return void submit(e, true);
-            if (e.key === "Enter" && !e.shiftKey && !("ontouchstart" in window)) submit(e);
+            const action = composerKey(e, { working, live, terminal, touch: "ontouchstart" in window });
+            if (action) void submit(e, action === "followUp");
           }}
         />
         <div class="composer-foot">
@@ -1889,6 +1564,7 @@ function Session({ block }: { block: string }) {
             )}
             {!online && <span class="c-blocked">offline</span>}
           </div>
+          {extensionOutdated(item?.live) && <div class="muted small">extension outdated — restart this omp</div>}
         </div>
         <button class="ghost" title="Show this pane on the desktop" onClick={() => post(`/api/blocks/${block}/focus`, {})}>
           ⌖
@@ -1939,7 +1615,7 @@ function Session({ block }: { block: string }) {
           )
         ) : chat && view === "chat" ? (
           <>
-            <Chat entries={chat} block={block} />
+            <Chat entries={chat} block={block} rewind={can(item?.live, "rewind")} />
             {live && <Markdown class="msg assistant md live" text={live} />}
             {queued.map((q, i) => (
               <div key={i} class="queued" title={q.followUp ? "Sent once the running turn ends" : "Steers the running turn"}>
@@ -1951,7 +1627,7 @@ function Session({ block }: { block: string }) {
         ) : screen != null ? (
           screen.html ? (
             // Tern's colored capture: <pre> and styled <span>s; scripts and links are stripped.
-            <div class="term" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(screen.text, { ALLOWED_TAGS: ["pre", "span", "b", "i", "u"], ALLOWED_ATTR: ["style"] }) }} />
+            <div class="term" dangerouslySetInnerHTML={{ __html: screenHtml(screen.text) }} />
           ) : (
             <pre class="term">{screen.text}</pre>
           )

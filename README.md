@@ -42,7 +42,7 @@ The app holds a stream only while it is visible: 10 s after it is hidden (anothe
 
 ## Draft mirroring (omp extension)
 
-`omp-extension/tern-mobile.ts`, symlinked to `~/.omp/agent/extensions/tern-mobile.ts`, runs in every omp started in a Tern pane (`$TERN_PANE`). It opens a WebSocket to `ws://127.0.0.1:4380/bridge`, authenticated with `~/.config/tern-mobile/bridge-token` (created by the server, mode 600), and:
+`omp-extension/tern-mobile.ts`, symlinked to `~/.omp/agent/extensions/tern-mobile.ts`, runs in every omp started in a Tern pane (`$TERN_PANE`). It opens a WebSocket to `ws://127.0.0.1:4380/bridge` (`$TERN_MOBILE_BRIDGE` overrides), authenticated with `~/.config/tern-mobile/bridge-token` (created by the server, mode 600; `$TERN_MOBILE_TOKEN_FILE` overrides), and:
 
 - polls `ctx.ui.getEditorText()` every 100 ms and sends the draft, model, thinking level and idle state when they change;
 - applies `set` (phone keystrokes → `setEditorText`), `model` (`provider/id[:thinking]` → `pi.setModel` + `setThinkingLevel`), `thinking`, `tier` (`pi.setServiceTier`), and answers `models` with the catalog;
