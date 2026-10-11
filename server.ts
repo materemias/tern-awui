@@ -3,8 +3,8 @@
 // from its history.db (see lib/paths.ts for where omp keeps them); writes input with `tern send`.
 // omp sessions running the tern-mobile extension also connect to /bridge: they stream their
 // prompt draft, model and busy state, and take drafts and model picks from the phone.
-// Listens on loopback only; `tailscale serve` is the way in. Its identity header and the
-// pairing cookie (`bun server.ts pair` prints the link that sets it) are the gate.
+// Listens on loopback only; `tailscale serve` is the way in, and its identity header
+// (`Tailscale-User-Login`, checked against TERN_MOBILE_ALLOW) is the gate.
 
 import { Database } from "bun:sqlite";
 import { basename, dirname, isAbsolute, join } from "node:path";
@@ -23,19 +23,12 @@ import { answerSteps, KEYS, promptImages, type PromptImage } from "./lib/input";
 import { emptyState, listChanged, parseBridgeState, PROTOCOL, type BridgeState, type Caps, type Context, type Job } from "./lib/bridge-state";
 import { extensionCheck, offersCommand, sessionMismatch, type InstallStatus, type Mismatch } from "./lib/extension-check";
 import { configDir, installedExtension, ompDataDir, ternNotesDir } from "./lib/paths";
-import { cookieValue, ensureToken, PAIR_COOKIE, sameToken } from "./lib/auth";
+import { ensureToken, sameToken } from "./lib/auth";
 import { recentProjects } from "./lib/projects";
 import { vapidSubject } from "./lib/push";
 
 const HOME = homedir();
 const CONFIG_DIR = configDir(process.env, HOME);
-const ACCESS_TOKEN_FILE = join(CONFIG_DIR, "access-token");
-
-// `bun server.ts pair`: the pairing link's path, for installers to put behind the tailnet URL.
-if (process.argv[2] === "pair") {
-  console.log(`/pair?code=${ensureToken(ACCESS_TOKEN_FILE)}`);
-  process.exit(0);
-}
 
 const PORT = Number(process.env.TERN_MOBILE_PORT ?? 4380);
 const ALLOW = (process.env.TERN_MOBILE_ALLOW ?? "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -49,8 +42,6 @@ const DOC_MAX_BYTES = 512 * 1024;
 /** A command printing one folder per line; `.py` runs with python3. Unset: lib/projects.ts. */
 const PROJECTS_SCRIPT = process.env.TERN_MOBILE_PROJECTS ?? "";
 const DIST = fileURLToPath(new URL("./dist/", import.meta.url));
-/** Browsers cap cookie lifetimes at 400 days. */
-const PAIR_MAX_AGE_S = 400 * 24 * 3600;
 
 /** This checkout. The phone shows it in the command that (re)installs the extension. */
 const REPO = import.meta.dir;
@@ -75,7 +66,6 @@ if (!DEV && ALLOW.length === 0) {
 }
 
 const BRIDGE_TOKEN = ensureToken(join(CONFIG_DIR, "bridge-token"));
-const ACCESS_TOKEN = ensureToken(ACCESS_TOKEN_FILE);
 
 // ---------- web push ----------
 
@@ -1023,23 +1013,6 @@ function bridgeAuthorized(req: Request): boolean {
   return sameToken(req.headers.get("x-tern-mobile-bridge") ?? "", BRIDGE_TOKEN);
 }
 
-/** `/pair?code=…`: the installer's link. The right code sets the cookie /api asks for. */
-function pair(url: URL): Response {
-  if (!sameToken(url.searchParams.get("code") ?? "", ACCESS_TOKEN))
-    return new Response("<!doctype html><title>tern</title><p>Wrong pairing code. Open the pairing link the installer printed (<code>bun server.ts pair</code>).</p>", {
-      status: 403,
-      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
-    });
-  return new Response(null, {
-    status: 302,
-    headers: {
-      location: "/",
-      "cache-control": "no-store",
-      "set-cookie": `${PAIR_COOKIE}=${ACCESS_TOKEN}; Path=/; Max-Age=${PAIR_MAX_AGE_S}; HttpOnly; Secure; SameSite=Strict`,
-    },
-  });
-}
-
 /** Every bridge connection per pane; the newest is the pane's bridge. */
 const paneSockets = new Map<string, Set<ServerWebSocket<{ pane: string | null }>>>();
 
@@ -1096,12 +1069,7 @@ Bun.serve<{ pane: string | null }>({
     }
     const login = req.headers.get("tailscale-user-login");
     if (!DEV && !(login && ALLOW.includes(login))) return new Response("forbidden", { status: 403 });
-    if (url.pathname === "/pair") return pair(url);
-    if (url.pathname.startsWith("/api/")) {
-      if (!DEV && !sameToken(cookieValue(req.headers.get("cookie"), PAIR_COOKIE), ACCESS_TOKEN)) return json({ error: "not paired" }, 401);
-      return handleApi(req, url);
-    }
-    // The app itself needs only the login: it shows how to pair when /api says "not paired".
+    if (url.pathname.startsWith("/api/")) return handleApi(req, url);
     const rel = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
     if (rel.includes("..")) return new Response("bad path", { status: 400 });
     const file = Bun.file(join(DIST, rel));

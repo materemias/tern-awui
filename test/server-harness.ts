@@ -27,7 +27,6 @@ export function isolatedEnv(home: string, extra: Record<string, string> = {}): R
 export class Sandbox {
   home = mkdtempSync(`${tmpdir()}/tern-awui-server-`);
   token = "test-only-bridge-token";
-  access = "test-only-access-token";
   session = "test-session";
   login = "phone@example.test";
   base = "";
@@ -43,7 +42,6 @@ export class Sandbox {
     for (const rel of ["bin", "alpha", "beta", ".config/tern-mobile", ".omp/agent/sessions/project", ".omp/agent/blobs", ".local/state/tern/notes"])
       mkdirSync(`${this.home}/${rel}`, { recursive: true });
     writeFileSync(`${this.home}/.config/tern-mobile/bridge-token`, this.token);
-    writeFileSync(`${this.home}/.config/tern-mobile/access-token`, this.access);
     writeFileSync(`${this.home}/.omp/agent/blobs/${HASH}`, "image-bytes");
     writeFileSync(`${this.home}/.local/state/tern/notes/abc.md`, "# Note\n");
     this.prompt = this.transcript.user("Fix the build", 1000);
@@ -111,8 +109,8 @@ esac
     }, "server startup", 5000);
   }
 
-  /** A paired phone's headers: an allowed Tailscale login and the access cookie. */
-  get headers() { return { "tailscale-user-login": this.login, cookie: `tern_awui=${this.access}` }; }
+  /** A phone's headers: an allowed Tailscale login. */
+  get headers() { return { "tailscale-user-login": this.login }; }
   get(path: string) { return fetch(this.base + path, { headers: this.headers }); }
   post(path: string, body: unknown = {}) {
     return fetch(this.base + path, { method: "POST", headers: { ...this.headers, "x-tern-mobile": "1", "content-type": "application/json" }, body: JSON.stringify(body) });

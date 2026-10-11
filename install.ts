@@ -26,8 +26,6 @@ export interface PlanInput {
   port: number;
   /** Allowed Tailscale logins. Unused when uninstalling. */
   allow: string[];
-  /** The machine's tailnet DNS name, trailing dot allowed. Unused when uninstalling. */
-  dnsName: string;
   /** Further TERN_MOBILE_* settings baked into the service (see PASSTHROUGH_ENV). */
   extraEnv: Record<string, string>;
   /** macOS: the user's uid (launchctl domain `gui/<uid>`). */
@@ -43,9 +41,7 @@ export type Action =
   | { kind: "symlink"; path: string; target: string }
   | { kind: "copy"; from: string; to: string }
   | { kind: "remove"; path: string }
-  | { kind: "run"; argv: string[]; cwd?: string; mayFail?: boolean }
-  /** Runs `bun server.ts pair`, whose one stdout line is appended to `base` to form the pairing URL. */
-  | { kind: "pair"; argv: string[]; cwd: string; base: string };
+  | { kind: "run"; argv: string[]; cwd?: string; mayFail?: boolean };
 
 export const SERVICE_NAME = "tern-mobile";
 export const LAUNCHD_LABEL = "dev.tern-awui";
@@ -253,14 +249,11 @@ export function plan(input: PlanInput): Action[] {
     return [...service, { kind: "remove", path: extension }, serveOff];
   }
 
-  const base = `https://${input.dnsName.replace(/\.$/, "")}:${input.port}`;
   const actions: Action[] = [
     { kind: "run", argv: [input.bun, "build.ts"], cwd: input.repo },
     input.platform === "win32"
       ? { kind: "copy", from: extensionSource, to: extension }
       : { kind: "symlink", path: extension, target: extensionSource },
-    // Before the service starts, so the server and this command don't both create the access token.
-    { kind: "pair", argv: [input.bun, p.join(input.repo, "server.ts"), "pair"], cwd: input.repo, base },
   ];
   if (input.platform === "linux") {
     actions.push(
@@ -307,8 +300,6 @@ export function describe(a: Action): string {
       return `remove ${a.path}`;
     case "run":
       return `run ${a.argv.map(quoteArg).join(" ")}${a.cwd ? `  (in ${a.cwd})` : ""}${a.mayFail ? "  (failure ignored)" : ""}`;
-    case "pair":
-      return `pair ${a.argv.map(quoteArg).join(" ")}  (in ${a.cwd}; URL starts ${a.base})`;
   }
 }
 
@@ -322,10 +313,9 @@ function replace(file: string): void {
   rmSync(file, { force: true });
 }
 
-/** Carries out the actions in order; returns the pairing URL when a `pair` action ran. */
-export function execute(actions: Action[], opts: { dryRun: boolean; log?: (line: string) => void }): string | undefined {
+/** Carries out the actions in order. */
+export function execute(actions: Action[], opts: { dryRun: boolean; log?: (line: string) => void }): void {
   const log = opts.log ?? console.log;
-  let pairUrl: string | undefined;
   for (const a of actions) {
     log(`${opts.dryRun ? "[dry-run] " : ""}${describe(a)}`);
     if (opts.dryRun) continue;
@@ -355,16 +345,8 @@ export function execute(actions: Action[], opts: { dryRun: boolean; log?: (line:
         if (r.exitCode !== 0 && !a.mayFail) throw new Error(`${a.argv.join(" ")} exited with ${r.exitCode}`);
         break;
       }
-      case "pair": {
-        const r = Bun.spawnSync(a.argv, { cwd: a.cwd, stderr: "inherit" });
-        const line = r.stdout.toString().trim();
-        if (r.exitCode !== 0 || !line.startsWith("/pair?code=")) throw new Error(`${a.argv.join(" ")} failed (exit ${r.exitCode}): ${line}`);
-        pairUrl = a.base + line;
-        break;
-      }
     }
   }
-  return pairUrl;
 }
 
 export interface Args {
@@ -391,6 +373,11 @@ function parsePort(v: string | undefined, what: string): number {
   const n = Number(v);
   if (!v || !Number.isInteger(n) || n < 1 || n > 65535) throw new Error(`${what}: not a port: ${v}`);
   return n;
+}
+
+/** The app's address on the tailnet, as `tailscale serve` publishes it. */
+export function appUrl(dnsName: string, port: number): string {
+  return `https://${dnsName.replace(/\.$/, "")}:${port}/`;
 }
 
 /** `.Self.DNSName` and the login of the device's own user from `tailscale status --json`. */
@@ -442,15 +429,13 @@ function main(): void {
     configDir: env.TERN_MOBILE_CONFIG ?? p.join(home, ".config", "tern-mobile"),
     port,
     allow,
-    dnsName,
     extraEnv,
     uid: process.getuid?.() ?? 0,
     winUser: env.USERDOMAIN ? `${env.USERDOMAIN}\\${env.USERNAME ?? ""}` : (env.USERNAME ?? ""),
   });
-  const url = execute(actions, { dryRun: args.dryRun });
+  execute(actions, { dryRun: args.dryRun });
   if (args.uninstall) console.log(args.dryRun ? "\nwould uninstall tern-awui" : "\ntern-awui uninstalled (config and tokens kept)");
-  else if (args.dryRun) console.log("\nwould print the pairing URL: <base> + the output of `bun server.ts pair`");
-  else console.log(`\nOpen this link on the phone to pair it (it holds the access token; anyone with it and an allowed login gets in):\n${url}`);
+  else console.log(`\n${args.dryRun ? "would serve" : "Open this on the phone (signed in to Tailscale as an allowed login)"}: ${appUrl(dnsName, port)}`);
 }
 
 if (import.meta.main) {

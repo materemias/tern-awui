@@ -2,7 +2,7 @@
 
 A phone-sized web app (PWA) for the Tern panes on one machine: the agents grouped by project, each one's chat, its screen, and two-way control, reached over your tailnet. It's meant as a stopgap until the official Tern mobile client ships.
 
-After installing (see Install), open the pairing link the installer prints on each device. In Chrome on Android, use ⋮ → *Add to Home screen* to install it as an app.
+After installing (see Install), open the URL the installer prints on each device, signed in to Tailscale as an allowed login. In Chrome on Android, use ⋮ → *Add to Home screen* to install it as an app.
 
 ## What it shows
 
@@ -91,17 +91,16 @@ bun install.ts --uninstall        # [--dry-run]
 
 1. builds `dist/` (`bun build.ts`);
 2. puts the omp extension into `<omp dir>/extensions/tern-mobile.ts` (`~/.omp/agent` unless `TERN_MOBILE_OMP_DIR`): a symlink to `omp-extension/tern-mobile.ts` on Linux and macOS, a copy on Windows;
-3. runs `bun server.ts pair`, which creates the access token in the config dir if missing and prints `/pair?code=<token>`;
-4. writes the service, with the absolute paths of bun and the checkout, a `PATH` starting with the folders of `tern`, `omp` and bun, the port and the allowed logins, and starts it (a re-run restarts it with the new settings):
+3. writes the service, with the absolute paths of bun and the checkout, a `PATH` starting with the folders of `tern`, `omp` and bun, the port and the allowed logins, and starts it (a re-run restarts it with the new settings):
    - Linux: `~/.config/systemd/user/tern-mobile.service` (a real file; a symlink left there is replaced), `systemctl --user daemon-reload`, `enable`, `restart`;
    - macOS: `~/Library/LaunchAgents/dev.tern-awui.plist` (`RunAtLoad`, `KeepAlive`, log in `~/Library/Logs/tern-awui.log`), `launchctl bootout` + `bootstrap gui/<uid>`;
    - Windows: a launcher `tern-awui.vbs` in the config dir that runs bun with no window and restarts it 3 s after it exits, and a scheduled task `tern-awui` that starts it at your logon (`schtasks /Create /XML`, then `/Run`);
-5. runs `tailscale serve --bg --https=<port> http://127.0.0.1:<port>`;
-6. prints the pairing link: `https://<this machine's tailnet name>:<port>/pair?code=…`.
+4. runs `tailscale serve --bg --https=<port> http://127.0.0.1:<port>`;
+5. prints the app's URL: `https://<this machine's tailnet name>:<port>/`.
 
 The allowed login is the device's own Tailscale user (`tailscale status --json`) unless `TERN_MOBILE_ALLOW` is set. `TERN_MOBILE_PORT` (or `--port`) and any of `TERN_MOBILE_CONFIG`, `TERN_MOBILE_OMP_DIR`, `TERN_MOBILE_NOTES_DIR`, `TERN_MOBILE_PROJECTS`, `TERN_MOBILE_VAPID_SUBJECT` set when the installer runs are written into the service. `--dry-run` prints every file it would write (with its content) and every command, and changes nothing. `--uninstall` stops and removes the service, the extension link or copy and the serve entry; the config dir (tokens, VAPID keys, subscriptions) stays.
 
-**Pairing.** Open the printed link on the phone, signed in to Tailscale as an allowed login. It sets the `tern_awui` cookie (HttpOnly, Secure, SameSite=Strict, long-lived) and redirects to the app; in Chrome on Android, ⋮ → *Add to Home screen* installs it. The link holds the access token: anyone with it and an allowed login gets in, so don't share it. To pair another device later, run `bun server.ts pair` in the checkout and put the same `https://<name>:<port>` in front. Deleting `access-token` from the config dir and restarting the service unpairs every device.
+**Opening it.** Open the printed URL on the phone, signed in to Tailscale as an allowed login; in Chrome on Android, ⋮ → *Add to Home screen* installs it. Any device of an allowed login on the tailnet gets in, so there is nothing to pair.
 
 omp loads extensions at startup, so omp sessions already running don't bridge until restarted (`touch ~/.omp/agent/restart-all`). The app flags bridged sessions running an older extension and offers Reload (omp's `/restart`) where omp has it.
 
@@ -130,23 +129,22 @@ The server reads these from its environment; the installer writes them into the 
 |---|---|---|
 | `TERN_MOBILE_PORT` | `4380` | loopback port, and the HTTPS port Tailscale Serve uses |
 | `TERN_MOBILE_ALLOW` | — (required; the installer uses the device's Tailscale login) | comma-separated Tailscale logins |
-| `TERN_MOBILE_CONFIG` | `~/.config/tern-mobile`, on every OS | `bridge-token`, `access-token`, `vapid.json`, `push.json` (mode 600 where the OS has modes) |
+| `TERN_MOBILE_CONFIG` | `~/.config/tern-mobile`, on every OS | `bridge-token`, `vapid.json`, `push.json` (mode 600 where the OS has modes) |
 | `TERN_MOBILE_OMP_DIR` | as omp: `$PI_CODING_AGENT_DIR`, else `~/.omp/agent`, or `$XDG_DATA_HOME/omp` on Linux/macOS once it exists | omp's data: `sessions/`, `blobs/`, `history.db`. The installer puts the extension into `<dir>/extensions/` (default `~/.omp/agent`) |
 | `TERN_MOBILE_NOTES_DIR` | Linux: `$XDG_STATE_HOME/tern/notes` or `~/.local/state/tern/notes`; macOS: `~/Library/Application Support/Tern/notes`; Windows: `%LOCALAPPDATA%\Tern\notes` (macOS/Windows unverified) | Tern notes |
 | `TERN_MOBILE_PROJECTS` | the cwds of open Tern blocks and omp sessions, newest first | command printing one folder per line for **+ omp**; a `.py` path runs with `python3` |
 | `TERN_MOBILE_VAPID_SUBJECT` | `mailto:<first allowed login>` if it contains `@`, else `https://tern-mobile.invalid` | Web Push contact |
-| `TERN_MOBILE_DEV` | — | `1` turns off all auth (login and pairing). Unsafe: dev on loopback only |
+| `TERN_MOBILE_DEV` | — | `1` turns off the login check. Unsafe: dev on loopback only |
 | `TERN_MOBILE_SYMBOLS_FONT` | `/usr/share/fonts/TTF/SymbolsNerdFont-Regular.ttf` | `bun run assets` only |
 
 ## Security
 
 This is a remote shell into the desktop.
 
-- The server listens only on `127.0.0.1`. The only way in from outside is Tailscale Serve, which sets `Tailscale-User-Login`, and every request must carry an allowed login. Tagged devices get no login header, so they are refused. **Never enable Funnel.**
-- `/api/*` (the stream included) also needs the pairing cookie `tern_awui`, whose value is the access token in `<config dir>/access-token` (32 random bytes, compared in constant time). `/pair?code=<token>` with the right code sets it (HttpOnly, Secure, SameSite=Strict, 400 days) and redirects to `/`; a wrong code gets a 403 page and no cookie. Without the cookie `/api` answers 401 `{"error":"not paired"}` and the app shows how to pair; its own files (page, scripts, icons, manifest, service worker) need only the login. `bun server.ts pair` prints the link's path (creating the token if needed) without starting the server. Deleting `access-token` and restarting the server unpairs every device.
+- The server listens only on `127.0.0.1`. The only way in from outside is Tailscale Serve (tailnet only), which sets `Tailscale-User-Login`, and every request (the API, its stream and the app's own files) must carry an allowed login from `TERN_MOBILE_ALLOW`; anything else gets 403. Tagged devices get no login header, so they are refused. There is no pairing or access token on top: anyone signed in to the tailnet as an allowed login gets a shell. **Never enable Funnel.**
 - POSTs require an `x-tern-mobile: 1` header, which blocks cross-site form posts. Key names are allowlisted.
-- `/bridge` refuses requests carrying a Tailscale login header (anything proxied from outside) and requires the bridge token (`<config dir>/bridge-token`); it doesn't use the pairing cookie.
-- `TERN_MOBILE_DEV=1` turns off both the login and the cookie check: anyone who can reach the port gets a shell. Use it only on loopback, never behind Tailscale Serve.
+- `/bridge` refuses requests carrying a Tailscale login header (anything proxied from outside) and requires the bridge token (`<config dir>/bridge-token`).
+- `TERN_MOBILE_DEV=1` turns off the login check: anyone who can reach the port gets a shell. Use it only on loopback, never behind Tailscale Serve.
 - tern can report errors with exit status 0, so non-WARN stderr counts as failure and is returned to the phone.
 - Agent markdown goes through DOMPurify. Only `http(s)` and `mailto` links are kept, and raw HTML is shown as text.
 

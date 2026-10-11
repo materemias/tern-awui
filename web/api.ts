@@ -124,18 +124,3 @@ export async function post(path: string, body: unknown): Promise<string | null> 
     return String(err);
   }
 }
-
-/**
- * False when the server refuses this browser as not paired (no or a wrong access cookie): the
- * installer's pairing link sets the cookie. A network failure counts as paired; the app shows it offline.
- */
-export async function checkPaired(): Promise<boolean> {
-  try {
-    const r = await fetch("/api/push/key");
-    if (r.status !== 401) return true;
-    const data: { error?: string } = await r.json().catch(() => ({}));
-    return data.error !== "not paired";
-  } catch {
-    return true;
-  }
-}

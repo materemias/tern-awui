@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { checkPaired, type Caps, type CatalogModel, type Install, type Item, type Job, type Live, type Project, type Role } from "./api";
+import { describe, expect, test } from "bun:test";
+import type { Caps, CatalogModel, Install, Item, Job, Live, Project, Role } from "./api";
 import {
   OLD_MS,
   age,
@@ -641,26 +641,6 @@ describe("folderLabel", () => {
     expect(folderLabel("/srv/app", "/home/u")).toEqual({ name: "app", parent: "/srv" });
     expect(folderLabel("/home/u/app", "")).toEqual({ name: "app", parent: "/home/u" });
     expect(folderLabel("/", "/home/u")).toEqual({ name: "/", parent: "" });
-  });
-});
-
-describe("checkPaired", () => {
-  const realFetch = globalThis.fetch;
-  afterEach(() => (globalThis.fetch = realFetch));
-  const answer = (r: Response | Error) =>
-    (globalThis.fetch = (async () => {
-      if (r instanceof Error) throw r;
-      return r;
-    }) as unknown as typeof fetch);
-  test("only the server's 401 'not paired' means unpaired", async () => {
-    answer(Response.json({ error: "not paired" }, { status: 401 }));
-    expect(await checkPaired()).toBe(false);
-    answer(Response.json({ key: "k" }));
-    expect(await checkPaired()).toBe(true);
-    answer(new Response("unauthorized", { status: 401 }));
-    expect(await checkPaired()).toBe(true);
-    answer(new Error("offline"));
-    expect(await checkPaired()).toBe(true);
   });
 });
 

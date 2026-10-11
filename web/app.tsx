@@ -1,6 +1,6 @@
 import { render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { checkPaired, post, type Btw, type CatalogModel, type ChatEntry, type Doc, type Item, type Live, type Role, type State, type Subagent } from "./api";
+import { post, type Btw, type CatalogModel, type ChatEntry, type Doc, type Item, type Live, type Role, type State, type Subagent } from "./api";
 import {
   age,
   backStep,
@@ -1400,30 +1400,6 @@ function Session({ block }: { block: string }) {
   );
 }
 
-/** This browser's pairing: null while unknown, false once the server says "not paired". */
-function usePaired(): boolean | null {
-  const [paired, setPaired] = useState<boolean | null>(null);
-  useEffect(() => {
-    // Recheck on return to the app: the pairing link may have been opened in the meantime.
-    const check = () => document.visibilityState === "visible" && void checkPaired().then(setPaired);
-    check();
-    document.addEventListener("visibilitychange", check);
-    return () => document.removeEventListener("visibilitychange", check);
-  }, []);
-  return paired;
-}
-
-function NotPaired() {
-  return (
-    <div class="empty">
-      <p>
-        Not paired: open the pairing link from the installer on this device. On the desktop, <code>bun server.ts pair</code> in the
-        tern-awui folder prints its path.
-      </p>
-    </div>
-  );
-}
-
 /** A session's subagent list, or one subagent's chat; both read-only. */
 function SubagentScreen({ route }: { route: Extract<Route, { view: "subagents" | "subagent" }> }) {
   const sub = route.view === "subagent" ? route.name : null;
@@ -1437,8 +1413,6 @@ function SubagentScreen({ route }: { route: Extract<Route, { view: "subagents" |
 function App() {
   const route = useRoute();
   const wide = useWide();
-  const paired = usePaired();
-  if (paired === false) return <NotPaired />;
   const key = routeHash(route);
   const open =
     route.view === "list" ? null : route.view === "session" ? <Session key={key} block={route.block} /> : <SubagentScreen key={key} route={route} />;

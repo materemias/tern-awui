@@ -2,14 +2,14 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cookieValue, ensureToken, sameToken } from "./auth";
+import { ensureToken, sameToken } from "./auth";
 
 const root = mkdtempSync(join(tmpdir(), "tern-awui-auth-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 describe("ensureToken", () => {
   test("creates the folder and a 32-byte base64url token, then keeps it", () => {
-    const file = join(root, "nested", "dir", "access-token");
+    const file = join(root, "nested", "dir", "bridge-token");
     const token = ensureToken(file);
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(ensureToken(file)).toBe(token);
@@ -30,13 +30,5 @@ describe("sameToken", () => {
     expect(sameToken("abd", "abc")).toBe(false);
     expect(sameToken("ab", "abc")).toBe(false);
     expect(sameToken("", "")).toBe(false);
-  });
-});
-
-describe("cookieValue", () => {
-  test("finds the named cookie among others; absent is empty", () => {
-    expect(cookieValue("a=1; tern_awui=tok=en; b=2", "tern_awui")).toBe("tok=en");
-    expect(cookieValue("xtern_awui=1", "tern_awui")).toBe("");
-    expect(cookieValue(null, "tern_awui")).toBe("");
   });
 });

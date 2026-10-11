@@ -18,49 +18,39 @@ afterAll(() => s.close());
 test("HTTP identity and POST CSRF gates reject missing/wrong credentials", async () => {
   expect((await fetch(`${s.base}/api/state`)).status).toBe(403);
   expect((await fetch(`${s.base}/api/state`, { headers: { "tailscale-user-login": "wrong" } })).status).toBe(403);
-  const cookie = `tern_awui=${s.access}`;
-  expect((await fetch(`${s.base}/api/state`, { headers: { "tailscale-user-login": "second@example.test", cookie } })).status).toBe(200);
-  const denied = await fetch(`${s.base}/api/blocks/2/submit`, { method: "POST", headers: { "tailscale-user-login": s.login, cookie }, body: '{}' });
+  expect((await fetch(`${s.base}/api/state`, { headers: { "tailscale-user-login": "second@example.test" } })).status).toBe(200);
+  const denied = await fetch(`${s.base}/api/blocks/2/submit`, { method: "POST", headers: { "tailscale-user-login": s.login }, body: '{}' });
   expect(denied.status).toBe(403);
   expect(await denied.json()).toEqual({ error: "missing header" });
   expect(s.calls()).toEqual([]);
 });
 
-test("the API and its stream need the pairing cookie; /pair sets it; the app's files don't need it", async () => {
+test("an allowed login is all the API, its stream and the app's files need; /pair is not special", async () => {
   const login = { "tailscale-user-login": s.login };
-  for (const headers of [login, { ...login, cookie: "tern_awui=wrong" }, { ...login, cookie: `other=${s.access}` }]) {
-    for (const path of ["/api/state", "/api/stream"]) {
-      const r = await fetch(s.base + path, { headers });
-      expect(r.status).toBe(401);
-      expect(await r.json()).toEqual({ error: "not paired" });
+  const state = await fetch(`${s.base}/api/state`, { headers: login });
+  expect(state.status).toBe(200);
+  expect(state.headers.get("set-cookie")).toBeNull();
+  const stream = await fetch(`${s.base}/api/stream`, { headers: login });
+  expect(stream.status).toBe(200);
+  expect(stream.headers.get("content-type")).toContain("text/event-stream");
+  await stream.body?.cancel();
+  for (const headers of [{}, { "tailscale-user-login": "wrong" }] as Record<string, string>[]) {
+    for (const path of ["/api/state", "/api/stream", "/", "/manifest.webmanifest", "/sw.js"]) {
+      expect((await fetch(s.base + path, { headers })).status).toBe(403);
     }
   }
-  const posted = await fetch(`${s.base}/api/blocks/2/submit`, { method: "POST", headers: { ...login, "x-tern-mobile": "1" }, body: '{"text":"x"}' });
-  expect(posted.status).toBe(401);
-  expect(s.calls()).toEqual([]);
-  // The app's files load without the cookie (404 only in an unbuilt checkout), so it can show how to pair.
-  for (const path of ["/", "/manifest.webmanifest", "/sw.js"]) {
-    const r = await fetch(s.base + path, { headers: login });
-    expect([200, 404]).toContain(r.status);
-    expect(await r.text()).not.toContain("not paired");
-  }
-  expect((await fetch(`${s.base}/pair?code=${s.access}`, { redirect: "manual" })).status).toBe(403);
-  const wrong = await fetch(`${s.base}/pair?code=wrong`, { headers: login, redirect: "manual" });
-  expect(wrong.status).toBe(403);
-  expect(wrong.headers.get("set-cookie")).toBeNull();
-  expect(await wrong.text()).toContain("Wrong pairing code");
-  expect((await fetch(`${s.base}/pair`, { headers: login, redirect: "manual" })).status).toBe(403);
-  const paired = await fetch(`${s.base}/pair?code=${encodeURIComponent(s.access)}`, { headers: login, redirect: "manual" });
-  expect(paired.status).toBe(302);
-  expect(paired.headers.get("location")).toBe("/");
-  const setCookie = paired.headers.get("set-cookie") ?? "";
-  expect(setCookie.split(";")[0]).toBe(`tern_awui=${s.access}`);
-  for (const flag of ["HttpOnly", "Secure", "SameSite=Strict", "Path=/"]) expect(setCookie).toContain(flag);
-  expect(Number(/Max-Age=(\d+)/.exec(setCookie)?.[1])).toBeGreaterThan(86_400 * 300);
-  expect((await fetch(`${s.base}/api/state`, { headers: { ...login, cookie: setCookie.split(";")[0] } })).status).toBe(200);
+  // The app's files: 404 only in an unbuilt checkout.
+  for (const path of ["/", "/manifest.webmanifest", "/sw.js"]) expect([200, 404]).toContain((await fetch(s.base + path, { headers: login })).status);
+  // /pair is just an unknown path: the static fallback (index.html, or the unbuilt 404), no cookie.
+  const index = await (await fetch(`${s.base}/`, { headers: login })).text();
+  const pair = await fetch(`${s.base}/pair?code=anything`, { headers: login, redirect: "manual" });
+  expect([200, 404]).toContain(pair.status);
+  expect(pair.headers.get("set-cookie")).toBeNull();
+  expect(await pair.text()).toBe(index);
+  expect((await fetch(`${s.base}/pair?code=anything`, { redirect: "manual" })).status).toBe(403);
 });
 
-test("bridge WebSocket upgrades require the local token (and no pairing cookie)", async () => {
+test("bridge WebSocket upgrades require the local token", async () => {
   for (const token of ["", "wrong-token"]) {
     const headers = { "x-tern-mobile-bridge": token };
     expect((await fetch(`${s.base}/bridge`, { headers })).status).toBe(403);
@@ -311,15 +301,12 @@ describe("subagents", () => {
     }
   });
 
-  test("the list and the subagent stream need the pairing cookie", async () => {
-    const login = { "tailscale-user-login": s.login };
+  test("the list and the subagent stream need an allowed login, nothing more", async () => {
     for (const path of ["/api/blocks/1/subagents", "/api/stream?block=1&view=chat&sub=ViewA", "/api/stream?block=1&view=subagents"]) {
-      for (const headers of [login, { ...login, cookie: "tern_awui=wrong" }]) {
-        const r = await fetch(s.base + path, { headers });
-        expect(r.status).toBe(401);
-        expect(await r.json()).toEqual({ error: "not paired" });
-      }
-      expect((await fetch(s.base + path, { headers: { cookie: `tern_awui=${s.access}` } })).status).toBe(403);
+      const r = await fetch(s.base + path, { headers: { "tailscale-user-login": s.login } });
+      expect(r.status).toBe(200);
+      await r.body?.cancel();
+      expect((await fetch(s.base + path)).status).toBe(403);
     }
   });
 });

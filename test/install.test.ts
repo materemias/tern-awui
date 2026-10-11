@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
-import { type Action, type PlanInput, execute, parseArgs, parseTailscaleStatus, plan, psString, windowsStopScript } from "../install";
+import { type Action, type PlanInput, appUrl, execute, parseArgs, parseTailscaleStatus, plan, psString, windowsStopScript } from "../install";
 
 const linux: PlanInput = {
   platform: "linux",
@@ -17,7 +17,6 @@ const linux: PlanInput = {
   configDir: "/home/ann/.config/tern-mobile",
   port: 4380,
   allow: ["ann@example.com", "bob@example.com"],
-  dnsName: "box.tail1234.ts.net.",
   extraEnv: {},
   uid: 1000,
   winUser: "",
@@ -60,19 +59,13 @@ describe("plan: linux", () => {
   const actions = plan(linux);
   const [unit] = writes(actions);
 
-  test("builds, links the extension, pairs, writes the unit, starts it, serves it", () => {
-    expect(actions.map((a) => a.kind)).toEqual(["run", "symlink", "pair", "write", "run", "run", "run", "run"]);
+  test("builds, links the extension, writes the unit, starts it, serves it", () => {
+    expect(actions.map((a) => a.kind)).toEqual(["run", "symlink", "write", "run", "run", "run", "run"]);
     expect(actions[0]).toEqual({ kind: "run", argv: ["/home/ann/.bun/bin/bun", "build.ts"], cwd: linux.repo });
     expect(actions[1]).toEqual({
       kind: "symlink",
       path: "/home/ann/.omp/agent/extensions/tern-mobile.ts",
       target: "/home/ann/My Code/tern-awui/omp-extension/tern-mobile.ts",
-    });
-    expect(actions[2]).toEqual({
-      kind: "pair",
-      argv: ["/home/ann/.bun/bin/bun", "/home/ann/My Code/tern-awui/server.ts", "pair"],
-      cwd: linux.repo,
-      base: "https://box.tail1234.ts.net:4380",
     });
     expect(unit.path).toBe("/home/ann/.config/systemd/user/tern-mobile.service");
     expect(runs(actions).slice(1)).toEqual([
@@ -100,11 +93,18 @@ describe("plan: linux", () => {
     expect(u.content).toContain('Environment="TERN_MOBILE_VAPID_SUBJECT=mailto:a@b"\n');
   });
 
-  test("the port flows into the unit, serve and the pairing URL", () => {
+  test("the port flows into the unit, serve and the app URL", () => {
     const a = plan({ ...linux, port: 5000 });
     expect(writes(a)[0].content).toContain('Environment="TERN_MOBILE_PORT=5000"');
     expect(runs(a).at(-1)).toEqual(["/usr/bin/tailscale", "serve", "--bg", "--https=5000", "http://127.0.0.1:5000"]);
-    expect(a.find((x) => x.kind === "pair")).toMatchObject({ base: "https://box.tail1234.ts.net:5000" });
+    expect(appUrl("box.tail1234.ts.net.", 5000)).toBe("https://box.tail1234.ts.net:5000/");
+  });
+
+  test("no step touches an access token or a pairing link; the printed URL is the plain app URL", () => {
+    for (const a of [...plan(linux), ...plan(darwin), ...plan(win32)]) expect(["run", "symlink", "copy", "write"]).toContain(a.kind);
+    for (const argv of runs(plan(linux))) expect(argv).not.toContain("pair");
+    expect(appUrl("box.tail1234.ts.net.", 4380)).toBe("https://box.tail1234.ts.net:4380/");
+    expect(appUrl("box.tail1234.ts.net", 4380)).toBe("https://box.tail1234.ts.net:4380/");
   });
 
   test("uninstall stops and removes the unit, the extension link and the serve entry", () => {
@@ -399,18 +399,7 @@ describe("execute", () => {
     expect(readFileSync(f, "utf16le")).toBe("\ufeffMáté");
   });
 
-  test("pair builds the URL from the command's line; failures stop the run", () => {
-    const stub = `${root}/pair.ts`;
-    writeFileSync(stub, 'console.log("/pair?code=abc_DEF-123")');
-    const url = execute([{ kind: "pair", argv: [process.execPath, stub], cwd: root, base: "https://box.ts.net:4380" }], {
-      dryRun: false,
-      log: () => {},
-    });
-    expect(url).toBe("https://box.ts.net:4380/pair?code=abc_DEF-123");
-    writeFileSync(stub, 'console.log("nope")');
-    expect(() => execute([{ kind: "pair", argv: [process.execPath, stub], cwd: root, base: "x" }], { dryRun: false, log: () => {} })).toThrow(
-      "failed",
-    );
+  test("a failing run stops the run unless it may fail", () => {
     expect(() => execute([{ kind: "run", argv: [process.execPath, "-e", "process.exit(3)"] }], { dryRun: false, log: () => {} })).toThrow(
       "exited with 3",
     );
