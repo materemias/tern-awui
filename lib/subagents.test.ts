@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { T0, Transcript, call, text } from "../test/fixtures";
 import {
   assistantSummary,
@@ -66,7 +67,7 @@ describe("subagent names and files", () => {
   test("the folder is the transcript's path without .jsonl; a file needs a valid name", () => {
     const transcript = "/s/proj/2026-10-11T13-00-00-000Z_abc.jsonl";
     expect(subagentDir(transcript)).toBe("/s/proj/2026-10-11T13-00-00-000Z_abc");
-    expect(subagentFile(transcript, "ViewA")).toBe("/s/proj/2026-10-11T13-00-00-000Z_abc/ViewA.jsonl");
+    expect(subagentFile(transcript, "ViewA")).toBe(join("/s/proj/2026-10-11T13-00-00-000Z_abc", "ViewA.jsonl"));
     expect(subagentFile(transcript, "../2026-10-11T13-00-00-000Z_abc")).toBeNull();
     expect(subagentFile(transcript, "__advisor.sol61-high")).toBeNull();
   });
@@ -221,7 +222,7 @@ describe("listSubagents", () => {
       { name: "B", started: T0, lastActivity: T0 + 5000, running: true, summary: "Sleeping in B", messages: 2 },
       { name: "A", started: T0, lastActivity: T0 + 23001, running: false, summary: "Slept for 20 seconds.", messages: 5 },
     ]);
-    expect([...cache.keys()].sort()).toEqual([`${dir}/A.jsonl`, `${dir}/B.jsonl`]);
+    expect([...cache.keys()].sort()).toEqual([join(dir, "A.jsonl"), join(dir, "B.jsonl")]);
     // Once its job ends, a subagent sorts among the finished ones by its activity.
     expect((await listSubagents(dir, [], cache)).map((s) => [s.name, s.running])).toEqual([
       ["A", false],

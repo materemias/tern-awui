@@ -29,6 +29,18 @@ marked.use({
  */
 const SAFE_URI = /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i;
 
+// DOMPurify's default instance binds to the window present when the module loads. Bind to the
+// current one instead: test files each register their own DOM, and a stale window sanitizes nothing.
+let purifier = DOMPurify;
+let purifierWindow: Window | undefined;
+function purify(): typeof DOMPurify {
+  if (purifierWindow !== window) {
+    purifier = DOMPurify(window);
+    purifierWindow = window;
+  }
+  return purifier;
+}
+
 /** Agent and note markdown as safe HTML. */
 export function renderMarkdown(text: string, imageSources?: Record<string, string>): string {
   const html = marked.parse(text, {
@@ -37,10 +49,10 @@ export function renderMarkdown(text: string, imageSources?: Record<string, strin
       if (token.type === "image" && Object.hasOwn(imageSources, token.href)) token.href = imageSources[token.href];
     } : undefined,
   });
-  return DOMPurify.sanitize(html, { ALLOWED_URI_REGEXP: SAFE_URI });
+  return purify().sanitize(html, { ALLOWED_URI_REGEXP: SAFE_URI });
 }
 
 /** Tern's colored capture: <pre> and styled <span>s; scripts and links are stripped. */
 export function screenHtml(html: string): string {
-  return DOMPurify.sanitize(html, { ALLOWED_TAGS: ["pre", "span", "b", "i", "u"], ALLOWED_ATTR: ["style"] });
+  return purify().sanitize(html, { ALLOWED_TAGS: ["pre", "span", "b", "i", "u"], ALLOWED_ATTR: ["style"] });
 }

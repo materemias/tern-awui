@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
+import { join } from "node:path";
 import { type Action, type PlanInput, appUrl, execute, parseArgs, parseTailscaleStatus, plan, psString, windowsStopScript } from "../install";
 
 const linux: PlanInput = {
@@ -313,11 +314,12 @@ describe.skipIf(!pwsh)("windowsStopScript under pwsh with fake processes", () =>
   const other: Proc = { id: 20, name: "app.exe", cmd: "C:\\other\\app.exe --listen", port: 4380 };
   const survivors = [self, editor, notepad, otherBun];
 
+  // The first pwsh start alone can take several seconds on a cold runner.
   test("install stops our server and launcher only, then succeeds on a free port", () => {
     const r = run([server, wscript, ...survivors], true);
     expect(r.stopped).toEqual(["stopped 10", "stopped 11"]);
     expect(r.code).toBe(0);
-  });
+  }, 30_000);
 
   test("install fails on an unrelated listener and leaves it running", () => {
     const r = run([server, other, ...survivors], true);
@@ -408,7 +410,7 @@ describe("execute", () => {
   });
 
   test("symlink replaces a stale file; copy overwrites; remove tolerates absence", () => {
-    const src = `${root}/src.ts`;
+    const src = join(root, "src.ts");
     writeFileSync(src, "v1");
     const link = `${root}/ext/link.ts`;
     const copy = `${root}/ext/copy.ts`;

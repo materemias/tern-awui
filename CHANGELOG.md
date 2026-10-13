@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- CI fixes: the sanitizer binds to the current window (a test file loading it under another file's DOM left it sanitizing nothing, depending on file order); path expectations use the OS separator; installer `main()` tests, which run shell-script fakes, skip on Windows; the cold-start PowerShell test gets 30 s.
+
 ## 0.2.0 (2026-10-13)
 
 - README links the companion CodexBar AgentView Tern extension.

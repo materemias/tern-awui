@@ -113,7 +113,7 @@ describe("installed bridge discovery", () => {
 		expect(bridgeSettings({}, home)).toEqual({ url: "ws://127.0.0.1:4567/bridge", tokenFile });
 		expect(bridgeSettings({ TERN_AWUI_BRIDGE: "ws://localhost:1234/bridge" }, home)).toEqual({ url: "ws://localhost:1234/bridge", tokenFile });
 		expect(bridgeSettings({ TERN_AWUI_TOKEN_FILE: "/explicit/token" }, home).tokenFile).toBe("/explicit/token");
-		expect(bridgeSettings({ TERN_AWUI_CONFIG: "/explicit/config" }, home).tokenFile).toBe("/explicit/config/bridge-token");
+		expect(bridgeSettings({ TERN_AWUI_CONFIG: "/explicit/config" }, home).tokenFile).toBe(join("/explicit/config", "bridge-token"));
 		expect(bridgeSettings({ TERN_AWUI_CONFIG: "/explicit/config", TERN_AWUI_TOKEN_FILE: "/explicit/token" }, home).tokenFile).toBe("/explicit/token");
 	});
 

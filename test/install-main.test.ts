@@ -4,6 +4,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { type MainDeps, main } from "../install";
 
+// The fake tailscale, tern, omp and systemctl are shell scripts, which Windows cannot run from PATH.
+const POSIX = process.platform !== "win32";
+
 const STATUS = JSON.stringify({ Self: { DNSName: "box.tail1234.ts.net.", UserID: 7 }, User: { "7": { LoginName: "ann@example.com" } } });
 
 let dir: string, home: string, bin: string, calls: string, repo: string, ompDir: string, configDir: string, out: string[];
@@ -47,7 +50,7 @@ const recorded = () => readFileSync(calls, "utf8").trim().split("\n").filter(Boo
 const unit = () => path.join(home, ".config", "systemd", "user", "tern-mobile.service");
 const extension = () => path.join(ompDir, "extensions", "tern-mobile.ts");
 
-describe("main: linux", () => {
+describe.skipIf(!POSIX)("main: linux", () => {
   test("--dry-run prints every action and changes nothing", () => {
     main(deps(["--dry-run"]));
     // Only the read-only status probe ran.
@@ -180,7 +183,7 @@ describe("main: linux", () => {
   });
 });
 
-describe("main: errors", () => {
+describe.skipIf(!POSIX)("main: errors", () => {
   for (const tool of ["tailscale", "tern", "omp"]) {
     test(`missing ${tool} is a clear error and nothing is written`, () => {
       rmSync(path.join(bin, tool));
@@ -219,7 +222,7 @@ describe("main: errors", () => {
   });
 });
 
-describe("main: other platforms at plan level (dry run)", () => {
+describe.skipIf(!POSIX)("main: other platforms at plan level (dry run)", () => {
   test("darwin plans a LaunchAgent for the user's uid", () => {
     main(deps(["--dry-run"], {}, "darwin"));
     const text = out.join("\n");
