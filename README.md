@@ -95,7 +95,7 @@ bun install.ts --uninstall      # remove the service, the extension and the tail
 
 ## Security
 
-This is a remote shell into your desktop. **Never expose it publicly:** no port forwarding, no Tailscale Funnel, no open tunnel.
+This is a remote shell into your desktop with no authentication of its own: it trusts whoever sits in front of it (Tailscale by default). **Never expose it publicly:** no port forwarding, no Tailscale Funnel, no open tunnel.
 
 Tailscale is the strongly recommended setup, and the only one the installer configures. The server listens only on `127.0.0.1`, `tailscale serve` makes it reachable on your tailnet only, and every request must carry an allowed Tailscale login.
 
