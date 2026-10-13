@@ -95,7 +95,13 @@ bun install.ts --uninstall      # remove the service, the extension and the tail
 
 ## Security
 
-This is a remote shell into your desktop. The server listens only on `127.0.0.1` and is reachable only through `tailscale serve` on your tailnet, and only for the allowed Tailscale logins. **Never expose it with Tailscale Funnel.** Details are in [how it works](docs/architecture.md#security).
+This is a remote shell into your desktop. **Never expose it publicly:** no port forwarding, no Tailscale Funnel, no open tunnel.
+
+Tailscale is the strongly recommended setup, and the only one the installer configures. The server listens only on `127.0.0.1`, `tailscale serve` makes it reachable on your tailnet only, and every request must carry an allowed Tailscale login.
+
+Other private setups can work too: using it only on the machine itself, or behind a tunnel or reverse proxy that does the authentication itself, for example Cloudflare Tunnel with Cloudflare Access. The app's login check only understands Tailscale's `Tailscale-User-Login` header. Behind anything else, the proxy is your only protection: it has to authenticate every request and must never pass on a `Tailscale-User-Login` header sent by the client. Otherwise anyone can claim to be you.
+
+Details are in [how it works](docs/architecture.md#security).
 
 ## Limits
 
