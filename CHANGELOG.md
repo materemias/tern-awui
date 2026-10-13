@@ -5,6 +5,8 @@
 - CI fixes: the sanitizer binds to the current window (a test file loading it under another file's DOM left it sanitizing nothing, depending on file order); path expectations use the OS separator; installer `main()` tests, which run shell-script fakes, skip on Windows; the cold-start PowerShell test gets 30 s.
 - README security section: never expose the app publicly; Tailscale is the recommended setup. Other private setups are described with their requirements: an authenticating proxy (such as Cloudflare Access) must set an allowed `Tailscale-User-Login` itself, overwriting the client's, and `TERN_AWUI_DEV=1` is for loopback-only use.
 - README screenshots show Opus 5.5.
+- `bun run assets` and `bun docs/screenshots.ts` run `optipng` when it is installed (about 25% smaller PNGs, pixel-identical).
+- README install: a copy-paste prompt to have a coding agent do the install, with the manual steps as fallback.
 
 ## 0.2.0 (2026-10-13)
 

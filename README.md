@@ -57,8 +57,28 @@ It works with Tern rather than beside it:
 
 ## Install
 
+### With a coding agent
+
+The easiest way is to let your coding agent (omp, Claude Code, Codex, …) do it. Paste this prompt into an agent running on the desktop where Tern runs:
+
+```text
+Install tern-awui (https://github.com/materemias/tern-awui) on this machine.
+
+1. Read its README, especially Requirements, Install and Security.
+2. Check every requirement and tell me what is missing instead of working around it.
+   Tailscale must be logged in with MagicDNS and HTTPS certificates enabled.
+3. Clone it to ~/code/tern-awui (ask me if I want a different place), then run `bun install`.
+4. Run `bun install.ts --dry-run`, summarize what it will write and run, and wait for my OK.
+5. Run `bun install.ts` and give me the address it prints.
+
+Never use Tailscale Funnel, port forwarding or a public tunnel, and don't set TERN_AWUI_DEV.
+At the end, remind me to run /restart in omp sessions that were already running.
+```
+
+### By hand
+
 ```bash
-git clone <this repository> tern-awui
+git clone https://github.com/materemias/tern-awui.git
 cd tern-awui
 bun install
 bun install.ts            # add --dry-run to see every step first

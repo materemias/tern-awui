@@ -1,5 +1,6 @@
 // Regenerates committed assets (`bun run assets`). Needs ImageMagick's magick, pyftsubset
-// (fonttools with brotli) and the Symbols Nerd Font; `bun build.ts` only copies the results.
+// (fonttools with brotli) and the Symbols Nerd Font; optipng, when installed, shrinks the PNGs
+// losslessly. `bun build.ts` only copies the results.
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -24,4 +25,7 @@ for (const size of [32, 180, 192, 512]) {
 // Pane titles start with Nerd Font icons; ship the symbols font, private use areas only.
 const font = process.env.TERN_AWUI_SYMBOLS_FONT ?? "/usr/share/fonts/TTF/SymbolsNerdFont-Regular.ttf";
 run(["pyftsubset", font, "--unicodes=U+E000-F8FF,U+F0000-F1FFF", "--flavor=woff2", `--output-file=${join(out, "symbols.woff2")}`]);
+const pngs = [tile, ...[32, 180, 192, 512].map((size) => join(out, `icon-v2-${size}.png`))];
+if (Bun.which("optipng")) run(["optipng", "-quiet", "-o7", "-strip", "all", ...pngs]);
+else console.log("optipng not found: PNGs left unoptimized");
 console.log("regenerated assets/");

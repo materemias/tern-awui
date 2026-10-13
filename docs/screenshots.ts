@@ -1,6 +1,7 @@
 // Regenerates the README screenshots from made-up sessions: a sandboxed server with fake
 // tern/omp, fake bridged agents and invented transcripts, so no real paths, prompts or names
-// end up in the images. Run: `bun docs/screenshots.ts` (needs the Playwright headless shell).
+// end up in the images. Run: `bun docs/screenshots.ts` (needs the Playwright headless shell;
+// optipng, when installed, shrinks the PNGs losslessly).
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { Database } from "bun:sqlite";
 import { resolve } from "node:path";
@@ -135,4 +136,9 @@ await shoot("phone-ask", phone, "#/b/2", ".ask");
 await shoot("desktop", { width: 1400, height: 860 }, "#/b/1", ".todo");
 await closeBrowser();
 await s.close();
+const pngs = ["phone-list", "phone-session", "phone-ask", "desktop"].map((name) => `${OUT}/${name}.png`);
+if (Bun.which("optipng")) {
+  const r = Bun.spawnSync(["optipng", "-quiet", "-o7", "-strip", "all", ...pngs], { stderr: "pipe" });
+  if (r.exitCode !== 0) throw new Error(`optipng failed: ${r.stderr.toString()}`);
+} else console.log("optipng not found: PNGs left unoptimized");
 console.log(`wrote ${OUT}/{phone-list,phone-session,phone-ask,desktop}.png`);
