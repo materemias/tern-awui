@@ -4,6 +4,9 @@ import { tmpdir } from "node:os";
 import { Transcript, call, HASH } from "./fixtures";
 
 import { arr, obj, type Obj as Message } from "../lib/json";
+import { startServer, type ServerHandle, type ServerOptions } from "../server";
+
+const DEFAULT_SERVER = `${import.meta.dir}/../server.ts`;
 
 export async function until<T>(fn: () => T | Promise<T>, description: string, timeout = 2000): Promise<NonNullable<T>> {
   const end = Date.now() + timeout;
@@ -66,11 +69,12 @@ export class Sandbox {
     writeFileSync(`${this.home}/bin/tern`, `#!/bin/bash
 case "$1" in
   ls) cat "$TERN_FAKE_DIR/tree.json" ;;
-  capture) printf '<pre>terminal output</pre>' ;;
+  capture) if [ "$3" = --surfaces ] && [ -f "$TERN_FAKE_DIR/surfaces" ]; then cat "$TERN_FAKE_DIR/surfaces"; else printf '<pre>terminal output</pre>'; fi ;;
   events) exec /usr/bin/tail --pid="$PPID" --sleep-interval=0.05 -n +1 -F "$TERN_FAKE_DIR/events" ;;
   *) printf '%s\\0' "$@" >> "$TERN_FAKE_DIR/calls"; printf '\\0' >> "$TERN_FAKE_DIR/calls"
      if [ -f "$TERN_FAKE_DIR/fail" ]; then cat "$TERN_FAKE_DIR/fail" >&2; fi
-     if [ "$1" = new ]; then printf '{"block":99}'; fi ;;
+     if [ "$1" = new ]; then if [ -f "$TERN_FAKE_DIR/new-out" ]; then cat "$TERN_FAKE_DIR/new-out"; else printf '{"block":99}'; fi; fi
+     if [ -f "$TERN_FAKE_DIR/exit" ]; then exit "$(cat "$TERN_FAKE_DIR/exit")"; fi ;;
 esac
 `);
     writeFileSync(`${this.home}/bin/omp`, `#!/bin/bash
@@ -93,20 +97,51 @@ esac
   }
   clearCalls() { writeFileSync(`${this.home}/calls`, ""); }
 
+  /** The server file a subprocess runs; another file always runs as a subprocess. */
+  server = DEFAULT_SERVER;
+  /** Run `server` as its own process even when it is this checkout's (no coverage, process-wide state). */
+  subprocess = false;
+  /** The built app an in-process server serves; this checkout's dist/ when unset. */
+  dist?: string;
+  /** Delivers Web Push for an in-process server; web-push (the network) when unset. */
+  sendNotification?: ServerOptions["sendNotification"];
+  /** The in-process server, while it runs. */
+  handle?: ServerHandle;
+
+  /** The server's environment: this sandbox's HOME, fake tern/omp first on PATH, two allowed logins. */
+  env(extraEnv: Record<string, string> = {}): Record<string, string> {
+    return isolatedEnv(this.home, { PATH: `${this.home}/bin:${process.env.PATH}`, TERN_FAKE_DIR: this.home,
+      TERN_MOBILE_ALLOW: ` ${this.login}, second@example.test `, TERN_MOBILE_DEV: "0", ...extraEnv });
+  }
+
   async start(extraEnv: Record<string, string> = {}) {
+    if (this.subprocess || this.server !== DEFAULT_SERVER) return this.spawn(extraEnv);
+    this.handle = startServer({ env: this.env({ TERN_MOBILE_PORT: "0", ...extraEnv }), home: this.home, dist: this.dist, sendNotification: this.sendNotification });
+    this.base = `http://127.0.0.1:${this.handle.port}`;
+  }
+
+  private async spawn(extraEnv: Record<string, string>) {
     const reservation = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
     const port = reservation.port!;
     reservation.stop(true);
     this.base = `http://127.0.0.1:${port}`;
-    this.proc = Bun.spawn([process.execPath, `${import.meta.dir}/../server.ts`], {
+    this.proc = Bun.spawn([process.execPath, this.server], {
       cwd: this.home,
-      env: isolatedEnv(this.home, { PATH: `${this.home}/bin:${process.env.PATH}`, TERN_FAKE_DIR: this.home,
-        TERN_MOBILE_PORT: String(port), TERN_MOBILE_ALLOW: ` ${this.login}, second@example.test `, TERN_MOBILE_DEV: "0", ...extraEnv }),
+      env: this.env({ TERN_MOBILE_PORT: String(port), ...extraEnv }),
       stdout: "ignore", stderr: "inherit",
     });
     await until(async () => {
       try { return (await this.get("/api/state")).status === 200; } catch { return false; }
     }, "server startup", 5000);
+  }
+
+  /** Stops the server, keeping the sandbox for another `start`. */
+  async stop() {
+    await this.handle?.stop();
+    this.handle = undefined;
+    this.proc?.kill();
+    await this.proc?.exited;
+    this.proc = undefined;
   }
 
   /** A phone's headers: an allowed Tailscale login. */
@@ -120,9 +155,8 @@ esac
   async close() {
     for (const stream of this.streams) stream.close();
     for (const socket of this.sockets) socket.close();
-    this.proc?.kill();
-    await this.proc?.exited;
-    // The fake event follower terminates itself when its server parent dies.
+    await this.stop();
+    // A subprocess server's fake event follower terminates itself when its parent dies.
     await Bun.sleep(75);
     rmSync(this.home, { recursive: true, force: true });
   }
@@ -154,7 +188,7 @@ export class Extension {
       if (this.silent || msg.t === "watch") return;
       if (msg.t === "sync") return this.report({});
       const reply = (data: Message) => this.send({ t: "reply", seq: msg.seq, ...data });
-      if (msg.t === "models") return reply({ models: [{ id: "fast", provider: "test", name: "Fast", contextWindow: 200000 }] });
+      if (msg.t === "models") return reply({ models: [{ p: "test", id: "fast", name: "Fast", ctx: 200000, r: false, in: 0, out: 0, img: false }] });
       if (msg.t === "model") {
         if (msg.spec === "bad/model") return reply({ error: "no credentials for this model" });
         this.snapshot.model = msg.spec;

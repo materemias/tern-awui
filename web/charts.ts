@@ -22,10 +22,11 @@ export function parseCell(raw: string): Cell | null {
   const unit = (m[4] ?? "").toLowerCase();
   const known = UNITS[unit];
   if (unit && !known) return null;
+  if (m[1] && unit && unit !== "k" && unit !== "m") return null;
   const lo = Number(m[2].replace(/,/g, ""));
   const hi = m[3] === undefined ? lo : Number(m[3].replace(/,/g, ""));
   if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo < 0 || hi < 0) return null;
-  const [dim, scale] = m[1] ? (["money", 1] as const) : (known ?? (["count", 1] as const));
+  const [dim, scale] = m[1] ? (["money", known?.[1] ?? 1] as const) : (known ?? (["count", 1] as const));
   // A range sits at its middle; the label keeps it as written, minus any parenthetical.
   return { value: ((lo + hi) / 2) * scale, text: raw.trim().replace(/\s*\(.*\)\s*$/, ""), dim };
 }

@@ -1,8 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { HASH, T0, Transcript, call, image, text } from "../test/fixtures";
-import { INLINE_IMAGE_CHARS, parseChat, readChatFile, recapStale, scanFacts, type ChatEntry } from "./transcript";
+import { HASH, PNG, T0, Transcript, call, image, text } from "../test/fixtures";
+import { INLINE_IMAGE_CHARS, TranscriptImages, parseChat, readChatFile, recapStale, scanFacts, type ChatEntry } from "./transcript";
 
 const dir = mkdtempSync(`${tmpdir()}/tern-awui-transcript-`);
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -17,6 +17,138 @@ const roles = (entries: ChatEntry[]) => entries.map((e) => e.role);
 function only<R extends ChatEntry["role"]>(entries: ChatEntry[], role: R): Extract<ChatEntry, { role: R }>[] {
   return entries.filter((e): e is Extract<ChatEntry, { role: R }> => e.role === role);
 }
+
+describe("assistant markdown image transport", () => {
+  const chat = (md: string) => {
+    const t = new Transcript();
+    t.say(md, 0);
+    return parseChat(t.lines(), "", 80);
+  };
+  const srcHash = (src: string) => /\/api\/blob\/([0-9a-f]{64})/.exec(src)![1];
+
+  test("discovers inline and reference images without changing markdown, links or code", async () => {
+    const cache = new TranscriptImages();
+    const inline = `${dir}/inline.png`;
+    const reference = `${dir}/reference image.png`;
+    const code = `${dir}/code-only.png`;
+    for (const path of [inline, reference, code]) writeFileSync(path, PNG);
+    const md = [
+      `![Corrected queued message](${inline})`,
+      `![Reference][after]\n\n[after]: <${reference}> "Queue image"`,
+      `[download](${code})`,
+      `\`![literal](${code})\``,
+      "```md", `![fenced](${code})`, "```",
+      "![remote](https://example.test/image.png)",
+      "![inline](data:image/png;base64,aGVsbG8=)",
+    ].join("\n\n");
+    const entry = only((await cache.attach(chat(md))).entries, "assistant")[0];
+    expect(entry.text).toBe(md);
+    expect(Object.keys(entry.imageSources!)).toEqual([inline, reference]);
+    for (const src of Object.values(entry.imageSources!)) expect((await cache.get(srcHash(src)))?.bytes).toEqual(new Uint8Array(PNG));
+  });
+
+  test("only the displayed assistant path authorizes local files, never user text or abandoned branches", async () => {
+    const cache = new TranscriptImages();
+    const path = `${dir}/abandoned.png`;
+    writeFileSync(path, PNG);
+    const t = new Transcript();
+    const prompt = t.user(`![user](${path})`, 0);
+    t.say(`![abandoned](${path})`, 1);
+    const leaf = t.assistant([text("No screenshot")], 2, { parent: prompt });
+    const result = await cache.attach(parseChat(t.lines(), leaf, 80));
+    expect(only(result.entries, "assistant")[0].imageSources).toBeUndefined();
+    expect(await cache.get(new Bun.CryptoHasher("sha256").update(PNG).digest("hex"))).toBeUndefined();
+  });
+
+  test("rejects missing files, symlinks, directories, non-images, wrong extensions and oversized files", async () => {
+    const valid = `${dir}/validation.png`;
+    const invalid = `${dir}/html.png`;
+    const mismatch = `${dir}/wrong.jpg`;
+    const link = `${dir}/linked.png`;
+    const folder = `${dir}/folder.png`;
+    const large = `${dir}/large.png`;
+    writeFileSync(valid, PNG);
+    writeFileSync(invalid, "<html>not an image</html>");
+    writeFileSync(mismatch, PNG);
+    symlinkSync(valid, link);
+    mkdirSync(folder);
+    writeFileSync(large, "");
+    truncateSync(large, 16 * 1024 * 1024 + 1);
+    const paths = [`${dir}/missing.png`, invalid, mismatch, link, folder, large, `file://${valid}`, "//server/share.png", "relative.png"];
+    const cache = new TranscriptImages();
+    const md = paths.map((path) => `![invalid](${path})`).join("\n");
+    const entry = only((await cache.attach(chat(md))).entries, "assistant")[0];
+    expect(entry.text).toBe(md);
+    expect(entry.imageSources).toBeUndefined();
+  });
+
+  test("unchanged polls reuse the same byte snapshot; changed files get new content hashes", async () => {
+    const cache = new TranscriptImages();
+    const path = `${dir}/cached.png`;
+    writeFileSync(path, PNG);
+    const md = `![cached](${path})`;
+    const first = only((await cache.attach(chat(md))).entries, "assistant")[0].imageSources![path];
+    const bytes = (await cache.get(srcHash(first)))!.bytes;
+    const again = only((await cache.attach(chat(md))).entries, "assistant")[0].imageSources![path];
+    expect(again).toBe(first);
+    expect((await cache.get(srcHash(again)))!.bytes).toBe(bytes);
+    const changed = Buffer.concat([PNG, Buffer.from("changed")]);
+    writeFileSync(path, changed);
+    const next = only((await cache.attach(chat(md))).entries, "assistant")[0].imageSources![path];
+    expect(next).not.toBe(first);
+    expect((await cache.get(srcHash(next)))?.bytes).toEqual(new Uint8Array(changed));
+    rmSync(path);
+    expect((await cache.get(srcHash(next)))?.bytes).toEqual(new Uint8Array(changed));
+  });
+
+  test("a single chat beyond the byte-entry capacity still resolves every image and rejects changed refill paths", async () => {
+    const cache = new TranscriptImages();
+    const paths: string[] = [];
+    const images: Uint8Array<ArrayBuffer>[] = [];
+    for (let i = 0; i < 130; i++) {
+      const path = `${dir}/eviction-${i}.png`;
+      const bytes = Buffer.concat([PNG, Buffer.from(String(i))]);
+      writeFileSync(path, bytes);
+      paths.push(path);
+      images.push(bytes);
+    }
+    const md = paths.map((path) => `![image](${path})`).join("\n");
+    const sources = only((await cache.attach(chat(md))).entries, "assistant")[0].imageSources!;
+    expect(Object.keys(sources).length).toBe(130);
+    // Both paths are evicted from the 128-entry byte cache; their indexed hashes remain authorized.
+    writeFileSync(paths[0], Buffer.concat([PNG, Buffer.from("replaced")]));
+    expect(await cache.get(srcHash(sources[paths[0]]))).toBeUndefined();
+    for (let i = 1; i < paths.length; i++) {
+      expect((await cache.get(srcHash(sources[paths[i]])))?.bytes).toEqual(images[i]);
+    }
+    const again = only((await cache.attach(chat(md))).entries, "assistant")[0].imageSources!;
+    expect(again[paths[1]]).toBe(sources[paths[1]]);
+    expect(again[paths[0]]).not.toBe(sources[paths[0]]);
+  });
+
+  test("the byte-size limit refills authorized images and tries a surviving duplicate path", async () => {
+    const cache = new TranscriptImages();
+    const paths: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const path = `${dir}/size-limit-${i}.png`;
+      writeFileSync(path, Buffer.concat([PNG, Buffer.from(String(i))]));
+      truncateSync(path, 14 * 1024 * 1024);
+      paths.push(path);
+    }
+    const duplicate = `${dir}/size-duplicate.png`;
+    writeFileSync(duplicate, Buffer.concat([PNG, Buffer.from("0")]));
+    truncateSync(duplicate, 14 * 1024 * 1024);
+    const md = [paths[0], duplicate, ...paths.slice(1)].map((path) => `![large](${path})`).join("\n");
+    const sources = only((await cache.attach(chat(md))).entries, "assistant")[0].imageSources!;
+    expect(sources[duplicate]).toBe(sources[paths[0]]);
+    // Five 14 MiB images exceed 64 MiB, so the shared first image's bytes were evicted.
+    rmSync(paths[0]);
+    const restored = await cache.get(srcHash(sources[duplicate]));
+    expect(restored?.bytes.byteLength).toBe(14 * 1024 * 1024);
+    expect(restored?.bytes.subarray(0, PNG.byteLength)).toEqual(new Uint8Array(PNG));
+    for (const path of paths.slice(1)) expect((await cache.get(srcHash(sources[path])))?.bytes.byteLength).toBe(14 * 1024 * 1024);
+  });
+});
 
 describe("parseChat turns", () => {
   test("a prompt, a tool round and a final answer make one turn timed from the prompt", () => {
@@ -301,9 +433,9 @@ describe("parseChat active path", () => {
     expect(parseChat(t.lines(), "-", 80).entries).toEqual([]);
   });
 
-  test("an unknown leaf falls back to the last line", () => {
+  test("a known leaf outside the available rows never falls back to another branch", () => {
     const { t } = rewound();
-    expect(prompts(parseChat(t.lines(), "nope", 80).entries)).toEqual(["first", "retry"]);
+    expect(parseChat(t.lines(), "nope", 80).entries).toEqual([]);
   });
 
   test("a parent cycle does not hang the walk", () => {
@@ -335,6 +467,24 @@ describe("readChatFile", () => {
       expect(only(entries, "user").map((e) => e.text)).toEqual(["new"]);
       expect(only(entries, "assistant").map((e) => e.text)).toEqual(["fresh"]);
     });
+  });
+
+  test("a tail starting exactly on a line keeps that line, including UTF-8 text", async () => {
+    const t = new Transcript();
+    t.user("older", 0);
+    t.say("friss válasz 🐈", 10);
+    const last = t.lines().at(-1)! + "\n";
+    const { entries } = await readChatFile(file(t.text()), "", 80, Buffer.byteLength(last));
+    expect(only(entries, "assistant").map((e) => e.text)).toEqual(["friss válasz 🐈"]);
+  });
+
+  test("rewinding outside the tail does not show the abandoned branch", async () => {
+    const t = new Transcript();
+    const leaf = t.user("rewind target", 0);
+    t.say("abandoned reply", 10);
+    t.user("abandoned prompt", 20);
+    const last = t.lines().at(-1)! + "\n";
+    expect((await readChatFile(file(t.text()), leaf, 80, Buffer.byteLength(last) + 1)).entries).toEqual([]);
   });
 
   test("a whole file within the tail keeps its first line", async () => {
@@ -386,7 +536,7 @@ describe("scanFacts", () => {
     const line = t.lines().at(-1)!;
     appendFileSync(path, line.slice(0, 20));
     const partial = await scanFacts(path, first);
-    expect(partial).toBe(first); // updated in place
+    expect(partial).toEqual(first); // incomplete bytes do not change the facts
     expect(partial.lastPrompt).toBe("one");
     expect(partial.offset).toBe(Bun.file(path).size - 20);
 
@@ -395,6 +545,19 @@ describe("scanFacts", () => {
     expect(done.lastPrompt).toBe("two");
     expect(done.lastTurn).toBe(T0 + 2000);
     expect(done.offset).toBe(Bun.file(path).size);
+  });
+
+  test("concurrent scans do not mutate their shared cached snapshot", async () => {
+    const t = new Transcript();
+    t.user("one", 1000);
+    const path = file(t.text());
+    const before = await scanFacts(path, undefined);
+    const offset = before.offset;
+    t.user("two", 2000);
+    appendFileSync(path, t.lines().at(-1)! + "\n");
+    const results = await Promise.all([scanFacts(path, before), scanFacts(path, before)]);
+    for (const result of results) expect(result).toMatchObject({ lastPrompt: "two", offset: Bun.file(path).size });
+    expect(before).toMatchObject({ lastPrompt: "one", offset });
   });
 
   test("a shrunk (rewritten) file is scanned from scratch", async () => {
@@ -411,6 +574,42 @@ describe("scanFacts", () => {
     expect(after.lastPrompt).toBe("new");
     expect(after.lastActivity).toBe(T0 + 50);
     expect(after.offset).toBe(Bun.file(path).size);
+  });
+
+  test.each(["replace", "rewrite"] as const)("a same-size %s discards the previous file's facts", async (mode) => {
+    const t = new Transcript();
+    t.user("old", 1000);
+    const path = file(t.text());
+    const before = await scanFacts(path, undefined);
+    const u = new Transcript();
+    u.user("new", 1000);
+    if (mode === "replace") renameSync(file(u.text()), path);
+    else {
+      writeFileSync(path, u.text());
+      utimesSync(path, new Date(100000), new Date(100000));
+    }
+    expect(await scanFacts(path, before)).toMatchObject({ lastPrompt: "new", lastTurn: T0 + 1000 });
+  });
+
+  test("a removed file clears its cached facts and can reappear", async () => {
+    const t = new Transcript();
+    t.user("old", 1000);
+    const path = file(t.text());
+    const before = await scanFacts(path, undefined);
+    rmSync(path);
+    const missing = await scanFacts(path, before);
+    expect(missing).toEqual({ offset: 0, lastPrompt: "", lastTurn: 0, lastActivity: 0 });
+    writeFileSync(path, t.text());
+    expect((await scanFacts(path, missing)).lastPrompt).toBe("old");
+  });
+
+  test("a tail starting exactly on a line keeps its prompt", async () => {
+    const t = new Transcript();
+    t.user("friss kérdés 🐈", 1000);
+    const last = t.lines().at(-1)! + "\n";
+    expect(await scanFacts(file(t.text()), undefined, Buffer.byteLength(last))).toMatchObject({
+      lastPrompt: "friss kérdés 🐈", lastTurn: T0 + 1000,
+    });
   });
 
   test("a big file is scanned from its tail, skipping the line the tail starts in", async () => {

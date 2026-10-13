@@ -19,6 +19,8 @@ describe("parseCell", () => {
     ["3 MB", 3e6, "bytes"],
     ["42%", 42, "percent"],
     ["$4.50", 4.5, "money"],
+    ["$1.5k", 1500, "money"],
+    ["$2M", 2e6, "money"],
   ])("%s → %d %s", (raw, value, dim) => {
     const c = parseCell(raw)!;
     expect(c.value).toBeCloseTo(value, 9);
@@ -35,7 +37,7 @@ describe("parseCell", () => {
     expect(parseCell("$10–$20")!).toMatchObject({ value: 15, dim: "money" });
   });
 
-  test.each(["", "fast", "12 parsecs", "12 abc", "-5", "3 MB and more", "v1.2.3", "n/a"])("%p is not a number", (raw) => {
+  test.each(["", "fast", "12 parsecs", "12 abc", "-5", "3 MB and more", "v1.2.3", "n/a", "$5 ms", "$3 MB", "$4%"])("%p is not a number", (raw) => {
     expect(parseCell(raw)).toBeNull();
   });
 });
@@ -84,6 +86,13 @@ describe("seriesOf", () => {
     const best = Object.fromEntries(d.series.map((s) => [s.name, s.best]));
     // Higher is better; "time" and "saved" pull both ways; "widgets" says nothing.
     expect(best).toEqual({ Throughput: 1, "Time saved": null, Widgets: null });
+  });
+
+  test("currency multipliers keep costs comparable and select the cheaper option", () => {
+    const data = seriesOf(["Option", "Cost", "Latency"], [["A", "$1.5k", "1 ms"], ["B", "$900", "2 ms"]])!;
+    expect(data.series[0].points.map((p) => p?.value)).toEqual([1500, 900]);
+    expect(data.series[0].best).toBe(1);
+    expect(headline(data.categories, data.series)).toBe("");
   });
 
   test("a tie for best marks none; a lone value can't be best", () => {

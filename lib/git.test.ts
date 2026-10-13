@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { branchOf, projectOf } from "./git";
@@ -36,6 +36,19 @@ describe("projectOf", () => {
   test("a missing folder still gets a name", () => {
     expect(projectOf(`${root}/gone/away`, "/home/nobody")).toBe("away");
     expect(projectOf("/", "/home/nobody")).toBe("/");
+  });
+
+  test("a folder is regrouped after git init changes its repository root", () => {
+    const cwd = `${root}/new-project/src`;
+    mkdirSync(cwd, { recursive: true });
+    expect(projectOf(cwd, root)).toBe("src");
+    git(`${root}/new-project`, "init", "-q");
+    const clock = spyOn(Date, "now").mockReturnValue(Date.now() + 10_001);
+    try {
+      expect(projectOf(cwd, root)).toBe("new-project");
+    } finally {
+      clock.mockRestore();
+    }
   });
 });
 

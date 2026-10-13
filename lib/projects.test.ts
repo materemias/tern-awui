@@ -44,6 +44,17 @@ describe("recentProjects", () => {
     expect(await recentProjects(sessions, [open, beta, join(root, "missing")])).toEqual([open, beta, gamma, alpha]);
   });
 
+  test("a transcript discovered before its header is written is retried", async () => {
+    const pending = dir("pending-sessions");
+    const project = dir("late-project");
+    mkdirSync(join(pending, "x"));
+    const file = join(pending, "x", "new.jsonl");
+    writeFileSync(file, "");
+    expect(await recentProjects(pending, [])).toEqual([]);
+    writeFileSync(file, new Transcript("new", project).text());
+    expect(await recentProjects(pending, [])).toEqual([project]);
+  });
+
   test("no sessions folder: only the open blocks", async () => {
     const only = dir("only");
     expect(await recentProjects(join(root, "nothing"), [only, only])).toEqual([only]);

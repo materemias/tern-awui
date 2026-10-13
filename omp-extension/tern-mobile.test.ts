@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, setSystemTime, jest } fr
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import ternMobile, { BUILD, PROTOCOL } from "./tern-mobile";
+import ternMobile, { bridgeSettings, BUILD, PROTOCOL } from "./tern-mobile";
 import { bridgeFixture, type Completion } from "./bridge-fixture";
 import { PROTOCOL as SERVER_PROTOCOL } from "../lib/bridge-state";
 import { buildId } from "../lib/extension-check";
@@ -102,6 +102,35 @@ function fixture(options: { pane?: boolean; hasUI?: boolean; sub?: boolean; conf
 	};
 }
 
+describe("installed bridge discovery", () => {
+	test("uses the installed port and token path unless explicitly overridden", () => {
+		const home = mkdtempSync(join(tmpdir(), "tern-mobile-discovery-"));
+		cleanup.push(() => rmSync(home, { recursive: true, force: true }));
+		const dir = join(home, ".config", "tern-mobile");
+		mkdirSync(dir, { recursive: true });
+		const tokenFile = join(home, "relocated", "bridge-token");
+		writeFileSync(join(dir, "bridge.json"), JSON.stringify({ endpoint: "ws://127.0.0.1:4567/bridge", tokenFile }));
+		expect(bridgeSettings({}, home)).toEqual({ url: "ws://127.0.0.1:4567/bridge", tokenFile });
+		expect(bridgeSettings({ TERN_MOBILE_BRIDGE: "ws://localhost:1234/bridge" }, home)).toEqual({ url: "ws://localhost:1234/bridge", tokenFile });
+		expect(bridgeSettings({ TERN_MOBILE_TOKEN_FILE: "/explicit/token" }, home).tokenFile).toBe("/explicit/token");
+		expect(bridgeSettings({ TERN_MOBILE_CONFIG: "/explicit/config" }, home).tokenFile).toBe("/explicit/config/bridge-token");
+		expect(bridgeSettings({ TERN_MOBILE_CONFIG: "/explicit/config", TERN_MOBILE_TOKEN_FILE: "/explicit/token" }, home).tokenFile).toBe("/explicit/token");
+	});
+
+	test("missing or malformed discovery preserves the defaults", () => {
+		const home = mkdtempSync(join(tmpdir(), "tern-mobile-discovery-"));
+		cleanup.push(() => rmSync(home, { recursive: true, force: true }));
+		const dir = join(home, ".config", "tern-mobile");
+		mkdirSync(dir, { recursive: true });
+		const defaults = { url: "ws://127.0.0.1:4380/bridge", tokenFile: join(dir, "bridge-token") };
+		expect(bridgeSettings({}, home)).toEqual(defaults);
+		for (const value of ["not json", "null", "[]", JSON.stringify({ endpoint: "ws://remote.example/bridge", tokenFile: "/token" }), JSON.stringify({ endpoint: "ws://127.0.0.1:4567/bridge", tokenFile: "relative" }), JSON.stringify({ endpoint: "ws://user@127.0.0.1:4567/bridge", tokenFile: "/token" })]) {
+			writeFileSync(join(dir, "bridge.json"), value);
+			expect(bridgeSettings({}, home)).toEqual(defaults);
+		}
+	});
+});
+
 describe("omp extension bridge contract", () => {
 	test("does nothing without a pane; ignores headless and subagent session starts", async () => {
 		const absent = fixture({ pane: false });
@@ -135,6 +164,27 @@ describe("omp extension bridge contract", () => {
 		expect((await f.bridge.inbox.next()).sessionId).toBe("session-456");
 		expect(f.state.intervals).toEqual([100]);
 		expect(f.bridge.connections).toHaveLength(1);
+	});
+
+	test("a new session clears the previous session's queue, tools, samples and completions", async () => {
+		const f = fixture(); await f.start();
+		f.state.idle = false; f.state.pending = true;
+		f.state.jobs = [{ id: "old-job", type: "task", label: "Old task", startTime: 1 }];
+		f.emit("input", { text: "old queued prompt" });
+		f.emit("tool_execution_start", { toolCallId: "old-ask", toolName: "ask" });
+		advance(2001);
+		expect((await f.bridge.request({ t: "sync" })).status).toBe("blocked");
+		await f.bridge.request({ t: "complete", text: "/" });
+		f.state.sessionId = "new-session"; f.state.text = "/";
+		f.state.idle = true; f.state.pending = false; f.state.jobs = [];
+		f.state.usage = { tokens: 0, contextWindow: 10000, percent: 0 };
+		f.emit("session_start");
+		expect(await f.bridge.inbox.next()).toMatchObject({
+			sessionId: "new-session", status: "idle", queued: [], jobs: [],
+			context: { tokens: 0, window: 10000, percent: 0 },
+		});
+		expect(await f.bridge.request({ t: "apply", text: "/", value: "/help", label: "Help", prefix: "/" })).not.toHaveProperty("text");
+		expect(f.state.text).toBe("/");
 	});
 
 	test("without the file override, the token comes from $TERN_MOBILE_CONFIG", async () => {
@@ -278,6 +328,70 @@ describe("omp extension bridge contract", () => {
 		expect((await f.bridge.request({ t: "sync" })).queued).toEqual([]);
 	});
 
+	test("native interactive queue prefixes and explicit phone follow-ups publish the same clean queue", async () => {
+		const text = "btw evaluate this\n  keep this indentation\nand this line";
+		for (const prefix of ["->", "=>"]) {
+			const desktop = fixture(); await desktop.start();
+			desktop.state.idle = false; desktop.state.pending = true;
+			const event = { text: `${prefix}\n${text}\n`, source: "interactive" };
+			const original = { ...event };
+			expect(desktop.emit("input", event)).toBeUndefined();
+			const snapshot = await desktop.bridge.request({ t: "sync" });
+			expect(snapshot.queued).toEqual([{ text, followUp: true }]);
+			expect(event).toEqual(original);
+			expect(desktop.state.sends).toEqual([]);
+
+			const phone = fixture(); await phone.start();
+			phone.state.idle = false; phone.state.pending = true;
+			expect((await phone.bridge.request({ t: "send", text, images: [], followUp: true })).queued).toEqual(snapshot.queued);
+			expect(phone.state.sends).toEqual([[[{ type: "text", text }], { deliverAs: "followUp" }]]);
+		}
+	});
+
+	test("queue display normalization is exact, interactive-only, and preserves grouped payloads", async () => {
+		for (const event of [
+			{ text: "  -> leading whitespace  ", source: "interactive" },
+			{ text: "embedded -> arrow", source: "interactive" },
+			{ text: "→ unrelated arrow", source: "interactive" },
+			{ text: "-> rpc literal", source: "rpc" },
+			{ text: "=> extension literal", source: "extension" },
+			{ text: "-> missing source" },
+			{ text: " normal steer ", source: "interactive" },
+		]) {
+			const f = fixture(); await f.start();
+			f.state.idle = false; f.state.pending = true;
+			f.emit("input", event);
+			expect((await f.bridge.request({ t: "sync" })).queued).toEqual([{ text: event.text.trim(), followUp: false }]);
+		}
+		const f = fixture(); await f.start();
+		f.state.idle = false; f.state.pending = true;
+		const grouped = "1. first\n2. second\n  continuation";
+		f.emit("input", { text: `->\n${grouped}`, source: "interactive" });
+		expect((await f.bridge.request({ t: "sync" })).queued).toEqual([{ text: grouped, followUp: true }]);
+	});
+
+	test("blank native queue payloads do not invent images or alter slash command handling", async () => {
+		const f = fixture(); await f.start();
+		f.state.idle = false; f.state.pending = true;
+		for (const text of ["->\n ", "=> ", "  ", " /help "]) {
+			f.emit("input", { text, source: "interactive", images: [] });
+			expect((await f.bridge.request({ t: "sync" })).queued).toEqual([]);
+		}
+		f.emit("input", { text: "->\n", source: "interactive", images: [{}] });
+		expect((await f.bridge.request({ t: "sync" })).queued).toEqual([{ text: "(image)", followUp: true }]);
+		advance(1001); f.state.pending = false;
+		await f.bridge.request({ t: "sync" });
+		f.emit("input", { text: "", source: "interactive", images: [{}] });
+		expect((await f.bridge.request({ t: "sync" })).queued).toEqual([{ text: "(image)", followUp: false }]);
+	});
+
+	test("a rejected async command returns its error without breaking the bridge", async () => {
+		const f = fixture(); await f.start();
+		f.pi.setModel = async () => { throw new Error("model metadata unavailable"); };
+		expect(await f.bridge.request({ t: "model", spec: "openai/reasoner" })).toMatchObject({ t: "reply", error: "model metadata unavailable" });
+		expect((await f.bridge.request({ t: "sync" })).model).toBe("openai/reasoner");
+	});
+
 	test("watch gates live text, coalesces updates, filters content, and ends the stream", async () => {
 		const f = fixture(); await f.start();
 		const update = (text: string, role = "assistant") => f.emit("message_update", { message: { role, content: [{ type: "text", text }] } });
@@ -329,6 +443,19 @@ describe("omp extension bridge contract", () => {
 		expect<unknown>(await f.bridge.inbox.next((m) => m.done)).toEqual({ t: "btw", id: "side2", text: "partial", done: true, error: "provider failed" });
 	});
 
+	test("a side turn cannot stream its old session's answer after a session switch", async () => {
+		const f = fixture(); await f.start();
+		const result = Promise.withResolvers<{ replyText: string }>();
+		f.ctx.runEphemeralTurn = (options) => { f.state.ephemeralCalls.push(options); return result.promise; };
+		await f.bridge.request({ t: "btw", id: "old-side", text: "old question" });
+		f.state.sessionId = "new-session"; f.emit("session_start");
+		expect((await f.bridge.inbox.next()).sessionId).toBe("new-session");
+		f.state.ephemeralCalls[0].onTextDelta("old session text");
+		result.resolve({ replyText: "old session answer" });
+		await f.bridge.request({ t: "sync" });
+		expect(f.bridge.inbox.messages).toEqual([]);
+	});
+
 	test("complete caps results and apply preserves provider fields, refusing stale/unoffered items", async () => {
 		const f = fixture(); await f.start();
 		f.state.suggestions = { prefix: "/", items: Array.from({ length: 45 }, (_, i) => ({ value: `/cmd${i}`, label: `Command ${i}`, private: i })) };
@@ -347,6 +474,20 @@ describe("omp extension bridge contract", () => {
 		expect((await f.bridge.inbox.next()).text).toBe("applied\ncompletion");
 		f.provider.getSuggestions = async () => { throw new Error("cancelled"); };
 		expect(await f.bridge.request({ t: "complete", text: "/" })).toMatchObject({ prefix: "", items: [] });
+	});
+
+	test("a slower old completion cannot replace the latest offered items", async () => {
+		const f = fixture(); await f.start();
+		const old = Promise.withResolvers<NonNullable<typeof f.state.suggestions>>();
+		f.provider.getSuggestions = async (...args) => args[0]?.toString() === "/old" ? old.promise : { items: [{ value: "/new", label: "New", private: 2 }], prefix: "/" };
+		f.bridge.send({ t: "complete", text: "/old", seq: 1000 });
+		await f.bridge.request({ t: "sync" });
+		expect((await f.bridge.request({ t: "complete", text: "/new" })).items[0]?.value).toBe("/new");
+		old.resolve({ items: [{ value: "/old", label: "Old" }], prefix: "/" });
+		await f.bridge.inbox.next((m) => m.seq === 1000);
+		f.state.text = "/new";
+		expect(await f.bridge.request({ t: "apply", text: "/new", value: "/new", label: "New", prefix: "/" })).toMatchObject({ text: "applied\ncompletion" });
+		expect(f.state.applyCalls[0][3]).toMatchObject({ private: 2 });
 	});
 
 	test.each([

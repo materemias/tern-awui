@@ -19,7 +19,7 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); }
-body { font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+body { font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Symbols Nerd Font", sans-serif; -webkit-tap-highlight-color: transparent; }
 button { font: inherit; color: inherit; }
 a { color: inherit; text-decoration: none; }
 
@@ -115,7 +115,7 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .md pre code { background: none; padding: 0; color: inherit; }
 /* Tables as cards: no inner grid, row rules, small caps header, faint zebra; wide ones scroll. */
 .md table { border-collapse: separate; border-spacing: 0; display: block; width: max-content; max-width: 100%; overflow-x: auto; font-size: 13px; line-height: 1.4; margin: .5em 0 .8em; border: 1px solid var(--line); border-radius: 10px; hyphens: manual; }
-.md th, .md td { border: 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent); padding: 7px 10px; min-width: 7ch; max-width: 34ch; vertical-align: top; text-align: left; }
+.md th, .md td { border: 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent); padding: 7px 10px; min-width: 7ch; vertical-align: top; text-align: left; }
 .md tr:last-child td { border-bottom: 0; }
 .md th { background: var(--panel); color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
 .md tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--raise) 35%, transparent); }
@@ -199,6 +199,12 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .sheet.tall { max-height: 82dvh; }
 .sheet-filter { margin: 0 6px 6px; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit; outline: none; }
 .sheet-list { overflow-y: auto; display: flex; flex-direction: column; }
+.btw-history .sheet-list { min-height: 0; }
+.btw-history .sheet-row { align-items: flex-start; }
+.btw-history .sheet-row .role { min-width: 0; overflow-wrap: anywhere; }
+.btw-history .sheet-row .small { flex: none; max-width: 40%; }
+.btw-history-turn { padding: 10px; overflow-wrap: anywhere; }
+.btw-history-turn + .btw-history-turn { border-top: 1px solid var(--line); }
 .age-blocked { color: var(--blocked); font-weight: 600; }
 .ghost.danger { color: var(--blocked); }
 .row-sub.recap { font-style: italic; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
@@ -250,20 +256,20 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 @media (min-width: 1000px) {
   .desk { display: grid; grid-template-columns: 360px 1fr; height: 100dvh; }
   .desk-side { border-right: 1px solid var(--line); min-width: 0; overflow: hidden; }
-  .desk-main { min-width: 0; overflow: hidden; }
+  .desk-main { --reading-width: 1100px; min-width: 0; overflow: hidden; }
   .desk-empty { padding-top: 30vh; }
   .desk .session-bar .back { display: none; }
   /* A subagent screen's ‹ leads to its session, which the sidebar doesn't show. */
   .desk .sub-bar .back { display: block; }
-  .desk-main .list .row { padding-inline: max(14px, calc((100% - 780px) / 2)); }
+  .desk-main .list .row { padding-inline: max(14px, calc((100% - var(--reading-width)) / 2)); }
   .desk .row { cursor: pointer; }
   .desk .row:hover { background: var(--raise); }
   .desk .row.selected { background: color-mix(in srgb, var(--accent) 12%, var(--panel)); border-left-color: var(--accent); }
   /* One reading column for the transcript, the composer and the header text. */
-  .desk-main .scroll { padding-inline: max(24px, calc((100% - 780px) / 2)); }
-  .desk-main .composer-wrap { padding-inline: max(16px, calc((100% - 804px) / 2)); }
-  .desk-main .session-bar { padding-inline: max(16px, calc((100% - 804px) / 2)); }
-  .desk-main .ext-session { margin-inline: max(12px, calc((100% - 780px) / 2)); }
+  .desk-main .scroll { padding-inline: max(24px, calc((100% - var(--reading-width)) / 2)); }
+  .desk-main .composer-wrap { padding-inline: max(16px, calc((100% - var(--reading-width) - 24px) / 2)); }
+  .desk-main .session-bar { padding-inline: max(16px, calc((100% - var(--reading-width) - 24px) / 2)); }
+  .desk-main .ext-session { margin-inline: max(12px, calc((100% - var(--reading-width)) / 2)); }
 }
 
 /* Images pasted into the composer, waiting to be sent. */

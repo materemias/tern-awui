@@ -6,7 +6,7 @@ import {
   askAnswers,
   askReady,
   backStep,
-  btwQuestion,
+  btwCommand,
   can,
   clock,
   composerKey,
@@ -449,6 +449,8 @@ describe("collapsed projects", () => {
     expect(parseCollapsed(null).size).toBe(0);
     expect(parseCollapsed("{not json").size).toBe(0);
     expect(parseCollapsed("5").size).toBe(0);
+    expect([...parseCollapsed(JSON.stringify("abc"))]).toEqual([]);
+    expect([...parseCollapsed(JSON.stringify([null, 42, {}, "project"]))]).toEqual(["project"]);
   });
   test("toggling flips one name and leaves the old set alone", () => {
     const before = new Set(["a"]);
@@ -505,6 +507,8 @@ describe("recent models", () => {
     expect(parseRecent(JSON.stringify(["1", "2", "3", "4", "5", "6", "7"]))).toEqual(["1", "2", "3", "4", "5", "6"]);
     expect(parseRecent(null)).toEqual([]);
     expect(parseRecent("[")).toEqual([]);
+    expect(parseRecent(JSON.stringify("bad storage"))).toEqual([]);
+    expect(parseRecent(JSON.stringify([null, 42, {}, "test/model"]))).toEqual(["test/model"]);
   });
 });
 
@@ -576,16 +580,20 @@ describe("lineEdit", () => {
   test("an emoji is one Backspace, not two", () => expect(lineEdit("a😀", "a")).toEqual({ back: 1, text: "" }));
 });
 
-describe("btwQuestion", () => {
+describe("btwCommand", () => {
   test("extracts the side question", () => {
-    expect(btwQuestion("/btw what is x?")).toBe("what is x?");
-    expect(btwQuestion("  /btw   two\nlines  ")).toBe("two\nlines");
+    expect(btwCommand("/btw what is x?")).toEqual({ kind: "question", question: "what is x?" });
+    expect(btwCommand("  /btw   two\nlines  ")).toEqual({ kind: "question", question: "two\nlines" });
   });
-  test("anything else is a normal prompt", () => {
-    expect(btwQuestion("/btw")).toBeUndefined();
-    expect(btwQuestion("/btw   ")).toBeUndefined();
-    expect(btwQuestion("/btwx y")).toBeUndefined();
-    expect(btwQuestion("ask /btw y")).toBeUndefined();
+  test("bare commands open history", () => {
+    expect(btwCommand("/btw")).toEqual({ kind: "history" });
+    expect(btwCommand("  /btw \t\n ")).toEqual({ kind: "history" });
+  });
+  test("unrelated text remains an ordinary prompt", () => {
+    expect(btwCommand("")).toBeNull();
+    expect(btwCommand("/BTW")).toBeNull();
+    expect(btwCommand("/btwx y")).toBeNull();
+    expect(btwCommand("ask /btw y")).toBeNull();
   });
 });
 

@@ -1,60 +1,14 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { drawCharts } from "./charts";
+import { specDom } from "./fakes";
 
-// happy-dom differs from browsers in two places DOMPurify depends on; both are patched to the
-// spec's behavior (and restored afterwards), so the sanitizer runs here as it does in Chrome.
 GlobalRegistrator.register({ url: "http://localhost/" });
-const nodeName = Object.getOwnPropertyDescriptor(Node.prototype, "nodeName")!;
-// The class that defines it for every document, parsed ones included (the global `Document` is a subclass).
-let docProto: Document = Object.getPrototypeOf(document);
-while (!Object.hasOwn(docProto, "createNodeIterator")) docProto = Object.getPrototypeOf(docProto);
-const createNodeIterator = docProto.createNodeIterator;
+const restoreDom = specDom();
 afterAll(async () => {
-  Object.defineProperty(Node.prototype, "nodeName", nodeName);
-  docProto.createNodeIterator = createNodeIterator;
+  restoreDom();
   await GlobalRegistrator.unregister();
 });
-// 1. DOMPurify reads names through `Node.prototype`'s nodeName getter; happy-dom returns "" there
-// and overrides it per subclass, so every tag would read as unknown and be dropped.
-Object.defineProperty(Node.prototype, "nodeName", {
-  configurable: true,
-  get(this: Node) {
-    for (let p = Object.getPrototypeOf(this); p && p !== Node.prototype; p = Object.getPrototypeOf(p)) {
-      const get = Object.getOwnPropertyDescriptor(p, "nodeName")?.get;
-      if (get) return get.call(this);
-    }
-    return "";
-  },
-});
-// 2. happy-dom's NodeIterator is a TreeWalker: removing the node it stands on loses its place, so
-// everything after a removed element would go unchecked. A browser's steps back to the node
-// before the removed one; this does the same (DOMPurify passes no filter).
-function following(n: Node, root: Node): Node | null {
-  if (n.firstChild) return n.firstChild;
-  for (let c: Node | null = n; c && c !== root; c = c.parentNode) if (c.nextSibling) return c.nextSibling;
-  return null;
-}
-function preceding(n: Node, root: Node): Node | null {
-  if (n === root) return null;
-  let p = n.previousSibling;
-  if (!p) return n.parentNode;
-  while (p.lastChild) p = p.lastChild;
-  return p;
-}
-docProto.createNodeIterator = function (root: Node, whatToShow = 0xffffffff) {
-  let ref: Node | null = null;
-  let before: Node | null = null;
-  const shown = (n: Node) => (whatToShow >> (n.nodeType - 1)) & 1;
-  return {
-    nextNode() {
-      let n = ref === null ? root : root.contains(ref) ? following(ref, root) : before && following(before, root);
-      while (n && !shown(n)) n = following(n, root);
-      if (n) [ref, before] = [n, preceding(n, root)];
-      return n;
-    },
-  } as NodeIterator;
-};
 // Dynamic on purpose: DOMPurify binds to the window present when it loads (without one it
 // returns input unsanitized), and static imports would load it before the DOM above exists.
 const { renderMarkdown, screenHtml } = await import("./markdown");
@@ -91,6 +45,31 @@ describe("links", () => {
   test("images keep https sources, lose script ones", () => {
     const root = dom("![a](https://example.com/a.png) ![b](javascript:alert(1))");
     expect([...root.querySelectorAll("img")].map((i) => i.getAttribute("src"))).toEqual(["https://example.com/a.png", null]);
+  });
+
+  test("assistant image sources apply to inline and reference images, not links, code or future renders", () => {
+    const path = "/tmp/tern-awui-queue-after.png";
+    const src = `/api/blob/${"a".repeat(64)}?type=image%2Fpng`;
+    const md = `![Corrected queued message](${path})\n\n![Reference][after]\n\n[after]: ${path} "Screenshot"\n\n[download](${path})\n\n\`![literal](${path})\``;
+    const root = document.createElement("div");
+    root.innerHTML = renderMarkdown(md, { [path]: src });
+    expect([...root.querySelectorAll("img")].map((img) => img.getAttribute("src"))).toEqual([src, src]);
+    expect(root.querySelector('img[alt="Reference"]')?.getAttribute("title")).toBe("Screenshot");
+    expect(hrefs(root)).toEqual([path]);
+    expect(root.querySelector("code")?.textContent).toBe(`![literal](${path})`);
+    expect(dom(`![unmapped](${path})`).querySelector("img")?.getAttribute("src")).toBe(path);
+  });
+
+  test("mapped image URLs remain sanitized and existing HTTP/data image behavior stays unchanged", () => {
+    const path = "/tmp/image.png";
+    const md = `![local](${path}) ![remote](https://example.com/a.png) ![inline](data:image/png;base64,aGVsbG8=)`;
+    const before = dom(md);
+    const root = document.createElement("div");
+    root.innerHTML = renderMarkdown(md, { [path]: "javascript:alert(1)" });
+    expect(root.querySelector('img[alt="local"]')?.getAttribute("src")).toBeNull();
+    for (const alt of ["remote", "inline"]) {
+      expect(root.querySelector(`img[alt="${alt}"]`)?.getAttribute("src")).toBe(before.querySelector(`img[alt="${alt}"]`)?.getAttribute("src"));
+    }
   });
 });
 

@@ -53,7 +53,7 @@ function parseCaps(value: unknown): Caps | null {
   return Object.fromEntries(CAPS.map((k) => [k, c[k] === true])) as Caps;
 }
 
-/** A `state` message as the pane's new state; `since` carries over while the status holds. */
+/** A `state` message as the pane's new state; `since` carries over within one session and status. */
 export function parseBridgeState(msg: Obj, before: BridgeState, now: number): BridgeState {
   // Extensions from before `status` existed send only `idle`.
   const status = str(msg.status) || (msg.idle === false ? "working" : "idle");
@@ -68,7 +68,7 @@ export function parseBridgeState(msg: Obj, before: BridgeState, now: number): Br
     tiers: arr(msg.tiers).map((t) => str(t)),
     tier: str(msg.tier),
     status,
-    since: status === before.status ? before.since : now,
+    since: status === before.status && str(msg.sessionId) === before.sessionId ? before.since : now,
     context: window > 0 ? { tokens: num(c.tokens), window, percent: num(c.percent) } : null,
     // Extensions before follow-ups send plain strings (all steers).
     queued: arr(msg.queued)
@@ -93,6 +93,8 @@ export function listChanged(before: BridgeState, after: BridgeState): boolean {
     before.tier !== after.tier ||
     before.status !== after.status ||
     before.context?.percent !== after.context?.percent ||
+    before.context?.tokens !== after.context?.tokens ||
+    before.context?.window !== after.context?.window ||
     before.sessionId !== after.sessionId ||
     before.protocol !== after.protocol ||
     before.build !== after.build ||

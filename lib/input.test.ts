@@ -66,6 +66,12 @@ describe("answerSteps", () => {
     expect(answerSteps(a, { id: "ask1", answers: [{ other: "   " }, { option: 0 }, { picks: [] }] })).toBe("question 1 has no valid answer");
   });
 
+  test("fractional option indices cannot select a different answer", () => {
+    for (const option of [0.5, 1.5, NaN, Infinity])
+      expect(answerSteps(ask(q(3)), { id: "ask1", answers: [{ option }] })).toBe("question 1 has no valid answer");
+    expect(steps(ask(q(3, true)), [{ picks: [0.5, 1.5, 2] }])).toEqual([{ keys: [...up(3), ...down(2), "space", "Enter"] }]);
+  });
+
   test("a single option: Up to the top whatever the cursor, Down to it, Enter", () => {
     expect(steps(ask(q(3)), [{ option: 2 }])).toEqual([{ keys: [...up(3), ...down(2), "Enter"] }]);
     expect(steps(ask(q(3)), [{ option: 0 }])).toEqual([{ keys: [...up(3), "Enter"] }]);

@@ -4,7 +4,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const POLL_MS = 100;
@@ -24,6 +24,25 @@ export const BUILD = (() => {
 		return "";
 	}
 })();
+
+/** Installer discovery stays in the default directory, even for a relocated config. */
+export function bridgeSettings(env: NodeJS.ProcessEnv = process.env, home = homedir()): { url: string; tokenFile: string } {
+	const dir = join(home, ".config", "tern-mobile");
+	let discovered: { endpoint: string; tokenFile: string } | undefined;
+	try {
+		const value: unknown = JSON.parse(readFileSync(join(dir, "bridge.json"), "utf8"));
+		if (value && typeof value === "object" && "endpoint" in value && "tokenFile" in value && typeof value.endpoint === "string" && typeof value.tokenFile === "string") {
+			const url = new URL(value.endpoint);
+			if (url.protocol === "ws:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) && url.pathname === "/bridge" && !url.username && !url.password && !url.search && !url.hash && isAbsolute(value.tokenFile)) {
+				discovered = { endpoint: value.endpoint, tokenFile: value.tokenFile };
+			}
+		}
+	} catch {}
+	return {
+		url: env.TERN_MOBILE_BRIDGE ?? discovered?.endpoint ?? "ws://127.0.0.1:4380/bridge",
+		tokenFile: env.TERN_MOBILE_TOKEN_FILE ?? (env.TERN_MOBILE_CONFIG ? join(env.TERN_MOBILE_CONFIG, "bridge-token") : discovered?.tokenFile ?? join(dir, "bridge-token")),
+	};
+}
 
 /** The part of omp's Model this bridge reads; the rest varies by provider. */
 type Model = {
@@ -121,7 +140,7 @@ type Pi = {
 		handler: (event: ToolEvent) => unknown,
 	): void;
 	on(event: "message_update" | "message_end", handler: (event: { message: Message }) => unknown): void;
-	on(event: "input", handler: (event: { text: string; images?: unknown[] }) => unknown): void;
+	on(event: "input", handler: (event: { text: string; images?: unknown[]; source: "interactive" | "rpc" | "extension" }) => unknown): void;
 	setModel(model: Model): Promise<boolean>;
 	/** Without `deliverAs`: starts a turn when idle, steers while the agent runs. */
 	sendUserMessage(
@@ -173,11 +192,7 @@ export default function ternMobile(pi: Pi): void {
 	// Read when omp loads the extension (tests load it once and call this per scenario).
 	const PANE = process.env.TERN_PANE;
 	if (!PANE) return;
-	const BRIDGE_URL = process.env.TERN_MOBILE_BRIDGE ?? "ws://127.0.0.1:4380/bridge";
-	// The server's config dir (`$TERN_MOBILE_CONFIG`, else ~/.config/tern-mobile on every OS); the
-	// file override lets tests and throwaway servers use their own token.
-	const TOKEN_FILE =
-		process.env.TERN_MOBILE_TOKEN_FILE ?? join(process.env.TERN_MOBILE_CONFIG || join(homedir(), ".config", "tern-mobile"), "bridge-token");
+	const { url: BRIDGE_URL, tokenFile: TOKEN_FILE } = bridgeSettings();
 	let ctx: Ctx | null = null;
 	let ws: WebSocket | null = null;
 	let sent = ""; // last snapshot sent, as JSON
@@ -284,6 +299,7 @@ export default function ternMobile(pi: Pi): void {
 	// The editor's own provider (slash commands, skills, @files), captured through a pass-through factory.
 	let completer: Completer | null = null;
 	let offered: CompletionItem[] = [];
+	let completionRequest = 0;
 	/** The text as editor lines with the cursor at its end, as the provider takes it. */
 	const at = (text: string) => {
 		const lines = text.split("\n");
@@ -322,8 +338,10 @@ export default function ternMobile(pi: Pi): void {
 
 	/** A /btw-style side question: answered from the session's context, never added to its history. */
 	const btw = async (id: string, question: string) => {
+		const socket = ws;
+		const sessionId = ctx?.sessionManager.getSessionId();
 		const send = (data: object) => {
-			if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: "btw", id, ...data }));
+			if (ws === socket && socket?.readyState === WebSocket.OPEN && ctx?.sessionManager.getSessionId() === sessionId) socket.send(JSON.stringify({ t: "btw", id, ...data }));
 		};
 		if (!ctx?.runEphemeralTurn) return send({ text: "", done: true, error: "this omp has no side turns" });
 		let text = "";
@@ -379,11 +397,12 @@ export default function ternMobile(pi: Pi): void {
 			return void btw(msg.id, msg.text);
 		}
 		if (msg.t === "complete") {
+			const request = ++completionRequest;
 			const { lines, line, col } = at(msg.text);
 			const r = completer ? await completer.getSuggestions(lines, line, col, AbortSignal.timeout(1500)).catch(() => null) : null;
-			offered = r?.items.slice(0, MAX_COMPLETIONS) ?? [];
-			const items = offered.map((i) => ({ value: i.value, label: i.label, description: i.description ?? "" }));
-			return reply(msg.seq, { prefix: r?.prefix ?? "", items });
+			const items = r?.items.slice(0, MAX_COMPLETIONS) ?? [];
+			if (request === completionRequest) offered = items;
+			return reply(msg.seq, { prefix: r?.prefix ?? "", items: items.map((i) => ({ value: i.value, label: i.label, description: i.description ?? "" })) });
 		}
 		if (msg.t === "apply") {
 			// The offered item itself: providers keep extra fields on it.
@@ -443,7 +462,10 @@ export default function ternMobile(pi: Pi): void {
 		socket.onopen = () => flush(true);
 		socket.onmessage = (ev) => {
 			try {
-				void apply(JSON.parse(String(ev.data)) as ServerMessage);
+				const msg = JSON.parse(String(ev.data)) as ServerMessage;
+				void apply(msg).catch((error) => {
+					if (msg && typeof msg === "object" && "seq" in msg && typeof msg.seq === "number" && ws === socket) reply(msg.seq, { error: error instanceof Error ? error.message : String(error) });
+				});
 			} catch {}
 		};
 		socket.onclose = () => {
@@ -459,6 +481,17 @@ export default function ternMobile(pi: Pi): void {
 		if (c.hasUI === false || c.agent?.kind === "sub") return;
 		const first = ctx === null;
 		ctx = c;
+		waiting.clear();
+		queued = [];
+		context = { at: 0, value: null };
+		jobs = { at: 0, value: [] };
+		offered = [];
+		completionRequest++;
+		clearTimeout(live.timer);
+		live.timer = undefined;
+		live.message = null;
+		if (live.sent) sendLive("", true);
+		live.sent = "";
 		if (!first) return flush(true);
 		c.setInterval(() => flush(false), POLL_MS);
 		c.ui.addAutocompleteProvider?.((current) => {
@@ -478,9 +511,12 @@ export default function ternMobile(pi: Pi): void {
 		},
 	});
 	pi.on("input", (e) => {
-		// Sent while the agent runs: a steer omp queues. Slash commands run instead of queueing.
-		const text = e.text.trim();
-		if (ctx && !ctx.isIdle() && !text.startsWith("/")) noteQueued(text || "(image)");
+		// Only native interactive prefixes encode follow-up delivery; Ctrl+Q has no input metadata.
+		// Normalize the display note, never the event omp will deliver.
+		if (!ctx || ctx.isIdle() || e.text.trim().startsWith("/")) return;
+		const followUp = e.source === "interactive" && (e.text.startsWith("->") || e.text.startsWith("=>"));
+		const text = (followUp ? e.text.slice(2) : e.text).trim();
+		noteQueued(text || (e.images?.length ? "(image)" : ""), followUp);
 	});
 	pi.on("tool_execution_start", (e) => {
 		if (e.toolName === "ask") waiting.add(e.toolCallId);

@@ -1,25 +1,36 @@
 // Run explicitly: TERN_AWUI_LIVE=1 bun test omp-extension/tern-mobile.live.test.ts
-// Requires omp on PATH and a configured model catalog. No model prompts are sent:
-// rpc-ui keeps hasUI=true; --no-session and a temp cwd keep the session disposable.
+// Requires omp on PATH. A temporary HOME and dummy API key isolate all settings and auth.
+// No provider prompts are sent; rpc-ui keeps hasUI=true and --no-session keeps history ephemeral.
 // RPC has no editor/autocomplete provider, so completion's empty fallback is asserted.
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { bridgeFixture, Inbox, type RpcFrame } from "./bridge-fixture";
 import { PROTOCOL } from "./tern-mobile";
 import { buildId } from "../lib/extension-check";
 
-const enabled = process.env.TERN_AWUI_LIVE === "1" && Bun.which("omp") !== null;
+const enabled = process.env.TERN_AWUI_LIVE === "1";
 test.skipIf(!enabled)("real omp: bridge state, pi-ai capabilities, model catalog/switch, thinking and rewind", async () => {
+	const omp = Bun.which("omp");
+	if (!omp) throw new Error("TERN_AWUI_LIVE=1 requires omp on PATH");
 	const bridge = bridgeFixture();
 	const rpc = new Inbox<RpcFrame>();
 	let stderr = "";
 	const child = Bun.spawn([
-		"omp", "--mode", "rpc-ui", "--no-extensions", "-e", resolve(import.meta.dir, "tern-mobile.ts"),
+		omp, "--mode", "rpc-ui", "--no-extensions", "-e", resolve(import.meta.dir, "tern-mobile.ts"),
 		"--no-session", "--no-skills", "--no-rules", "--no-lsp", "--no-tools", "--no-title",
 	], {
 		cwd: bridge.dir, stdin: "pipe", stdout: "pipe", stderr: "pipe",
-		env: { ...process.env, TERN_PANE: "tern-awui-contract-test", TERN_MOBILE_BRIDGE: bridge.url, TERN_MOBILE_TOKEN_FILE: bridge.tokenFile },
+		env: {
+			PATH: process.env.PATH, SystemRoot: process.env.SystemRoot,
+			HOME: bridge.dir, USERPROFILE: bridge.dir, TMPDIR: bridge.dir, TMP: bridge.dir, TEMP: bridge.dir,
+			XDG_CONFIG_HOME: join(bridge.dir, "config"), XDG_DATA_HOME: join(bridge.dir, "data"),
+			XDG_STATE_HOME: join(bridge.dir, "state"), XDG_CACHE_HOME: join(bridge.dir, "cache"),
+			APPDATA: join(bridge.dir, "config"), LOCALAPPDATA: join(bridge.dir, "data"),
+			PI_CONFIG_DIR: ".omp", PI_CODING_AGENT_DIR: join(bridge.dir, ".omp", "agent"),
+			OPENAI_API_KEY: "sk-tern-awui-isolated-no-provider-requests",
+			TERN_PANE: "tern-awui-contract-test", TERN_MOBILE_BRIDGE: bridge.url, TERN_MOBILE_TOKEN_FILE: bridge.tokenFile,
+		},
 	});
 	const stdoutTask = (async () => {
 		let pending = "";
@@ -63,7 +74,6 @@ test.skipIf(!enabled)("real omp: bridge state, pi-ai capabilities, model catalog
 		// Comparing against omp's own API catches silently taking the extension's fallback.
 		const levels = await request({ type: "get_available_thinking_levels" });
 		expect(initial.levels).toEqual(levels.levels);
-		expect(initial.levels).toContain("high");
 		const catalog = await bridge.request({ t: "models" });
 		expect(catalog.models.length).toBeGreaterThan(0);
 		const currentProvider = initial.model.split("/")[0];

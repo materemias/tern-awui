@@ -70,3 +70,5 @@ export const call = (id: string, name: string, args: Record<string, unknown>) =>
 export const text = (t: string) => ({ type: "text", text: t });
 export const image = (data: string, mimeType = "image/png") => ({ type: "image", data, mimeType });
 export const HASH = "07d2bb33fe28771f36752c70b9bcd5ef98dc14508798b1f479c22b25bd4c69e1";
+/** A valid 1×1 PNG, used for route bytes and real browser decoding. */
+export const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=", "base64");

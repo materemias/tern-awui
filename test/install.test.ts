@@ -57,10 +57,10 @@ function runs(actions: Action[]): string[][] {
 
 describe("plan: linux", () => {
   const actions = plan(linux);
-  const [unit] = writes(actions);
+  const [, unit] = writes(actions);
 
   test("builds, links the extension, writes the unit, starts it, serves it", () => {
-    expect(actions.map((a) => a.kind)).toEqual(["run", "symlink", "write", "run", "run", "run", "run"]);
+    expect(actions.map((a) => a.kind)).toEqual(["run", "symlink", "write", "write", "run", "run", "run", "run"]);
     expect(actions[0]).toEqual({ kind: "run", argv: ["/home/ann/.bun/bin/bun", "build.ts"], cwd: linux.repo });
     expect(actions[1]).toEqual({
       kind: "symlink",
@@ -87,15 +87,20 @@ describe("plan: linux", () => {
   });
 
   test("systemd specifiers, quotes and $ in paths are escaped", () => {
-    const [u] = writes(plan({ ...linux, repo: '/home/ann/100% "x" $y', extraEnv: { TERN_MOBILE_VAPID_SUBJECT: "mailto:a@b" } }));
+    const [, u] = writes(plan({ ...linux, repo: '/home/ann/100% "x" $y', extraEnv: { TERN_MOBILE_VAPID_SUBJECT: "mailto:a@b" } }));
     expect(u.content).toContain('WorkingDirectory=/home/ann/100%% "x" $y\n');
     expect(u.content).toContain('ExecStart="/home/ann/.bun/bin/bun" "/home/ann/100%% \\"x\\" $$y/server.ts"\n');
     expect(u.content).toContain('Environment="TERN_MOBILE_VAPID_SUBJECT=mailto:a@b"\n');
   });
 
+  test("systemd does not expand dollars in the executable name", () => {
+    const [, u] = writes(plan({ ...linux, bun: "/home/ann/$tools/bun", repo: "/home/ann/$code" }));
+    expect(u.content).toContain('ExecStart="/home/ann/$tools/bun" "/home/ann/$$code/server.ts"\n');
+  });
+
   test("the port flows into the unit, serve and the app URL", () => {
     const a = plan({ ...linux, port: 5000 });
-    expect(writes(a)[0].content).toContain('Environment="TERN_MOBILE_PORT=5000"');
+    expect(writes(a)[1].content).toContain('Environment="TERN_MOBILE_PORT=5000"');
     expect(runs(a).at(-1)).toEqual(["/usr/bin/tailscale", "serve", "--bg", "--https=5000", "http://127.0.0.1:5000"]);
     expect(appUrl("box.tail1234.ts.net.", 5000)).toBe("https://box.tail1234.ts.net:5000/");
   });
@@ -113,6 +118,11 @@ describe("plan: linux", () => {
       { kind: "remove", path: "/home/ann/.config/systemd/user/tern-mobile.service" },
       { kind: "run", argv: ["systemctl", "--user", "daemon-reload"] },
       { kind: "remove", path: "/home/ann/.omp/agent/extensions/tern-mobile.ts" },
+      {
+        kind: "remove",
+        path: "/home/ann/.config/tern-mobile/bridge.json",
+        ifContent: '{"endpoint":"ws://127.0.0.1:4380/bridge","tokenFile":"/home/ann/.config/tern-mobile/bridge-token"}\n',
+      },
       { kind: "run", argv: ["/usr/bin/tailscale", "serve", "--https=4380", "off"], mayFail: true },
     ]);
   });
@@ -120,7 +130,7 @@ describe("plan: linux", () => {
 
 describe("plan: darwin", () => {
   const actions = plan(darwin);
-  const [plist] = writes(actions);
+  const [, plist] = writes(actions);
 
   test("symlinks the extension and bootstraps a LaunchAgent", () => {
     expect(actions[1]).toEqual({
@@ -160,6 +170,11 @@ describe("plan: darwin", () => {
       { kind: "run", argv: ["launchctl", "bootout", "gui/501/dev.tern-awui"], mayFail: true },
       { kind: "remove", path: "/Users/ann/Library/LaunchAgents/dev.tern-awui.plist" },
       { kind: "remove", path: "/Users/ann/.omp/agent/extensions/tern-mobile.ts" },
+      {
+        kind: "remove",
+        path: "/Users/ann/.config/tern-mobile/bridge.json",
+        ifContent: '{"endpoint":"ws://127.0.0.1:4380/bridge","tokenFile":"/Users/ann/.config/tern-mobile/bridge-token"}\n',
+      },
       { kind: "run", argv: ["/Applications/Tailscale.app/Contents/MacOS/Tailscale", "serve", "--https=4380", "off"], mayFail: true },
     ]);
   });
@@ -167,7 +182,7 @@ describe("plan: darwin", () => {
 
 describe("plan: win32", () => {
   const actions = plan(win32);
-  const [launcher, task] = writes(actions);
+  const [, launcher, task] = writes(actions);
 
   test("copies the extension instead of linking it", () => {
     expect(actions[1]).toEqual({
@@ -233,6 +248,7 @@ describe("plan: win32", () => {
       "C:\\Users\\Ann\\.config\\tern-mobile\\tern-awui.vbs",
       "C:\\Users\\Ann\\.config\\tern-mobile\\tern-awui-task.xml",
       "C:\\Users\\Ann\\.omp\\agent\\extensions\\tern-mobile.ts",
+      "C:\\Users\\Ann\\.config\\tern-mobile\\bridge.json",
     ]);
     expect(u.every((a) => a.kind !== "run" || a.mayFail)).toBe(true);
   });
@@ -345,6 +361,28 @@ describe("parseTailscaleStatus", () => {
   });
 });
 
+describe("bridge discovery", () => {
+  for (const input of [linux, darwin, win32]) {
+    test(`${input.platform} publishes the selected endpoint and token file before starting the service`, () => {
+      const actions = plan({ ...input, port: 5123 });
+      const [discovery] = writes(actions);
+      const separator = input.platform === "win32" ? "\\" : "/";
+      expect(discovery.path).toBe([input.home, ".config", "tern-mobile", "bridge.json"].join(separator));
+      expect(JSON.parse(discovery.content)).toEqual({
+        endpoint: "ws://127.0.0.1:5123/bridge",
+        tokenFile: `${input.configDir}${separator}bridge-token`,
+      });
+      expect(actions.indexOf(discovery)).toBe(2);
+    });
+  }
+});
+
+test("installed services disable inherited development mode before Tailscale publishes them", () => {
+  expect(writes(plan(linux))[1].content).toContain('Environment="TERN_MOBILE_DEV=0"\n');
+  expect(writes(plan(darwin))[1].content).toContain("<key>TERN_MOBILE_DEV</key><string>0</string>");
+  expect(writes(plan(win32))[1].content).toContain('env("TERN_MOBILE_DEV") = "0"\r\n');
+});
+
 describe("execute", () => {
   const root = realpathSync(mkdtempSync(`${tmpdir()}/tern-awui-install-`));
   afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -397,6 +435,27 @@ describe("execute", () => {
     execute([{ kind: "write", path: f, content: "Máté", encoding: "utf16le" }], { dryRun: false, log: () => {} });
     expect([...readFileSync(f)].slice(0, 2)).toEqual([0xff, 0xfe]);
     expect(readFileSync(f, "utf16le")).toBe("\ufeffMáté");
+  });
+
+  test("conditional removal keeps unrelated bridge settings and tolerates absence", () => {
+    const file = `${root}/bridge.json`;
+    const action: Action = { kind: "remove", path: file, ifContent: "ours\n" };
+    writeFileSync(file, "another install\n");
+    execute([action], { dryRun: false, log: () => {} });
+    expect(readFileSync(file, "utf8")).toBe("another install\n");
+    writeFileSync(file, "ours\n");
+    execute([action, action], { dryRun: false, log: () => {} });
+    expect(() => lstatSync(file)).toThrow();
+  });
+
+  test("a missing optional command does not abort later cleanup", () => {
+    const file = `${root}/after-missing-command`;
+    execute([
+      { kind: "run", argv: [`${root}/missing-tool`], mayFail: true },
+      { kind: "write", path: file, content: "finished" },
+    ], { dryRun: false, log: () => {} });
+    expect(readFileSync(file, "utf8")).toBe("finished");
+    expect(() => execute([{ kind: "run", argv: [`${root}/missing-tool`] }], { dryRun: false, log: () => {} })).toThrow();
   });
 
   test("a failing run stops the run unless it may fail", () => {

@@ -42,7 +42,7 @@ export function answerSteps(ask: AskEntry | undefined, body: Obj): Step[] | stri
     const a = answers[i];
     if (str(a.other).trim()) return false;
     if (q.multi) return !Array.isArray(a.picks);
-    return typeof a.option !== "number" || a.option < 0 || a.option >= q.options.length;
+    return typeof a.option !== "number" || !Number.isInteger(a.option) || a.option < 0 || a.option >= q.options.length;
   });
   if (invalid >= 0) return `question ${invalid + 1} has no valid answer`;
 
@@ -62,7 +62,7 @@ export function answerSteps(ask: AskEntry | undefined, body: Obj): Step[] | stri
     };
     const other = str(a.other).trim();
     if (q.multi) {
-      const picks = arr(a.picks).filter((n): n is number => typeof n === "number" && n >= 0 && n < otherRow);
+      const picks = arr(a.picks).filter((n): n is number => typeof n === "number" && Number.isInteger(n) && n >= 0 && n < otherRow);
       const keys = [...new Set(picks)].sort((x, y) => x - y).flatMap((p) => [...moveTo(p), "space"]);
       if (other) {
         steps.push({ keys: [...keys, ...moveTo(otherRow), "Enter"] }, { text: other }, { keys: ["Enter"] });

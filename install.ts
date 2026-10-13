@@ -1,7 +1,7 @@
 // Installs tern-awui as a per-user service: `bun install.ts [--uninstall] [--port N] [--dry-run]`.
 // Linux: systemd user unit, macOS: LaunchAgent, Windows: a scheduled task at logon. `plan` is pure (the
 // list of file writes and commands for one platform); `execute` carries it out or, with --dry-run, prints it.
-import { copyFileSync, lstatSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -40,7 +40,7 @@ export type Action =
   /** Replaces whatever is at `path` with a symlink to `target`. */
   | { kind: "symlink"; path: string; target: string }
   | { kind: "copy"; from: string; to: string }
-  | { kind: "remove"; path: string }
+  | { kind: "remove"; path: string; ifContent?: string }
   | { kind: "run"; argv: string[]; cwd?: string; mayFail?: boolean };
 
 export const SERVICE_NAME = "tern-mobile";
@@ -74,10 +74,11 @@ function serviceEnv(input: PlanInput): [string, string][] {
     ["TERN_MOBILE_PORT", String(input.port)],
     ["TERN_MOBILE_ALLOW", input.allow.join(",")],
     ...Object.entries(input.extraEnv),
+    ["TERN_MOBILE_DEV", "0"],
   ];
 }
 
-// systemd: `%` starts a specifier everywhere; inside double quotes `\` and `"` are escaped; in ExecStart `$` expands.
+// systemd: `%` starts a specifier everywhere; inside double quotes `\` and `"` are escaped; ExecStart arguments expand `$` (the executable does not).
 const sdSpec = (s: string) => s.replaceAll("%", "%%");
 const sdQuote = (s: string) => `"${sdSpec(s).replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 const sdExecArg = (s: string) => sdQuote(s).replaceAll("$", "$$$$");
@@ -93,7 +94,7 @@ export function systemdUnit(input: PlanInput): string {
     "[Service]",
     `WorkingDirectory=${sdSpec(input.repo)}`,
     ...env.map(([k, v]) => `Environment=${sdQuote(`${k}=${v}`)}`),
-    `ExecStart=${sdExecArg(input.bun)} ${sdExecArg(server)}`,
+    `ExecStart=${sdQuote(input.bun)} ${sdExecArg(server)}`,
     "Restart=on-failure",
     "RestartSec=3",
     "",
@@ -221,6 +222,11 @@ export function plan(input: PlanInput): Action[] {
   const p = pathFor(input.platform);
   const extension = p.join(input.ompDir, "extensions", "tern-mobile.ts");
   const extensionSource = p.join(input.repo, "omp-extension", "tern-mobile.ts");
+  const discovery = p.join(input.home, ".config", "tern-mobile", "bridge.json");
+  const discoveryContent = `${JSON.stringify({
+    endpoint: `ws://127.0.0.1:${input.port}/bridge`,
+    tokenFile: p.join(input.configDir, "bridge-token"),
+  })}\n`;
   const serveOn: Action = { kind: "run", argv: [input.tailscale, "serve", "--bg", `--https=${input.port}`, `http://127.0.0.1:${input.port}`] };
   const serveOff: Action = { kind: "run", argv: [input.tailscale, "serve", `--https=${input.port}`, "off"], mayFail: true };
 
@@ -246,7 +252,7 @@ export function plan(input: PlanInput): Action[] {
               { kind: "remove", path: launcher },
               { kind: "remove", path: taskXml },
             ];
-    return [...service, { kind: "remove", path: extension }, serveOff];
+    return [...service, { kind: "remove", path: extension }, { kind: "remove", path: discovery, ifContent: discoveryContent }, serveOff];
   }
 
   const actions: Action[] = [
@@ -254,6 +260,7 @@ export function plan(input: PlanInput): Action[] {
     input.platform === "win32"
       ? { kind: "copy", from: extensionSource, to: extension }
       : { kind: "symlink", path: extension, target: extensionSource },
+    { kind: "write", path: discovery, content: discoveryContent },
   ];
   if (input.platform === "linux") {
     actions.push(
@@ -297,7 +304,7 @@ export function describe(a: Action): string {
     case "copy":
       return `copy ${a.from} -> ${a.to}`;
     case "remove":
-      return `remove ${a.path}`;
+      return `remove ${a.path}${a.ifContent === undefined ? "" : " (only if its content still matches this installation)"}`;
     case "run":
       return `run ${a.argv.map(quoteArg).join(" ")}${a.cwd ? `  (in ${a.cwd})` : ""}${a.mayFail ? "  (failure ignored)" : ""}`;
   }
@@ -314,7 +321,7 @@ function replace(file: string): void {
 }
 
 /** Carries out the actions in order. */
-export function execute(actions: Action[], opts: { dryRun: boolean; log?: (line: string) => void }): void {
+export function execute(actions: Action[], opts: { dryRun: boolean; log?: (line: string) => void; env?: Record<string, string | undefined> }): void {
   const log = opts.log ?? console.log;
   for (const a of actions) {
     log(`${opts.dryRun ? "[dry-run] " : ""}${describe(a)}`);
@@ -338,11 +345,17 @@ export function execute(actions: Action[], opts: { dryRun: boolean; log?: (line:
         copyFileSync(a.from, a.to);
         break;
       case "remove":
+        if (a.ifContent !== undefined && (!existsSync(a.path) || readFileSync(a.path, "utf8") !== a.ifContent)) break;
         replace(a.path);
         break;
       case "run": {
-        const r = Bun.spawnSync(a.argv, { cwd: a.cwd, stdout: "inherit", stderr: "inherit" });
-        if (r.exitCode !== 0 && !a.mayFail) throw new Error(`${a.argv.join(" ")} exited with ${r.exitCode}`);
+        try {
+          const r = Bun.spawnSync(a.argv, { cwd: a.cwd, env: opts.env, stdout: "inherit", stderr: "inherit" });
+          if (r.exitCode !== 0) throw new Error(`${a.argv.join(" ")} exited with ${r.exitCode}`);
+        } catch (error) {
+          if (!a.mayFail) throw error;
+          log(`warning: ${error instanceof Error ? error.message : String(error)}`);
+        }
         break;
       }
     }
@@ -389,58 +402,83 @@ export function parseTailscaleStatus(json: string): { dnsName: string; login: st
   return { dnsName, login };
 }
 
-function which(name: string, platform: Platform): string {
-  const found = Bun.which(name) ?? (platform === "darwin" && name === "tailscale" ? "/Applications/Tailscale.app/Contents/MacOS/Tailscale" : null);
-  if (!found) throw new Error(`${name} not found on PATH`);
-  return found;
+function which(name: string, platform: Platform, PATH: string | undefined, optional = false): string {
+  const found = Bun.which(name, { PATH }) ?? (platform === "darwin" && name === "tailscale" ? "/Applications/Tailscale.app/Contents/MacOS/Tailscale" : null);
+  if (!found && !optional) throw new Error(`${name} not found on PATH`);
+  return found ?? name;
 }
 
-function main(): void {
-  const args = parseArgs(process.argv.slice(2));
-  const platform = process.platform;
+/** What `main` reads from the process; injectable so tests can run it against a temp HOME and fake tools. */
+export interface MainDeps {
+  argv: string[];
+  env: Record<string, string | undefined>;
+  platform: string;
+  home: string;
+  repo: string;
+  bun: string;
+  uid: number;
+  log: (line: string) => void;
+}
+
+export function main(deps: MainDeps): void {
+  const args = parseArgs(deps.argv);
+  const platform = deps.platform;
   if (platform !== "linux" && platform !== "darwin" && platform !== "win32") throw new Error(`unsupported platform: ${platform}`);
-  const env = process.env;
-  const home = homedir();
+  const env = deps.env;
+  const home = deps.home;
   const p = pathFor(platform);
   const port = args.port ?? (env.TERN_MOBILE_PORT ? parsePort(env.TERN_MOBILE_PORT, "TERN_MOBILE_PORT") : 4380);
-  const tailscale = which("tailscale", platform);
+  const tailscale = which("tailscale", platform, env.PATH, args.uninstall);
   let tern = "", omp = "", dnsName = "", allow: string[] = [];
   if (!args.uninstall) {
-    tern = which("tern", platform);
-    omp = which("omp", platform);
-    const r = Bun.spawnSync([tailscale, "status", "--json"], { stderr: "pipe" });
+    tern = which("tern", platform, env.PATH);
+    omp = which("omp", platform, env.PATH);
+    const r = Bun.spawnSync([tailscale, "status", "--json"], { env, stderr: "pipe" });
     if (r.exitCode !== 0) throw new Error(`tailscale status failed: ${r.stderr.toString()}`);
     const status = parseTailscaleStatus(r.stdout.toString());
     dnsName = status.dnsName;
     allow = (env.TERN_MOBILE_ALLOW ?? status.login).split(",").map((s) => s.trim()).filter(Boolean);
     if (allow.length === 0) throw new Error("no allowed login: set TERN_MOBILE_ALLOW (tailscale reports no user for this device)");
   }
-  const extraEnv = Object.fromEntries(PASSTHROUGH_ENV.flatMap((k) => (env[k] ? [[k, env[k]]] : [])));
+  const extraEnv = Object.fromEntries(PASSTHROUGH_ENV.flatMap((k) => (env[k] ? [[k, env[k] as string]] : [])));
+  // Resolve before the service changes its working directory to the checkout.
+  for (const key of ["TERN_MOBILE_CONFIG", "TERN_MOBILE_OMP_DIR", "TERN_MOBILE_NOTES_DIR"]) {
+    if (extraEnv[key]) extraEnv[key] = p.resolve(extraEnv[key]);
+  }
   const actions = plan({
     platform,
     uninstall: args.uninstall,
     home,
-    repo: import.meta.dir,
-    bun: process.execPath,
+    repo: deps.repo,
+    bun: deps.bun,
     tern,
     omp,
     tailscale,
-    ompDir: env.TERN_MOBILE_OMP_DIR ?? p.join(home, ".omp", "agent"),
-    configDir: env.TERN_MOBILE_CONFIG ?? p.join(home, ".config", "tern-mobile"),
+    ompDir: extraEnv.TERN_MOBILE_OMP_DIR ?? p.join(home, ".omp", "agent"),
+    configDir: extraEnv.TERN_MOBILE_CONFIG ?? p.join(home, ".config", "tern-mobile"),
     port,
     allow,
     extraEnv,
-    uid: process.getuid?.() ?? 0,
+    uid: deps.uid,
     winUser: env.USERDOMAIN ? `${env.USERDOMAIN}\\${env.USERNAME ?? ""}` : (env.USERNAME ?? ""),
   });
-  execute(actions, { dryRun: args.dryRun });
-  if (args.uninstall) console.log(args.dryRun ? "\nwould uninstall tern-awui" : "\ntern-awui uninstalled (config and tokens kept)");
-  else console.log(`\n${args.dryRun ? "would serve" : "Open this on the phone (signed in to Tailscale as an allowed login)"}: ${appUrl(dnsName, port)}`);
+  execute(actions, { dryRun: args.dryRun, log: deps.log, env });
+  if (args.uninstall) deps.log(args.dryRun ? "\nwould uninstall tern-awui" : "\ntern-awui uninstalled (config and tokens kept)");
+  else deps.log(`\n${args.dryRun ? "would serve" : "Open this on the phone (signed in to Tailscale as an allowed login)"}: ${appUrl(dnsName, port)}`);
 }
 
 if (import.meta.main) {
   try {
-    main();
+    main({
+      argv: process.argv.slice(2),
+      env: process.env,
+      platform: process.platform,
+      home: homedir(),
+      repo: import.meta.dir,
+      bun: process.execPath,
+      uid: process.getuid?.() ?? 0,
+      log: console.log,
+    });
   } catch (e) {
     console.error(`install.ts: ${e instanceof Error ? e.message : String(e)}`);
     process.exit(1);

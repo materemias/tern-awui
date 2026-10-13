@@ -46,9 +46,11 @@ export async function recentProjects(sessionsDir: string, open: string[]): Promi
       files.slice(i, i + BATCH).map(async (file) => {
         try {
           const at = (await stat(file)).mtimeMs;
-          let cwd = cwdCache.get(file);
-          if (cwd === undefined) cwdCache.set(file, (cwd = await transcriptCwd(file)));
-          if (cwd) sessions.push({ cwd, at });
+          const cwd = cwdCache.get(file) ?? await transcriptCwd(file);
+          if (cwd) {
+            cwdCache.set(file, cwd);
+            sessions.push({ cwd, at });
+          }
         } catch {
           // Deleted while listing.
         }

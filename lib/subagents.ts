@@ -3,7 +3,7 @@
 // The folder also holds advisor transcripts (`__advisor.<model>.jsonl`), tool logs and the
 // subagents' results (`.md`), which aren't subagents.
 
-import { lstatSync, readdirSync } from "node:fs";
+import { lstatSync, readdirSync, statSync, type Stats } from "node:fs";
 import { join } from "node:path";
 import { arr, num, obj, str, type Obj } from "./json";
 import { callIntent, yieldText } from "./transcript";
@@ -54,6 +54,7 @@ export function countSubagents(dir: string, jobs: RunningJob[]): number {
 
 /** What the list shows of a subagent transcript, scanned from where the previous scan stopped. */
 export type SubagentFacts = { offset: number; started: number; lastActivity: number; summary: string; messages: number };
+const factFiles = new WeakMap<SubagentFacts, Stats>();
 
 export type Subagent = {
   name: string;
@@ -88,14 +89,21 @@ export function assistantSummary(msg: Obj): string {
 }
 
 /**
- * Brings `prev` (the previous scan of this file, updated in place) up to the file's end; starts
- * over when there is none or the file shrank. A line still being written waits for the next scan.
+ * Scans from `prev` without mutating it: concurrent readers may share the cached snapshot.
+ * Starts over if the file was replaced, shrank, or changed without growing. An incomplete line waits.
  */
 export async function scanSubagent(path: string, prev: SubagentFacts | undefined): Promise<SubagentFacts> {
   const file = Bun.file(path);
-  const size = file.size;
-  const facts = !prev || size < prev.offset ? { offset: 0, started: 0, lastActivity: 0, summary: "", messages: 0 } : prev;
-  if (size <= facts.offset) return facts;
+  const st = statSync(path, { throwIfNoEntry: false });
+  const size = st?.size ?? 0;
+  const previous = prev && factFiles.get(prev);
+  const fresh = !previous || !st || st.dev !== previous.dev || st.ino !== previous.ino ||
+    size < previous.size || (size === previous.size && st.mtimeMs !== previous.mtimeMs);
+  const facts = !prev || fresh ? { offset: 0, started: 0, lastActivity: 0, summary: "", messages: 0 } : { ...prev };
+  if (size <= facts.offset) {
+    if (st) factFiles.set(facts, st);
+    return facts;
+  }
   const bytes = new Uint8Array(await file.slice(facts.offset, size).arrayBuffer());
   const end = bytes.lastIndexOf(NEWLINE) + 1;
   const lines = new TextDecoder().decode(bytes.subarray(0, end)).split("\n");
@@ -131,6 +139,7 @@ export async function scanSubagent(path: string, prev: SubagentFacts | undefined
   }
   facts.started ||= facts.lastActivity;
   facts.offset += end;
+  if (st) factFiles.set(facts, st);
   return facts;
 }
 

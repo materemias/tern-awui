@@ -77,7 +77,7 @@ describe("push", () => {
     expect(w.calls.notifications).toEqual([
       {
         title: "app: Fix login",
-        options: { body: "Done.", tag: "b42", renotify: true, icon: "/icon-192.png", data: { url: "/#/b/42" } },
+        options: { body: "Done.", tag: "b42", renotify: true, icon: "/tern-icon-v1-192.png", data: { url: "/#/b/42" } },
       },
     ]);
   });

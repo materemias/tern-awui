@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { arr, obj } from "../lib/json";
 import { PROTOCOL } from "../lib/bridge-state";
 import { buildId } from "../lib/extension-check";
-import { HASH, T0, Transcript, call } from "./fixtures";
+import { HASH, PNG, T0, Transcript, call } from "./fixtures";
 import { Events, Extension, Sandbox, item, until } from "./server-harness";
 
 const REPO = resolve(import.meta.dir, "..");
@@ -108,6 +108,32 @@ test("blob serving allows only known image types and hashes", async () => {
   expect(await r.text()).toBe("image-bytes");
   expect((await s.get(`/api/blob/${HASH}?type=text/html`)).status).toBe(404);
   expect((await s.get(`/api/blob/${"a".repeat(64)}?type=image/png`)).status).toBe(404);
+});
+
+test("assistant markdown local images resolve through authenticated blob URLs", async () => {
+  const local = new Sandbox();
+  const path = `${local.home}/tern-awui-queue-after.png`;
+  writeFileSync(path, PNG);
+  local.leaf = local.transcript.say(`![Corrected queued message](${path})`, 5000);
+  writeFileSync(local.transcriptPath, local.transcript.text());
+  try {
+    await local.start();
+    await new Extension(local).connect();
+    const events = new Events();
+    await events.open(local, "?block=1&view=chat");
+    const chat = obj(await events.take("chat"));
+    const assistant = arr(chat.entries).map(obj).find((entry) => entry.text === `![Corrected queued message](${path})`)!;
+    const src = obj(assistant.imageSources)[path];
+    expect(src).toMatch(/^\/api\/blob\/[0-9a-f]{64}\?type=image%2Fpng$/);
+    const image = await local.get(String(src));
+    expect(image.status).toBe(200);
+    expect(image.headers.get("content-type")).toBe("image/png");
+    expect(Buffer.from(await image.arrayBuffer())).toEqual(PNG);
+    expect((await fetch(local.base + src)).status).toBe(403);
+    expect((await local.get(path)).headers.get("content-type")).not.toBe("image/png");
+  } finally {
+    await local.close();
+  }
 });
 
 test("inherited object names are not allowed keys or image MIME types", async () => {
@@ -333,7 +359,7 @@ test("submit/draft and image/follow-up submissions use the bridge protocol", asy
 
 test("model catalog and model/thinking/tier commands correlate sequenced bridge replies", async () => {
   const models = await s.action(1, "models");
-  expect(await models.json()).toEqual({ models: [{ id: "fast", provider: "test", name: "Fast", contextWindow: 200000 }] });
+  expect(await models.json()).toEqual({ models: [{ p: "test", id: "fast", name: "Fast", ctx: 200000, r: false, in: 0, out: 0, img: false }] });
   expect((await agent.take("models")).seq).toBeNumber();
   agent.inbox = [];
   await s.action(1, "models");
@@ -513,7 +539,7 @@ test("disconnect restores the newest surviving socket with sync, then clears pho
   await events.take("draft", (d) => obj(d).live === true);
   second.ws.close();
   expect(await events.take("draft", (d) => obj(d).live === false)).toEqual({ live: false, text: "" });
-  expect(await events.take("live")).toEqual({ text: "", done: true });
+  expect(await events.take("live")).toEqual({ text: "", done: false });
   expect(await events.take("queued")).toEqual([]);
   const state = await events.take("state", (d) => item(d, 1).live === null);
   expect(item(state, 1)).toMatchObject({ agent: null, status: null });
@@ -578,9 +604,8 @@ test("subscriptions and VAPID keys survive a server restart in the isolated HOME
   const subscription = { endpoint: "https://127.0.0.1:9/saved", keys: { p256dh: "key", auth: "auth" } };
   const path = `${s.home}/.config/tern-mobile/push.json`;
   const key = await (await s.get("/api/push/key")).json();
-  // No connected extensions in the restarted process: nothing can deliver these subscriptions.
-  s.proc!.kill();
-  await s.proc!.exited;
+  // No connected extensions in the restarted server: nothing can deliver these subscriptions.
+  await s.stop();
   writeFileSync(path, JSON.stringify([subscription]));
   await s.start();
   expect(await (await s.get("/api/push/key")).json()).toEqual(key);
@@ -594,10 +619,9 @@ test("subscriptions and VAPID keys survive a server restart in the isolated HOME
 });
 
 test("TERN_MOBILE_PROJECTS replaces the default list with a command's absolute, existing folders", async () => {
-  writeFileSync(`${s.home}/bin/projects`, `#!/bin/bash\nprintf '%s\\n' '${s.home}/alpha' relative/dir '${s.home}/missing' '  ${s.home}/beta  '\n`);
+  writeFileSync(`${s.home}/bin/projects`, `#!/bin/bash\nprintf '%s\\n' '${s.home}/alpha' relative/dir '${s.home}/missing' '${s.home}/tree.json' '  ${s.home}/beta  '\n`);
   chmodSync(`${s.home}/bin/projects`, 0o755);
-  s.proc!.kill();
-  await s.proc!.exited;
+  await s.stop();
   await s.start({ TERN_MOBILE_PROJECTS: `${s.home}/bin/projects` });
   expect(await (await s.get("/api/projects")).json()).toEqual({ projects: [`${s.home}/alpha`, `${s.home}/beta`], home: s.home });
 });

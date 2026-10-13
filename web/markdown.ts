@@ -30,8 +30,14 @@ marked.use({
 const SAFE_URI = /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i;
 
 /** Agent and note markdown as safe HTML. */
-export function renderMarkdown(text: string): string {
-  return DOMPurify.sanitize(marked.parse(text, { async: false }), { ALLOWED_URI_REGEXP: SAFE_URI });
+export function renderMarkdown(text: string, imageSources?: Record<string, string>): string {
+  const html = marked.parse(text, {
+    async: false,
+    walkTokens: imageSources ? (token) => {
+      if (token.type === "image" && Object.hasOwn(imageSources, token.href)) token.href = imageSources[token.href];
+    } : undefined,
+  });
+  return DOMPurify.sanitize(html, { ALLOWED_URI_REGEXP: SAFE_URI });
 }
 
 /** Tern's colored capture: <pre> and styled <span>s; scripts and links are stripped. */

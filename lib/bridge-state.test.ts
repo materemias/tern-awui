@@ -61,6 +61,7 @@ describe("parseBridgeState", () => {
     const working = parseBridgeState(snapshot, fresh, 2000);
     expect(parseBridgeState({ ...snapshot, text: "more" }, working, 3000).since).toBe(2000);
     expect(parseBridgeState({ ...snapshot, status: "idle" }, working, 4000).since).toBe(4000);
+    expect(parseBridgeState({ ...snapshot, sessionId: "new-session" }, working, 5000).since).toBe(5000);
   });
 
   test("no context without a window; malformed lists degrade to empty", () => {
@@ -103,6 +104,8 @@ describe("listChanged", () => {
     expect(changed({ tier: "priority" })).toBe(true);
     expect(changed({ status: "idle" })).toBe(true);
     expect(changed({ context: { ...base.context!, percent: 26 } })).toBe(true);
+    expect(changed({ context: { ...base.context!, tokens: 50_001 } })).toBe(true);
+    expect(changed({ context: { ...base.context!, window: 400_000 } })).toBe(true);
     expect(changed({ context: null })).toBe(true);
     expect(changed({ sessionId: "other" })).toBe(true);
     expect(changed({ jobs: [] })).toBe(true);
@@ -112,11 +115,10 @@ describe("listChanged", () => {
     expect(changed({ caps: null })).toBe(true);
   });
 
-  test("not drafts, queue, leaf or token counts at the same percent", () => {
+  test("not drafts, queue or leaf", () => {
     expect(changed({ text: "typing" })).toBe(false);
     expect(changed({ queued: [] })).toBe(false);
     expect(changed({ leaf: "e001" })).toBe(false);
-    expect(changed({ context: { ...base.context!, tokens: 50_001 } })).toBe(false);
     expect(listChanged(base, parseBridgeState(snapshot, base, 99))).toBe(false);
   });
 });

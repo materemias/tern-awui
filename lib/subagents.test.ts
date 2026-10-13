@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { appendFileSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { T0, Transcript, call, text } from "../test/fixtures";
 import {
@@ -138,7 +138,7 @@ describe("scanSubagent", () => {
     t.result("c1", "bash", 25000);
     appendFileSync(path, t.lines().at(-1)!); // no newline yet
     const partial = await scanSubagent(path, first);
-    expect(partial).toBe(first); // updated in place
+    expect(partial).toEqual(first); // incomplete bytes do not change the facts
     expect(partial).toMatchObject({ offset, messages: 2, lastActivity: T0 + 5000 });
 
     appendFileSync(path, "\n");
@@ -153,6 +153,49 @@ describe("scanSubagent", () => {
     fresh.say("rewritten", 100);
     writeFileSync(path, fresh.text());
     expect(await scanSubagent(path, first)).toMatchObject({ messages: 1, summary: "rewritten", lastActivity: T0 + 100 });
+  });
+
+  test("concurrent scans count appended messages once and leave the cached snapshot untouched", async () => {
+    const path = `${root}/concurrent.jsonl`;
+    const t = new Transcript();
+    t.user("go", 0);
+    writeFileSync(path, t.text());
+    const before = await scanSubagent(path, undefined);
+    const offset = before.offset;
+    t.say("done", 10);
+    appendFileSync(path, t.lines().at(-1)! + "\n");
+    const results = await Promise.all([scanSubagent(path, before), scanSubagent(path, before)]);
+    for (const result of results) expect(result).toMatchObject({ messages: 2, summary: "done", offset: Bun.file(path).size });
+    expect(before).toMatchObject({ messages: 1, summary: "", offset });
+  });
+
+  test.each(["replace", "rewrite"] as const)("a same-size %s discards the old summary and message count", async (mode) => {
+    const path = `${root}/${mode}.jsonl`;
+    const t = new Transcript();
+    t.say("old reply", 1000);
+    writeFileSync(path, t.text());
+    const before = await scanSubagent(path, undefined);
+    const u = new Transcript();
+    u.say("new reply", 1000);
+    if (mode === "replace") {
+      writeFileSync(`${path}.new`, u.text());
+      renameSync(`${path}.new`, path);
+    } else {
+      writeFileSync(path, u.text());
+      utimesSync(path, new Date(100000), new Date(100000));
+    }
+    expect(await scanSubagent(path, before)).toMatchObject({ summary: "new reply", messages: 1 });
+  });
+
+  test("a removed transcript clears its cached summary and can reappear", async () => {
+    const path = `${root}/removed.jsonl`;
+    writeFileSync(path, finished().text());
+    const before = await scanSubagent(path, undefined);
+    rmSync(path);
+    const missing = await scanSubagent(path, before);
+    expect(missing).toEqual({ offset: 0, started: 0, lastActivity: 0, summary: "", messages: 0 });
+    writeFileSync(path, finished().text());
+    expect(await scanSubagent(path, missing)).toMatchObject({ summary: "Slept for 20 seconds.", messages: 5 });
   });
 
   test("a transcript without a session row dates its start from its newest message", async () => {

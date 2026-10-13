@@ -38,9 +38,9 @@ async function drawMermaid(root: HTMLElement) {
   }
 }
 
-export function Markdown({ text, class: cls }: { text: string; class: string }) {
+export function Markdown({ text, class: cls, imageSources }: { text: string; class: string; imageSources?: Record<string, string> }) {
   const ref = useRef<HTMLDivElement>(null);
-  const html = useMemo(() => renderMarkdown(text), [text]);
+  const html = useMemo(() => renderMarkdown(text, imageSources), [text, imageSources]);
   const lang = useMemo(() => langOf(text), [text]);
   useEffect(() => {
     if (!ref.current) return;
@@ -126,6 +126,7 @@ function AskCard({ ask, block, pending }: { ask: Ask; block: string; pending: bo
     ask.questions.map(() => ({ option: null, picks: [], other: "", otherOpen: false })),
   );
   const [sending, setSending] = useState(false);
+  const submitted = useRef(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -144,11 +145,14 @@ function AskCard({ ask, block, pending }: { ask: Ask; block: string; pending: bo
   const ready = askReady(ask.questions, picks);
 
   async function send(next: AskPick[]) {
+    if (submitted.current) return;
+    submitted.current = true;
     setSending(true);
     const answers = askAnswers(next);
     const err = await post(`/api/blocks/${block}/answer`, { id: ask.id, answers });
     setSending(false);
     setError(err);
+    if (err) submitted.current = false;
     if (!err) {
       buzz();
       setSent(true);
@@ -211,6 +215,7 @@ function AskCard({ ask, block, pending }: { ask: Ask; block: string; pending: bo
                   autoFocus
                   placeholder="Your answer"
                   value={p.other}
+                  disabled={sending || sent}
                   onInput={(e) => update(i, { other: e.currentTarget.value })}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && ready) void send(picks);
@@ -255,7 +260,7 @@ export function Chat({ entries, block, rewind, readOnly = false }: { entries: Ch
               {` · ${clock(e.ts)}`}
             </div>
           );
-        if (e.role === "assistant") return <Markdown key={n} class="msg assistant md" text={e.text} />;
+        if (e.role === "assistant") return <Markdown key={n} class="msg assistant md" text={e.text} imageSources={e.imageSources} />;
         if (e.role === "advisor") return <AdvisorCard key={n} notes={e.notes} />;
         if (e.role === "tools")
           return <Tools key={n} calls={e.calls} images={e.images} todo={e.todo} latestTodo={n === latestTodo} />;

@@ -1,3 +1,5 @@
+export type { BtwHistoryRecord, BtwHistoryTurn } from "../lib/btw-history";
+
 // ---------- API shapes (mirror server.ts) ----------
 
 /** The omp session in a pane (present while its omp is connected to the bridge). */
@@ -98,7 +100,7 @@ export type AskQuestion = {
 export type Ask = { role: "ask"; id: string; questions: AskQuestion[]; answer: string | null; ts: number };
 export type ChatEntry =
   | { role: "user"; id: string; text: string; images: Img[]; ts: number }
-  | { role: "assistant"; text: string; ts: number }
+  | { role: "assistant"; text: string; imageSources?: Record<string, string>; ts: number }
   | { role: "tools"; calls: ToolCall[]; images: Img[]; todo: TodoPhase[] | null; ts: number }
   | Ask
   | { role: "turn"; ms: number; model: string; ts: number }

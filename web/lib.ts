@@ -291,7 +291,8 @@ export function rowText(item: Item, now: number): { sub: string; recap: boolean;
 /** The collapsed projects as stored on this device; anything unreadable counts as none. */
 export function parseCollapsed(raw: string | null): Set<string> {
   try {
-    return new Set(JSON.parse(raw ?? "[]") as string[]);
+    const value: unknown = JSON.parse(raw ?? "[]");
+    return new Set(Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : []);
   } catch {
     return new Set();
   }
@@ -329,7 +330,8 @@ export function searchModels(models: CatalogModel[], query: string): CatalogMode
 /** The recent picks as stored on this device, newest first. */
 export function parseRecent(raw: string | null): string[] {
   try {
-    return (JSON.parse(raw ?? "[]") as string[]).slice(0, RECENT_MAX);
+    const value: unknown = JSON.parse(raw ?? "[]");
+    return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string").slice(0, RECENT_MAX) : [];
   } catch {
     return [];
   }
@@ -387,9 +389,11 @@ export function lineEdit(before: string, after: string): { back: number; text: s
   return { back: was.length - same, text: now.slice(same).join("") };
 }
 
-/** The question of a `/btw …` side question, if the text is one. */
-export function btwQuestion(text: string): string | undefined {
-  return /^\/btw\s+([\s\S]+)$/.exec(text.trim())?.[1];
+/** Bare `/btw` opens saved history; `/btw …` asks a side question. */
+export function btwCommand(text: string): { kind: "history" } | { kind: "question"; question: string } | null {
+  const match = /^\/btw(?:\s+([\s\S]+))?$/.exec(text.trim());
+  if (!match) return null;
+  return match[1] ? { kind: "question", question: match[1] } : { kind: "history" };
 }
 
 /**
