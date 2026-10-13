@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- README links the companion CodexBar AgentView Tern extension.
 - **Breaking:** environment variables are renamed from `TERN_MOBILE_*` to `TERN_AWUI_*` (`TERN_AWUI_PORT`, `TERN_AWUI_ALLOW`, `TERN_AWUI_CONFIG`, `TERN_AWUI_OMP_DIR`, `TERN_AWUI_NOTES_DIR`, `TERN_AWUI_PROJECTS`, `TERN_AWUI_VAPID_SUBJECT`, `TERN_AWUI_DEV`, `TERN_AWUI_BRIDGE`, `TERN_AWUI_TOKEN_FILE`, `TERN_AWUI_SYMBOLS_FONT`). Run `bun install.ts` again to rewrite the service with the new names. The config folder, service, extension file and headers keep their `tern-mobile` names.
 - GitHub Actions CI: typecheck, the full suite with browser tests and the build on Linux; the platform-dependent suites on macOS and Windows (non-blocking for now).
 - Untitled file blocks are named after their file with a Markdown, note or file icon, show their folder (named from the project) instead of the full path, and drop the shell status ring. Opened documents use page-sized headings.

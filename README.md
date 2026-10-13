@@ -105,6 +105,10 @@ This is a remote shell into your desktop. The server listens only on `127.0.0.1`
 - Answers to `/btw <question>` asked from the web aren't saved in omp's btw history.
 - The extension uses some omp internals; a new omp version can turn individual features off until the extension catches up.
 
+## Companion: CodexBar AgentView
+
+[CodexBar AgentView](https://github.com/materemias/codexbar-agentview) is the desktop-side counterpart. Its native Tern extension puts AI provider usage and agent counts (working, blocked, idle) in Tern's status line, with a sidebar for usage, agents and session history, and it can restore your Tern sessions after a reboot. It also has a KDE Plasma widget. tern-awui doesn't need it: they share no code or data, and each works on its own.
+
 ## More
 
 - [How it works](docs/architecture.md): every feature in detail, the extension's protocol, configuration, build and tests.
