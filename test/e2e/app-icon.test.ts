@@ -39,8 +39,8 @@ describe.skipIf(!CHROMIUM)("installed app artwork", () => {
           for (let i = 0; i < pixels.length; i += 4) {
             const alpha = pixels[i + 3]!;
             minAlpha = Math.min(minAlpha, alpha);
-            // Count only neutral, high-contrast artwork, not the dark tile or colored logos.
-            if (alpha < 240 || Math.min(pixels[i]!, pixels[i + 1]!, pixels[i + 2]!) < 180) continue;
+            // Count only the mark, not the dark tile or transparent corners.
+            if (alpha < 240 || Math.max(pixels[i]!, pixels[i + 1]!, pixels[i + 2]!) < 80) continue;
             light++;
             const x = (i / 4) % canvas.width;
             const y = Math.floor(i / 4 / canvas.width);

@@ -6,13 +6,13 @@ import { isAbsolute, join, resolve } from "node:path";
 
 export type Env = Record<string, string | undefined>;
 
-/** tern-mobile's own files (tokens, VAPID keys, push subscriptions): `$TERN_MOBILE_CONFIG` or ~/.config/tern-mobile, on every OS. */
+/** tern-mobile's own files (tokens, VAPID keys, push subscriptions): `$TERN_AWUI_CONFIG` or ~/.config/tern-mobile, on every OS. */
 export function configDir(env: Env, home: string): string {
-  return env.TERN_MOBILE_CONFIG || join(home, ".config", "tern-mobile");
+  return env.TERN_AWUI_CONFIG || join(home, ".config", "tern-mobile");
 }
 
 /**
- * omp's data directory: `sessions/`, `blobs/` and `history.db`. `$TERN_MOBILE_OMP_DIR` overrides.
+ * omp's data directory: `sessions/`, `blobs/` and `history.db`. `$TERN_AWUI_OMP_DIR` overrides.
  * Otherwise as omp's own resolver (pi-utils `dirs.ts`, DirResolver) places its "data" files:
  * the agent dir is `$PI_CODING_AGENT_DIR`, else ~/<`$PI_CONFIG_DIR` or `.omp`>/agent; with the
  * default agent dir on Linux and macOS, `$XDG_DATA_HOME/omp` takes over once it exists (omp's
@@ -20,7 +20,7 @@ export function configDir(env: Env, home: string): string {
  * followed. Only the Linux path has been run; macOS and Windows follow omp's source, unverified.
  */
 export function ompDataDir(env: Env, home: string, platform: NodeJS.Platform, exists: (path: string) => boolean = existsSync): string {
-  if (env.TERN_MOBILE_OMP_DIR) return resolve(env.TERN_MOBILE_OMP_DIR);
+  if (env.TERN_AWUI_OMP_DIR) return resolve(env.TERN_AWUI_OMP_DIR);
   const defaultAgent = join(home, env.PI_CONFIG_DIR || ".omp", "agent");
   const agent = env.PI_CODING_AGENT_DIR ? resolve(env.PI_CODING_AGENT_DIR) : defaultAgent;
   if (agent === defaultAgent && (platform === "linux" || platform === "darwin") && env.XDG_DATA_HOME) {
@@ -31,21 +31,21 @@ export function ompDataDir(env: Env, home: string, platform: NodeJS.Platform, ex
 }
 
 /**
- * Where install.ts puts the omp extension: `extensions/tern-mobile.ts` under `$TERN_MOBILE_OMP_DIR`,
+ * Where install.ts puts the omp extension: `extensions/tern-mobile.ts` under `$TERN_AWUI_OMP_DIR`,
  * else under ~/.omp/agent (not the XDG data folder).
  */
 export function installedExtension(env: Env, home: string): string {
-  return join(env.TERN_MOBILE_OMP_DIR ? resolve(env.TERN_MOBILE_OMP_DIR) : join(home, ".omp", "agent"), "extensions", "tern-mobile.ts");
+  return join(env.TERN_AWUI_OMP_DIR ? resolve(env.TERN_AWUI_OMP_DIR) : join(home, ".omp", "agent"), "extensions", "tern-mobile.ts");
 }
 
 /**
- * Tern's notes (`note:<id>` → `<dir>/<id>.md`); `$TERN_MOBILE_NOTES_DIR` overrides. Linux:
+ * Tern's notes (`note:<id>` → `<dir>/<id>.md`); `$TERN_AWUI_NOTES_DIR` overrides. Linux:
  * `$XDG_STATE_HOME/tern/notes`, else ~/.local/state/tern/notes (verified). macOS and Windows are
  * read off the tern binary's directory lookup (Application Support, %LOCALAPPDATA%, an app
  * folder named "Tern"), not run: unverified.
  */
 export function ternNotesDir(env: Env, home: string, platform: NodeJS.Platform): string {
-  if (env.TERN_MOBILE_NOTES_DIR) return resolve(env.TERN_MOBILE_NOTES_DIR);
+  if (env.TERN_AWUI_NOTES_DIR) return resolve(env.TERN_AWUI_NOTES_DIR);
   if (platform === "darwin") return join(home, "Library", "Application Support", "Tern", "notes");
   if (platform === "win32") return join(env.LOCALAPPDATA || join(home, "AppData", "Local"), "Tern", "notes");
   const state = env.XDG_STATE_HOME && isAbsolute(env.XDG_STATE_HOME) ? env.XDG_STATE_HOME : join(home, ".local", "state");

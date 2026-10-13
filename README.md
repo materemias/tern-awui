@@ -109,4 +109,4 @@ This is a remote shell into your desktop. The server listens only on `127.0.0.1`
 
 - [How it works](docs/architecture.md): every feature in detail, the extension's protocol, configuration, build and tests.
 - [CHANGELOG](CHANGELOG.md)
-- License: [MIT](LICENSE). The bundled Nerd Font symbols are SIL OFL 1.1 ([license](assets/LICENSE-nerd-fonts-symbols)). The app icon is Tern's artwork and is not covered by this license.
+- License: [MIT](LICENSE). The bundled Nerd Font symbols are SIL OFL 1.1 ([license](assets/LICENSE-nerd-fonts-symbols)).

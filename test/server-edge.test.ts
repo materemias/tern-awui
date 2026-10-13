@@ -25,9 +25,9 @@ describe("startup and shutdown", () => {
 
   test("without allowed logins the server refuses to start, before writing keys, unless in dev mode", async () => {
     const vapid = `${s.home}/.config/tern-mobile/vapid.json`;
-    expect(() => startServer({ env: s.env({ TERN_MOBILE_ALLOW: " , ", TERN_MOBILE_PORT: "0" }), home: s.home })).toThrow(ConfigError);
+    expect(() => startServer({ env: s.env({ TERN_AWUI_ALLOW: " , ", TERN_AWUI_PORT: "0" }), home: s.home })).toThrow(ConfigError);
     expect(existsSync(vapid)).toBe(false);
-    const dev = startServer({ env: s.env({ TERN_MOBILE_ALLOW: "", TERN_MOBILE_DEV: "1", TERN_MOBILE_PORT: "0" }), home: s.home });
+    const dev = startServer({ env: s.env({ TERN_AWUI_ALLOW: "", TERN_AWUI_DEV: "1", TERN_AWUI_PORT: "0" }), home: s.home });
     try {
       expect(dev).toMatchObject({ dev: true, allow: [] });
       const base = `http://127.0.0.1:${dev.port}`;
@@ -42,7 +42,7 @@ describe("startup and shutdown", () => {
 
   test("a taken port fails startup without disturbing the server holding it", async () => {
     await s.start();
-    const env = s.env({ TERN_MOBILE_PORT: String(s.handle!.port) });
+    const env = s.env({ TERN_AWUI_PORT: String(s.handle!.port) });
     expect(() => startServer({ env, home: s.home })).toThrow();
     expect((await s.get("/api/state")).status).toBe(200);
     await s.stop();
@@ -94,7 +94,7 @@ exec "$TERN_FAKE_DIR/bin/tern-real" "$@"
     expect(await (await fetch(`http://127.0.0.1:${port}/`)).text()).toBe("free");
     again.stop(true);
     // A second stop is harmless.
-    const handle = startServer({ env: s.env({ TERN_MOBILE_PORT: "0" }), home: s.home });
+    const handle = startServer({ env: s.env({ TERN_AWUI_PORT: "0" }), home: s.home });
     await handle.stop();
     await handle.stop();
   });
@@ -137,10 +137,10 @@ ${readFileSync(command, "utf8")}
   });
 
   test("`bun server.ts` serves with a startup banner, and exits 2 without allowed logins", async () => {
-    const refused = Bun.spawn([process.execPath, SERVER], { env: s.env({ TERN_MOBILE_ALLOW: "", TERN_MOBILE_PORT: "0" }), stdout: "pipe", stderr: "pipe" });
+    const refused = Bun.spawn([process.execPath, SERVER], { env: s.env({ TERN_AWUI_ALLOW: "", TERN_AWUI_PORT: "0" }), stdout: "pipe", stderr: "pipe" });
     expect(await refused.exited).toBe(2);
-    expect(await new Response(refused.stderr).text()).toContain("TERN_MOBILE_ALLOW must list");
-    const dev = Bun.spawn([process.execPath, SERVER], { env: s.env({ TERN_MOBILE_DEV: "1", TERN_MOBILE_PORT: "0" }), stdout: "pipe", stderr: "inherit" });
+    expect(await new Response(refused.stderr).text()).toContain("TERN_AWUI_ALLOW must list");
+    const dev = Bun.spawn([process.execPath, SERVER], { env: s.env({ TERN_AWUI_DEV: "1", TERN_AWUI_PORT: "0" }), stdout: "pipe", stderr: "inherit" });
     try {
       const reader = dev.stdout.getReader();
       let banner = "";

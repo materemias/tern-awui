@@ -19,14 +19,14 @@ export interface PlanInput {
   tern: string;
   omp: string;
   tailscale: string;
-  /** `~/.omp/agent` unless TERN_MOBILE_OMP_DIR. */
+  /** `~/.omp/agent` unless TERN_AWUI_OMP_DIR. */
   ompDir: string;
-  /** `~/.config/tern-mobile` unless TERN_MOBILE_CONFIG. */
+  /** `~/.config/tern-mobile` unless TERN_AWUI_CONFIG. */
   configDir: string;
   port: number;
   /** Allowed Tailscale logins. Unused when uninstalling. */
   allow: string[];
-  /** Further TERN_MOBILE_* settings baked into the service (see PASSTHROUGH_ENV). */
+  /** Further TERN_AWUI_* settings baked into the service (see PASSTHROUGH_ENV). */
   extraEnv: Record<string, string>;
   /** macOS: the user's uid (launchctl domain `gui/<uid>`). */
   uid: number;
@@ -49,11 +49,11 @@ export const TASK_NAME = "tern-awui";
 const DESCRIPTION = "tern-awui: phone control surface for Tern panes";
 /** Settings passed through from the installer's environment into the service when set. */
 export const PASSTHROUGH_ENV = [
-  "TERN_MOBILE_CONFIG",
-  "TERN_MOBILE_OMP_DIR",
-  "TERN_MOBILE_NOTES_DIR",
-  "TERN_MOBILE_PROJECTS",
-  "TERN_MOBILE_VAPID_SUBJECT",
+  "TERN_AWUI_CONFIG",
+  "TERN_AWUI_OMP_DIR",
+  "TERN_AWUI_NOTES_DIR",
+  "TERN_AWUI_PROJECTS",
+  "TERN_AWUI_VAPID_SUBJECT",
 ];
 
 function pathFor(platform: Platform): typeof path.posix {
@@ -71,10 +71,10 @@ export function servicePath(input: PlanInput): string[] {
 
 function serviceEnv(input: PlanInput): [string, string][] {
   return [
-    ["TERN_MOBILE_PORT", String(input.port)],
-    ["TERN_MOBILE_ALLOW", input.allow.join(",")],
+    ["TERN_AWUI_PORT", String(input.port)],
+    ["TERN_AWUI_ALLOW", input.allow.join(",")],
     ...Object.entries(input.extraEnv),
-    ["TERN_MOBILE_DEV", "0"],
+    ["TERN_AWUI_DEV", "0"],
   ];
 }
 
@@ -427,7 +427,7 @@ export function main(deps: MainDeps): void {
   const env = deps.env;
   const home = deps.home;
   const p = pathFor(platform);
-  const port = args.port ?? (env.TERN_MOBILE_PORT ? parsePort(env.TERN_MOBILE_PORT, "TERN_MOBILE_PORT") : 4380);
+  const port = args.port ?? (env.TERN_AWUI_PORT ? parsePort(env.TERN_AWUI_PORT, "TERN_AWUI_PORT") : 4380);
   const tailscale = which("tailscale", platform, env.PATH, args.uninstall);
   let tern = "", omp = "", dnsName = "", allow: string[] = [];
   if (!args.uninstall) {
@@ -437,12 +437,12 @@ export function main(deps: MainDeps): void {
     if (r.exitCode !== 0) throw new Error(`tailscale status failed: ${r.stderr.toString()}`);
     const status = parseTailscaleStatus(r.stdout.toString());
     dnsName = status.dnsName;
-    allow = (env.TERN_MOBILE_ALLOW ?? status.login).split(",").map((s) => s.trim()).filter(Boolean);
-    if (allow.length === 0) throw new Error("no allowed login: set TERN_MOBILE_ALLOW (tailscale reports no user for this device)");
+    allow = (env.TERN_AWUI_ALLOW ?? status.login).split(",").map((s) => s.trim()).filter(Boolean);
+    if (allow.length === 0) throw new Error("no allowed login: set TERN_AWUI_ALLOW (tailscale reports no user for this device)");
   }
   const extraEnv = Object.fromEntries(PASSTHROUGH_ENV.flatMap((k) => (env[k] ? [[k, env[k] as string]] : [])));
   // Resolve before the service changes its working directory to the checkout.
-  for (const key of ["TERN_MOBILE_CONFIG", "TERN_MOBILE_OMP_DIR", "TERN_MOBILE_NOTES_DIR"]) {
+  for (const key of ["TERN_AWUI_CONFIG", "TERN_AWUI_OMP_DIR", "TERN_AWUI_NOTES_DIR"]) {
     if (extraEnv[key]) extraEnv[key] = p.resolve(extraEnv[key]);
   }
   const actions = plan({
@@ -454,8 +454,8 @@ export function main(deps: MainDeps): void {
     tern,
     omp,
     tailscale,
-    ompDir: extraEnv.TERN_MOBILE_OMP_DIR ?? p.join(home, ".omp", "agent"),
-    configDir: extraEnv.TERN_MOBILE_CONFIG ?? p.join(home, ".config", "tern-mobile"),
+    ompDir: extraEnv.TERN_AWUI_OMP_DIR ?? p.join(home, ".omp", "agent"),
+    configDir: extraEnv.TERN_AWUI_CONFIG ?? p.join(home, ".config", "tern-mobile"),
     port,
     allow,
     extraEnv,

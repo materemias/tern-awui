@@ -80,17 +80,17 @@ describe("plan: linux", () => {
     expect(unit.content).toContain("WorkingDirectory=/home/ann/My Code/tern-awui\n");
     expect(unit.content).toContain('ExecStart="/home/ann/.bun/bin/bun" "/home/ann/My Code/tern-awui/server.ts"\n');
     expect(unit.content).toContain('Environment="PATH=/home/ann/.local/bin:/home/ann/bin:/home/ann/.bun/bin:/usr/local/bin:/usr/bin:/bin"\n');
-    expect(unit.content).toContain('Environment="TERN_MOBILE_PORT=4380"\n');
-    expect(unit.content).toContain('Environment="TERN_MOBILE_ALLOW=ann@example.com,bob@example.com"\n');
+    expect(unit.content).toContain('Environment="TERN_AWUI_PORT=4380"\n');
+    expect(unit.content).toContain('Environment="TERN_AWUI_ALLOW=ann@example.com,bob@example.com"\n');
     expect(unit.content).toContain("Restart=on-failure\n");
     expect(unit.content).toContain("WantedBy=default.target\n");
   });
 
   test("systemd specifiers, quotes and $ in paths are escaped", () => {
-    const [, u] = writes(plan({ ...linux, repo: '/home/ann/100% "x" $y', extraEnv: { TERN_MOBILE_VAPID_SUBJECT: "mailto:a@b" } }));
+    const [, u] = writes(plan({ ...linux, repo: '/home/ann/100% "x" $y', extraEnv: { TERN_AWUI_VAPID_SUBJECT: "mailto:a@b" } }));
     expect(u.content).toContain('WorkingDirectory=/home/ann/100%% "x" $y\n');
     expect(u.content).toContain('ExecStart="/home/ann/.bun/bin/bun" "/home/ann/100%% \\"x\\" $$y/server.ts"\n');
-    expect(u.content).toContain('Environment="TERN_MOBILE_VAPID_SUBJECT=mailto:a@b"\n');
+    expect(u.content).toContain('Environment="TERN_AWUI_VAPID_SUBJECT=mailto:a@b"\n');
   });
 
   test("systemd does not expand dollars in the executable name", () => {
@@ -100,7 +100,7 @@ describe("plan: linux", () => {
 
   test("the port flows into the unit, serve and the app URL", () => {
     const a = plan({ ...linux, port: 5000 });
-    expect(writes(a)[1].content).toContain('Environment="TERN_MOBILE_PORT=5000"');
+    expect(writes(a)[1].content).toContain('Environment="TERN_AWUI_PORT=5000"');
     expect(runs(a).at(-1)).toEqual(["/usr/bin/tailscale", "serve", "--bg", "--https=5000", "http://127.0.0.1:5000"]);
     expect(appUrl("box.tail1234.ts.net.", 5000)).toBe("https://box.tail1234.ts.net:5000/");
   });
@@ -156,7 +156,7 @@ describe("plan: darwin", () => {
     expect(plist.content).toContain(
       "<key>PATH</key><string>/usr/local/bin:/Users/ann/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>",
     );
-    expect(plist.content).toContain("<key>TERN_MOBILE_ALLOW</key><string>ann@example.com,bob@example.com</string>");
+    expect(plist.content).toContain("<key>TERN_AWUI_ALLOW</key><string>ann@example.com,bob@example.com</string>");
     expect(plist.content).toContain("<key>KeepAlive</key><true/>");
     expect(plist.content).not.toMatch(/Code & |<tern>/);
     // Well-formed: every opened element closes.
@@ -218,8 +218,8 @@ describe("plan: win32", () => {
     expect(launcher.content).toContain(
       'env("PATH") = "C:\\Program Files\\Tern;C:\\Users\\Ann\\.bun\\bin;" & env("PATH")',
     );
-    expect(launcher.content).toContain('env("TERN_MOBILE_PORT") = "4380"');
-    expect(launcher.content).toContain('env("TERN_MOBILE_ALLOW") = "ann@example.com,bob@example.com"');
+    expect(launcher.content).toContain('env("TERN_AWUI_PORT") = "4380"');
+    expect(launcher.content).toContain('env("TERN_AWUI_ALLOW") = "ann@example.com,bob@example.com"');
     expect(launcher.content).toContain(
       'sh.Run """C:\\Users\\Ann\\.bun\\bin\\bun.exe"" ""C:\\Users\\Ann\\My Code\\tern-awui\\server.ts""", 0, True',
     );
@@ -378,9 +378,9 @@ describe("bridge discovery", () => {
 });
 
 test("installed services disable inherited development mode before Tailscale publishes them", () => {
-  expect(writes(plan(linux))[1].content).toContain('Environment="TERN_MOBILE_DEV=0"\n');
-  expect(writes(plan(darwin))[1].content).toContain("<key>TERN_MOBILE_DEV</key><string>0</string>");
-  expect(writes(plan(win32))[1].content).toContain('env("TERN_MOBILE_DEV") = "0"\r\n');
+  expect(writes(plan(linux))[1].content).toContain('Environment="TERN_AWUI_DEV=0"\n');
+  expect(writes(plan(darwin))[1].content).toContain("<key>TERN_AWUI_DEV</key><string>0</string>");
+  expect(writes(plan(win32))[1].content).toContain('env("TERN_AWUI_DEV") = "0"\r\n');
 });
 
 describe("execute", () => {

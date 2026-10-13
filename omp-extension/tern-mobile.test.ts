@@ -15,7 +15,7 @@ const reasoning: Model = { provider: "openai", id: "reasoner", reasoning: true, 
 // Bun has no omp pi-ai shim: fallback thinking works, but native levels discovery is absent.
 const capsWithoutShim = { models: true, tiers: true, jobs: true, queue: true, rewind: true, btw: true, complete: true, levels: false };
 const cleanup: (() => void)[] = [];
-const originalEnv = { TERN_PANE: process.env.TERN_PANE, TERN_MOBILE_BRIDGE: process.env.TERN_MOBILE_BRIDGE, TERN_MOBILE_TOKEN_FILE: process.env.TERN_MOBILE_TOKEN_FILE, TERN_MOBILE_CONFIG: process.env.TERN_MOBILE_CONFIG };
+const originalEnv = { TERN_PANE: process.env.TERN_PANE, TERN_AWUI_BRIDGE: process.env.TERN_AWUI_BRIDGE, TERN_AWUI_TOKEN_FILE: process.env.TERN_AWUI_TOKEN_FILE, TERN_AWUI_CONFIG: process.env.TERN_AWUI_CONFIG };
 let now: number;
 beforeEach(() => { now = 2_000_000_000_000; setSystemTime(now); });
 afterEach(() => {
@@ -27,22 +27,22 @@ afterEach(() => {
 	}
 });
 function advance(ms: number) { now += ms; setSystemTime(now); }
-/** `configDir`: no file override; the token sits in `$TERN_MOBILE_CONFIG/bridge-token`. `factory`: another copy of the extension. */
+/** `configDir`: no file override; the token sits in `$TERN_AWUI_CONFIG/bridge-token`. `factory`: another copy of the extension. */
 function fixture(options: { pane?: boolean; hasUI?: boolean; sub?: boolean; configDir?: boolean; factory?: typeof ternMobile } = {}) {
 	const bridge = bridgeFixture();
 	cleanup.push(() => bridge.close());
 	process.env.TERN_PANE = "test-pane";
 	if (options.pane === false) delete process.env.TERN_PANE;
-	process.env.TERN_MOBILE_BRIDGE = bridge.url;
-	process.env.TERN_MOBILE_TOKEN_FILE = bridge.tokenFile;
-	delete process.env.TERN_MOBILE_CONFIG;
+	process.env.TERN_AWUI_BRIDGE = bridge.url;
+	process.env.TERN_AWUI_TOKEN_FILE = bridge.tokenFile;
+	delete process.env.TERN_AWUI_CONFIG;
 	if (options.configDir) {
 		// Bun reads the home folder once at startup, so ~/.config itself can't be redirected here.
-		delete process.env.TERN_MOBILE_TOKEN_FILE;
+		delete process.env.TERN_AWUI_TOKEN_FILE;
 		const dir = join(bridge.dir, "config");
 		mkdirSync(dir);
 		writeFileSync(join(dir, "bridge-token"), "config-dir-secret\n");
-		process.env.TERN_MOBILE_CONFIG = dir;
+		process.env.TERN_AWUI_CONFIG = dir;
 	}
 	const handlers = new Map<string, Handler>();
 	const commands = new Map<string, Command>();
@@ -111,10 +111,10 @@ describe("installed bridge discovery", () => {
 		const tokenFile = join(home, "relocated", "bridge-token");
 		writeFileSync(join(dir, "bridge.json"), JSON.stringify({ endpoint: "ws://127.0.0.1:4567/bridge", tokenFile }));
 		expect(bridgeSettings({}, home)).toEqual({ url: "ws://127.0.0.1:4567/bridge", tokenFile });
-		expect(bridgeSettings({ TERN_MOBILE_BRIDGE: "ws://localhost:1234/bridge" }, home)).toEqual({ url: "ws://localhost:1234/bridge", tokenFile });
-		expect(bridgeSettings({ TERN_MOBILE_TOKEN_FILE: "/explicit/token" }, home).tokenFile).toBe("/explicit/token");
-		expect(bridgeSettings({ TERN_MOBILE_CONFIG: "/explicit/config" }, home).tokenFile).toBe("/explicit/config/bridge-token");
-		expect(bridgeSettings({ TERN_MOBILE_CONFIG: "/explicit/config", TERN_MOBILE_TOKEN_FILE: "/explicit/token" }, home).tokenFile).toBe("/explicit/token");
+		expect(bridgeSettings({ TERN_AWUI_BRIDGE: "ws://localhost:1234/bridge" }, home)).toEqual({ url: "ws://localhost:1234/bridge", tokenFile });
+		expect(bridgeSettings({ TERN_AWUI_TOKEN_FILE: "/explicit/token" }, home).tokenFile).toBe("/explicit/token");
+		expect(bridgeSettings({ TERN_AWUI_CONFIG: "/explicit/config" }, home).tokenFile).toBe("/explicit/config/bridge-token");
+		expect(bridgeSettings({ TERN_AWUI_CONFIG: "/explicit/config", TERN_AWUI_TOKEN_FILE: "/explicit/token" }, home).tokenFile).toBe("/explicit/token");
 	});
 
 	test("missing or malformed discovery preserves the defaults", () => {
@@ -187,7 +187,7 @@ describe("omp extension bridge contract", () => {
 		expect(f.state.text).toBe("/");
 	});
 
-	test("without the file override, the token comes from $TERN_MOBILE_CONFIG", async () => {
+	test("without the file override, the token comes from $TERN_AWUI_CONFIG", async () => {
 		const f = fixture({ configDir: true });
 		await f.start();
 		expect(f.bridge.connections[0].data.token).toBe("config-dir-secret");

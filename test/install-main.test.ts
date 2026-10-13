@@ -34,7 +34,7 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 function deps(argv: string[], env: Record<string, string> = {}, platform = "linux"): MainDeps {
   return {
     argv,
-    env: { PATH: bin, TS_STATUS: STATUS, TERN_MOBILE_OMP_DIR: ompDir, TERN_MOBILE_CONFIG: configDir, ...env },
+    env: { PATH: bin, TS_STATUS: STATUS, TERN_AWUI_OMP_DIR: ompDir, TERN_AWUI_CONFIG: configDir, ...env },
     platform,
     home,
     repo,
@@ -63,12 +63,12 @@ describe("main: linux", () => {
   });
 
   test("a real run writes the unit and symlink, calls the tools in order and prints the plain app URL", () => {
-    main(deps([], { TERN_MOBILE_NOTES_DIR: "/notes" }));
+    main(deps([], { TERN_AWUI_NOTES_DIR: "/notes" }));
     const u = readFileSync(unit(), "utf8");
-    expect(u).toContain("TERN_MOBILE_ALLOW=ann@example.com");
-    expect(u).toContain("TERN_MOBILE_PORT=4380");
-    expect(u).toContain("TERN_MOBILE_NOTES_DIR=/notes");
-    expect(u).toContain(`TERN_MOBILE_OMP_DIR=${ompDir}`);
+    expect(u).toContain("TERN_AWUI_ALLOW=ann@example.com");
+    expect(u).toContain("TERN_AWUI_PORT=4380");
+    expect(u).toContain("TERN_AWUI_NOTES_DIR=/notes");
+    expect(u).toContain(`TERN_AWUI_OMP_DIR=${ompDir}`);
     expect(lstatSync(extension()).isSymbolicLink()).toBe(true);
     expect(JSON.parse(readFileSync(path.join(home, ".config", "tern-mobile", "bridge.json"), "utf8"))).toEqual({
       endpoint: "ws://127.0.0.1:4380/bridge",
@@ -131,8 +131,8 @@ describe("main: linux", () => {
   });
 
   test("--port flows into the unit, tailscale serve and the URL", () => {
-    main(deps(["--port", "5123"], { TERN_MOBILE_PORT: "6000" }));
-    expect(readFileSync(unit(), "utf8")).toContain("TERN_MOBILE_PORT=5123");
+    main(deps(["--port", "5123"], { TERN_AWUI_PORT: "6000" }));
+    expect(readFileSync(unit(), "utf8")).toContain("TERN_AWUI_PORT=5123");
     expect(recorded()).toContain("tailscale serve --bg --https=5123 http://127.0.0.1:5123");
     expect(JSON.parse(readFileSync(path.join(home, ".config", "tern-mobile", "bridge.json"), "utf8"))).toEqual({
       endpoint: "ws://127.0.0.1:5123/bridge",
@@ -144,39 +144,39 @@ describe("main: linux", () => {
     expect(recorded()).toContain("tailscale serve --https=5123 off");
   });
 
-  test("TERN_MOBILE_PORT is used without --port, and rejected when not a port", () => {
-    main(deps(["--dry-run"], { TERN_MOBILE_PORT: "4999" }));
+  test("TERN_AWUI_PORT is used without --port, and rejected when not a port", () => {
+    main(deps(["--dry-run"], { TERN_AWUI_PORT: "4999" }));
     expect(out.at(-1)).toEndWith(":4999/");
-    expect(() => main(deps(["--dry-run"], { TERN_MOBILE_PORT: "99999" }))).toThrow("TERN_MOBILE_PORT: not a port: 99999");
+    expect(() => main(deps(["--dry-run"], { TERN_AWUI_PORT: "99999" }))).toThrow("TERN_AWUI_PORT: not a port: 99999");
   });
 
-  test("TERN_MOBILE_ALLOW overrides the tailscale login, trimmed and split", () => {
-    main(deps([], { TERN_MOBILE_ALLOW: " bob@example.com , ,carl@example.com" }));
-    expect(readFileSync(unit(), "utf8")).toContain("TERN_MOBILE_ALLOW=bob@example.com,carl@example.com");
+  test("TERN_AWUI_ALLOW overrides the tailscale login, trimmed and split", () => {
+    main(deps([], { TERN_AWUI_ALLOW: " bob@example.com , ,carl@example.com" }));
+    expect(readFileSync(unit(), "utf8")).toContain("TERN_AWUI_ALLOW=bob@example.com,carl@example.com");
   });
 
   test("relative configured paths keep their installer working-directory meaning in the service", () => {
     const notes = path.join(dir, "notes");
     main(deps([], {
-      TERN_MOBILE_CONFIG: path.relative(process.cwd(), configDir),
-      TERN_MOBILE_OMP_DIR: path.relative(process.cwd(), ompDir),
-      TERN_MOBILE_NOTES_DIR: path.relative(process.cwd(), notes),
+      TERN_AWUI_CONFIG: path.relative(process.cwd(), configDir),
+      TERN_AWUI_OMP_DIR: path.relative(process.cwd(), ompDir),
+      TERN_AWUI_NOTES_DIR: path.relative(process.cwd(), notes),
     }));
     const u = readFileSync(unit(), "utf8");
-    expect(u).toContain(`TERN_MOBILE_CONFIG=${configDir}`);
-    expect(u).toContain(`TERN_MOBILE_OMP_DIR=${ompDir}`);
-    expect(u).toContain(`TERN_MOBILE_NOTES_DIR=${notes}`);
+    expect(u).toContain(`TERN_AWUI_CONFIG=${configDir}`);
+    expect(u).toContain(`TERN_AWUI_OMP_DIR=${ompDir}`);
+    expect(u).toContain(`TERN_AWUI_NOTES_DIR=${notes}`);
     expect(readlinkSync(extension())).toBe(path.join(repo, "omp-extension", "tern-mobile.ts"));
     expect(JSON.parse(readFileSync(path.join(home, ".config", "tern-mobile", "bridge.json"), "utf8")).tokenFile).toBe(path.join(configDir, "bridge-token"));
   });
 
   test("defaults ompDir and configDir under HOME when the env leaves them unset", () => {
     const d = deps(["--dry-run"]);
-    delete d.env.TERN_MOBILE_OMP_DIR;
-    delete d.env.TERN_MOBILE_CONFIG;
+    delete d.env.TERN_AWUI_OMP_DIR;
+    delete d.env.TERN_AWUI_CONFIG;
     main(d);
     expect(out.join("\n")).toContain(path.join(home, ".omp", "agent", "extensions", "tern-mobile.ts"));
-    expect(out.join("\n")).not.toContain("TERN_MOBILE_CONFIG");
+    expect(out.join("\n")).not.toContain("TERN_AWUI_CONFIG");
   });
 });
 
@@ -193,7 +193,7 @@ describe("main: errors", () => {
     expect(() => main(deps([], { TS_EXIT: "3" }))).toThrow("tailscale status failed");
   });
 
-  test("no login and no TERN_MOBILE_ALLOW refuses to install an open server", () => {
+  test("no login and no TERN_AWUI_ALLOW refuses to install an open server", () => {
     expect(() => main(deps([], { TS_STATUS: JSON.stringify({ Self: { DNSName: "box.ts.net." } }) }))).toThrow("no allowed login");
     expect(existsSync(unit())).toBe(false);
   });

@@ -8,7 +8,7 @@
     "assets": "bun assets.ts",
     "install-service": "bun install.ts",
     "start": "bun server.ts",
-    "dev": "bun build.ts && TERN_MOBILE_DEV=1 bun server.ts",
+    "dev": "bun build.ts && TERN_AWUI_DEV=1 bun server.ts",
     "test": "bun test",
     "typecheck": "tsc -p ."
   },

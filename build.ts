@@ -20,7 +20,7 @@ try {
   }
 
   for (const f of ["index.html", "style.css", "manifest.webmanifest", "sw.js"]) copyFileSync(join(root, "web", f), join(staging, f));
-  for (const f of ["tern-icon-v1-32.png", "tern-icon-v1-180.png", "tern-icon-v1-192.png", "tern-icon-v1-512.png", "tern-icon-v1-maskable-512.png", "symbols.woff2"]) copyFileSync(join(root, "assets", f), join(staging, f));
+  for (const f of ["icon-v2-32.png", "icon-v2-180.png", "icon-v2-192.png", "icon-v2-512.png", "icon-v2-maskable-512.png", "symbols.woff2"]) copyFileSync(join(root, "assets", f), join(staging, f));
   // Keep the working release until bundling and all static copies have succeeded.
   rmSync(dist, { recursive: true, force: true });
   renameSync(staging, dist);

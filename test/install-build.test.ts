@@ -10,7 +10,7 @@ beforeEach(() => {
   for (const dir of ["web", "assets", "dist"]) mkdirSync(join(root, dir));
   writeFileSync(join(root, "web", "app.tsx"), 'console.log("new release");');
   for (const file of ["index.html", "style.css", "manifest.webmanifest", "sw.js"]) writeFileSync(join(root, "web", file), `new ${file}`);
-  for (const file of ["tern-icon-v1-32.png", "tern-icon-v1-180.png", "tern-icon-v1-192.png", "tern-icon-v1-512.png", "tern-icon-v1-maskable-512.png", "symbols.woff2"]) writeFileSync(join(root, "assets", file), "asset");
+  for (const file of ["icon-v2-32.png", "icon-v2-180.png", "icon-v2-192.png", "icon-v2-512.png", "icon-v2-maskable-512.png", "symbols.woff2"]) writeFileSync(join(root, "assets", file), "asset");
   writeFileSync(join(root, "dist", "index.html"), "working release");
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
@@ -25,7 +25,7 @@ describe("installer build publication", () => {
     expect(readdirSync(root).filter((file) => file.startsWith(".dist-"))).toEqual([]);
   });
 
-  test.each(["symbols.woff2", "tern-icon-v1-maskable-512.png"])("missing %s leaves the previous release intact", (asset) => {
+  test.each(["symbols.woff2", "icon-v2-maskable-512.png"])("missing %s leaves the previous release intact", (asset) => {
     rmSync(join(root, "assets", asset));
     expect(build().exitCode).not.toBe(0);
     expect(readFileSync(join(root, "dist", "index.html"), "utf8")).toBe("working release");

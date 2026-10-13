@@ -618,10 +618,10 @@ test("subscriptions and VAPID keys survive a server restart in the isolated HOME
   expect(JSON.parse(readFileSync(path, "utf8"))).toEqual([]);
 });
 
-test("TERN_MOBILE_PROJECTS replaces the default list with a command's absolute, existing folders", async () => {
+test("TERN_AWUI_PROJECTS replaces the default list with a command's absolute, existing folders", async () => {
   writeFileSync(`${s.home}/bin/projects`, `#!/bin/bash\nprintf '%s\\n' '${s.home}/alpha' relative/dir '${s.home}/missing' '${s.home}/tree.json' '  ${s.home}/beta  '\n`);
   chmodSync(`${s.home}/bin/projects`, 0o755);
   await s.stop();
-  await s.start({ TERN_MOBILE_PROJECTS: `${s.home}/bin/projects` });
+  await s.start({ TERN_AWUI_PROJECTS: `${s.home}/bin/projects` });
   expect(await (await s.get("/api/projects")).json()).toEqual({ projects: [`${s.home}/alpha`, `${s.home}/beta`], home: s.home });
 });

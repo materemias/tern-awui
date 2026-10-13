@@ -4,7 +4,7 @@
 // omp sessions running the tern-mobile extension also connect to /bridge: they stream their
 // prompt draft, model and busy state, and take drafts and model picks from the phone.
 // Listens on loopback only; `tailscale serve` is the way in, and its identity header
-// (`Tailscale-User-Login`, checked against TERN_MOBILE_ALLOW) is the gate.
+// (`Tailscale-User-Login`, checked against TERN_AWUI_ALLOW) is the gate.
 
 import { Database } from "bun:sqlite";
 import { basename, dirname, isAbsolute, join } from "node:path";
@@ -46,7 +46,7 @@ const BRIDGE_REPLY_MS = 2000;
 const DONE_SETTLE_MS = 3000;
 
 export type ServerOptions = {
-  /** Configuration (TERN_MOBILE_*, omp and Tern locations) and the environment of tern, omp and the projects command. */
+  /** Configuration (TERN_AWUI_*, omp and Tern locations) and the environment of tern, omp and the projects command. */
   env?: Record<string, string | undefined>;
   home?: string;
   /** The built app; this checkout's dist/ by default. */
@@ -71,16 +71,16 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   const HOME = options.home ?? homedir();
   const CONFIG_DIR = configDir(env, HOME);
 
-  const PORT = Number(env.TERN_MOBILE_PORT ?? 4380);
-  const ALLOW = (env.TERN_MOBILE_ALLOW ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-  const DEV = env.TERN_MOBILE_DEV === "1";
+  const PORT = Number(env.TERN_AWUI_PORT ?? 4380);
+  const ALLOW = (env.TERN_AWUI_ALLOW ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const DEV = env.TERN_AWUI_DEV === "1";
   const OMP_DATA = ompDataDir(env, HOME, process.platform);
   const SESSIONS_DIR = join(OMP_DATA, "sessions");
   const HISTORY_DB = join(OMP_DATA, "history.db");
   const BLOBS_DIR = join(OMP_DATA, "blobs");
   const NOTES_DIR = ternNotesDir(env, HOME, process.platform);
   /** A command printing one folder per line; `.py` runs with python3. Unset: lib/projects.ts. */
-  const PROJECTS_SCRIPT = env.TERN_MOBILE_PROJECTS ?? "";
+  const PROJECTS_SCRIPT = env.TERN_AWUI_PROJECTS ?? "";
   const DIST = options.dist ?? fileURLToPath(new URL("./dist/", import.meta.url));
 
   /** Where omp loads the extension from, and the checkout's file it should be (or link to). */
@@ -88,7 +88,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   const extension = extensionCheck(INSTALLED_EXTENSION, join(REPO, "omp-extension", "tern-mobile.ts"));
 
   if (!DEV && ALLOW.length === 0)
-    throw new ConfigError("TERN_MOBILE_ALLOW must list the Tailscale logins allowed in (or set TERN_MOBILE_DEV=1)");
+    throw new ConfigError("TERN_AWUI_ALLOW must list the Tailscale logins allowed in (or set TERN_AWUI_DEV=1)");
 
   const BRIDGE_TOKEN = ensureToken(join(CONFIG_DIR, "bridge-token"));
   /** Set by `stop`: background loops and late callbacks end. */

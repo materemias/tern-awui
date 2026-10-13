@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux (full suite, browser tests, typecheck)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - run: bun install --frozen-lockfile
+      - name: Headless Chromium for the browser tests
+        run: |
+          bunx playwright-core install --with-deps --only-shell chromium
+          shell=$(ls -d ~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell | sort -V | tail -1)
+          test -x "$shell"
+          echo "TERN_AWUI_CHROMIUM=$shell" >> "$GITHUB_ENV"
+      - run: bun run typecheck
+      - run: bun test --coverage
+      - run: bun build.ts
+
+  # macOS and Windows have never run natively; these jobs report problems without blocking merges
+  # until they pass reliably. The server and browser suites rely on bash fakes and Linux tools.
+  other-os:
+    name: ${{ matrix.os }} (platform code)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - run: bun install --frozen-lockfile
+      - run: bun test lib web omp-extension/tern-mobile.test.ts test/install
+      - run: bun build.ts

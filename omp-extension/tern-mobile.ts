@@ -39,8 +39,8 @@ export function bridgeSettings(env: NodeJS.ProcessEnv = process.env, home = home
 		}
 	} catch {}
 	return {
-		url: env.TERN_MOBILE_BRIDGE ?? discovered?.endpoint ?? "ws://127.0.0.1:4380/bridge",
-		tokenFile: env.TERN_MOBILE_TOKEN_FILE ?? (env.TERN_MOBILE_CONFIG ? join(env.TERN_MOBILE_CONFIG, "bridge-token") : discovered?.tokenFile ?? join(dir, "bridge-token")),
+		url: env.TERN_AWUI_BRIDGE ?? discovered?.endpoint ?? "ws://127.0.0.1:4380/bridge",
+		tokenFile: env.TERN_AWUI_TOKEN_FILE ?? (env.TERN_AWUI_CONFIG ? join(env.TERN_AWUI_CONFIG, "bridge-token") : discovered?.tokenFile ?? join(dir, "bridge-token")),
 	};
 }
 

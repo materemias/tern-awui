@@ -7,8 +7,8 @@
   "background_color": "#111317",
   "theme_color": "#111317",
   "icons": [
-    { "src": "/tern-icon-v1-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/tern-icon-v1-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/tern-icon-v1-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "/icon-v2-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-v2-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-v2-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

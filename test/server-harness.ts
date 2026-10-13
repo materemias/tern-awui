@@ -19,7 +19,7 @@ export async function until<T>(fn: () => T | Promise<T>, description: string, ti
 }
 
 /** Variables that would point the server at the user's real omp, Tern or tern-mobile files. */
-const LEAKY = /^(TERN_MOBILE_|PI_CODING_AGENT_DIR$|PI_CONFIG_DIR$|OMP_PROFILE$|PI_PROFILE$|XDG_(DATA|STATE|CONFIG|CACHE)_HOME$)/;
+const LEAKY = /^(TERN_AWUI_|PI_CODING_AGENT_DIR$|PI_CONFIG_DIR$|OMP_PROFILE$|PI_PROFILE$|XDG_(DATA|STATE|CONFIG|CACHE)_HOME$)/;
 /** The test process's environment without anything that reaches outside `home`. */
 export function isolatedEnv(home: string, extra: Record<string, string> = {}): Record<string, string> {
   const env: Record<string, string> = {};
@@ -111,12 +111,12 @@ esac
   /** The server's environment: this sandbox's HOME, fake tern/omp first on PATH, two allowed logins. */
   env(extraEnv: Record<string, string> = {}): Record<string, string> {
     return isolatedEnv(this.home, { PATH: `${this.home}/bin:${process.env.PATH}`, TERN_FAKE_DIR: this.home,
-      TERN_MOBILE_ALLOW: ` ${this.login}, second@example.test `, TERN_MOBILE_DEV: "0", ...extraEnv });
+      TERN_AWUI_ALLOW: ` ${this.login}, second@example.test `, TERN_AWUI_DEV: "0", ...extraEnv });
   }
 
   async start(extraEnv: Record<string, string> = {}) {
     if (this.subprocess || this.server !== DEFAULT_SERVER) return this.spawn(extraEnv);
-    this.handle = startServer({ env: this.env({ TERN_MOBILE_PORT: "0", ...extraEnv }), home: this.home, dist: this.dist, sendNotification: this.sendNotification });
+    this.handle = startServer({ env: this.env({ TERN_AWUI_PORT: "0", ...extraEnv }), home: this.home, dist: this.dist, sendNotification: this.sendNotification });
     this.base = `http://127.0.0.1:${this.handle.port}`;
   }
 
@@ -127,7 +127,7 @@ esac
     this.base = `http://127.0.0.1:${port}`;
     this.proc = Bun.spawn([process.execPath, this.server], {
       cwd: this.home,
-      env: this.env({ TERN_MOBILE_PORT: String(port), ...extraEnv }),
+      env: this.env({ TERN_AWUI_PORT: String(port), ...extraEnv }),
       stdout: "ignore", stderr: "inherit",
     });
     await until(async () => {

@@ -29,7 +29,7 @@ test.skipIf(!enabled)("real omp: bridge state, pi-ai capabilities, model catalog
 			APPDATA: join(bridge.dir, "config"), LOCALAPPDATA: join(bridge.dir, "data"),
 			PI_CONFIG_DIR: ".omp", PI_CODING_AGENT_DIR: join(bridge.dir, ".omp", "agent"),
 			OPENAI_API_KEY: "sk-tern-awui-isolated-no-provider-requests",
-			TERN_PANE: "tern-awui-contract-test", TERN_MOBILE_BRIDGE: bridge.url, TERN_MOBILE_TOKEN_FILE: bridge.tokenFile,
+			TERN_PANE: "tern-awui-contract-test", TERN_AWUI_BRIDGE: bridge.url, TERN_AWUI_TOKEN_FILE: bridge.tokenFile,
 		},
 	});
 	const stdoutTask = (async () => {

@@ -6,9 +6,9 @@ const HOME = "/home/u";
 const none = () => false;
 
 describe("configDir", () => {
-  test("~/.config/tern-mobile on every OS; $TERN_MOBILE_CONFIG overrides", () => {
+  test("~/.config/tern-mobile on every OS; $TERN_AWUI_CONFIG overrides", () => {
     expect(configDir({}, HOME)).toBe(join(HOME, ".config", "tern-mobile"));
-    expect(configDir({ TERN_MOBILE_CONFIG: "/etc/tm" }, HOME)).toBe("/etc/tm");
+    expect(configDir({ TERN_AWUI_CONFIG: "/etc/tm" }, HOME)).toBe("/etc/tm");
   });
 });
 
@@ -17,8 +17,8 @@ describe("ompDataDir", () => {
     for (const platform of ["linux", "darwin", "win32"] as const) expect(ompDataDir({}, HOME, platform, none)).toBe(join(HOME, ".omp", "agent"));
   });
 
-  test("$TERN_MOBILE_OMP_DIR wins over everything", () => {
-    expect(ompDataDir({ TERN_MOBILE_OMP_DIR: "/data/omp", PI_CODING_AGENT_DIR: "/x", XDG_DATA_HOME: "/xdg" }, HOME, "linux", () => true)).toBe(resolve("/data/omp"));
+  test("$TERN_AWUI_OMP_DIR wins over everything", () => {
+    expect(ompDataDir({ TERN_AWUI_OMP_DIR: "/data/omp", PI_CODING_AGENT_DIR: "/x", XDG_DATA_HOME: "/xdg" }, HOME, "linux", () => true)).toBe(resolve("/data/omp"));
   });
 
   test("omp's own overrides: $PI_CODING_AGENT_DIR, $PI_CONFIG_DIR", () => {
@@ -38,11 +38,11 @@ describe("ompDataDir", () => {
 });
 
 describe("installedExtension", () => {
-  test("where install.ts links or copies it: ~/.omp/agent/extensions, or under $TERN_MOBILE_OMP_DIR", () => {
+  test("where install.ts links or copies it: ~/.omp/agent/extensions, or under $TERN_AWUI_OMP_DIR", () => {
     expect(installedExtension({}, HOME)).toBe(join(HOME, ".omp", "agent", "extensions", "tern-mobile.ts"));
     // omp's XDG data folder holds sessions, not extensions.
     expect(installedExtension({ XDG_DATA_HOME: "/xdg" }, HOME)).toBe(join(HOME, ".omp", "agent", "extensions", "tern-mobile.ts"));
-    expect(installedExtension({ TERN_MOBILE_OMP_DIR: "/data/omp" }, HOME)).toBe(join(resolve("/data/omp"), "extensions", "tern-mobile.ts"));
+    expect(installedExtension({ TERN_AWUI_OMP_DIR: "/data/omp" }, HOME)).toBe(join(resolve("/data/omp"), "extensions", "tern-mobile.ts"));
   });
 });
 
@@ -59,8 +59,8 @@ describe("ternNotesDir", () => {
     expect(ternNotesDir({}, HOME, "win32")).toBe(join(HOME, "AppData", "Local", "Tern", "notes"));
   });
 
-  test("$TERN_MOBILE_NOTES_DIR overrides on every OS", () => {
-    for (const platform of ["linux", "darwin", "win32"] as const) expect(ternNotesDir({ TERN_MOBILE_NOTES_DIR: "/notes" }, HOME, platform)).toBe(resolve("/notes"));
+  test("$TERN_AWUI_NOTES_DIR overrides on every OS", () => {
+    for (const platform of ["linux", "darwin", "win32"] as const) expect(ternNotesDir({ TERN_AWUI_NOTES_DIR: "/notes" }, HOME, platform)).toBe(resolve("/notes"));
   });
 });
 

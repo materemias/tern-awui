@@ -17,7 +17,7 @@ self.addEventListener("push", (e) => {
         // One notification per session: a newer one replaces it and still alerts.
         tag: d.block ? `b${d.block}` : "tern",
         renotify: true,
-        icon: "/tern-icon-v1-192.png",
+        icon: "/icon-v2-192.png",
         data: { url: d.block ? `/#/b/${d.block}` : "/" },
       }),
     ]),
