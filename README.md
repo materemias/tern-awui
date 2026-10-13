@@ -45,7 +45,8 @@ It works with Tern rather than beside it:
 ## Platforms
 
 - **Linux** with Tern and Chrome on Android: what I use every day.
-- **iPhone (Safari), macOS and Windows** should work. The installer has macOS and Windows support, but none of these have been tested yet. Reports are welcome.
+- **macOS**: install, the launchd service, `tailscale serve` and the omp extension tested on a MacBook (Apple Silicon, macOS 26).
+- **iPhone (Safari) and Windows** should work. The installer has Windows support, but neither has been tested yet. Reports are welcome.
 
 ## Requirements
 

@@ -75,7 +75,7 @@ One notification per session (a newer one replaces it); tapping opens that sessi
 On every OS: [Bun](https://bun.sh) (1.4 tested), Tern with its `tern` CLI on `PATH`, omp (`omp` on `PATH`), and Tailscale logged in with MagicDNS and HTTPS certificates enabled for the tailnet (Tailscale Serve needs both). git is optional: without it projects group by folder and no branch shows. Building needs nothing beyond Bun (see [Build](#build)).
 
 - **Linux** (Arch, verified): a systemd user session. The service runs while you're logged in; `loginctl enable-linger $USER` keeps it running after logout and starts it at boot.
-- **macOS** (not run): launchd. If `tailscale` isn't on `PATH`, the installer uses the App Store / standalone app's CLI at `/Applications/Tailscale.app/Contents/MacOS/Tailscale`.
+- **macOS** (verified on macOS 26, Apple Silicon): launchd. If `tailscale` isn't on `PATH`, the installer uses the App Store / standalone app's CLI at `/Applications/Tailscale.app/Contents/MacOS/Tailscale`.
 - **Windows** (not run): Task Scheduler (`schtasks`), Windows Script Host (`wscript.exe`) and PowerShell, all built in. No admin rights: the task runs as you, at your logon. The extension is copied, not linked (symlinks need Developer Mode), so re-run the installer after updating the checkout; the list's banner says when the copy is stale.
 
 ## Install
@@ -177,5 +177,5 @@ This is a remote shell into the desktop.
 - It is not a terminal emulator. Full-screen TUIs (vim, htop) only work through the screen capture and the key bar.
 - Status, chat, model picks and images need the omp to be connected to the bridge: omp sessions started before the extension's current version show as terminals until restarted (`/restart`).
 - Features the session's omp lacks (the extension reports them as `caps`) are turned off in the app, and the server refuses Rewind, the model catalog and tier changes for them with 409. An extension without `caps` (before versioning) is taken to support everything, as before.
-- Linux is the only OS this has run on. The macOS and Windows locations of omp's and Tern's files follow their sources (omp's directory resolver, the strings in the tern binary) and are unverified; `TERN_AWUI_OMP_DIR` and `TERN_AWUI_NOTES_DIR` set them by hand. omp profiles (`OMP_PROFILE`) are not followed.
+- Linux and macOS have run this; Windows hasn't. omp's directory on macOS is verified; Tern's notes folder on macOS and both locations on Windows follow their sources (omp's directory resolver, the strings in the tern binary) and are unverified. `TERN_AWUI_OMP_DIR` and `TERN_AWUI_NOTES_DIR` set them by hand. omp profiles (`OMP_PROFILE`) are not followed.
 - Only main sessions bridge (`ctx.agent.kind === "main"`). Older extension versions also bridged subagents under the same pane, which took over the pane's status (idle while the main session still worked) and, on exit, unbridged it; the server now keeps every connection per pane and hands the pane back to the remaining one (`sync`).
