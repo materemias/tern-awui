@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-10-13)
 
 - README links the companion CodexBar AgentView Tern extension.
 - **Breaking:** environment variables are renamed from `TERN_MOBILE_*` to `TERN_AWUI_*` (`TERN_AWUI_PORT`, `TERN_AWUI_ALLOW`, `TERN_AWUI_CONFIG`, `TERN_AWUI_OMP_DIR`, `TERN_AWUI_NOTES_DIR`, `TERN_AWUI_PROJECTS`, `TERN_AWUI_VAPID_SUBJECT`, `TERN_AWUI_DEV`, `TERN_AWUI_BRIDGE`, `TERN_AWUI_TOKEN_FILE`, `TERN_AWUI_SYMBOLS_FONT`). Run `bun install.ts` again to rewrite the service with the new names. The config folder, service, extension file and headers keep their `tern-mobile` names.
