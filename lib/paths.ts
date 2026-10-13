@@ -51,3 +51,9 @@ export function ternNotesDir(env: Env, home: string, platform: NodeJS.Platform):
   const state = env.XDG_STATE_HOME && isAbsolute(env.XDG_STATE_HOME) ? env.XDG_STATE_HOME : join(home, ".local", "state");
   return join(state, "tern", "notes");
 }
+
+/** A Nerd Font glyph for a file block: Tern's notes, Markdown files, anything else. */
+export function docIcon(path: string, note: boolean): string {
+  if (note) return "\u{F039B}"; // md-note_outline
+  return /\.(md|markdown)$/i.test(path) ? "\u{F0354}" /* md-language_markdown */ : "\u{F0219}"; // md-file_document
+}

@@ -23,7 +23,7 @@ import { queryRecaps } from "./lib/recaps";
 import { answerSteps, KEYS, promptImages, type PromptImage } from "./lib/input";
 import { emptyState, listChanged, parseBridgeState, PROTOCOL, type BridgeState, type Caps, type Context, type Job } from "./lib/bridge-state";
 import { extensionCheck, offersCommand, sessionMismatch, type InstallStatus, type Mismatch } from "./lib/extension-check";
-import { configDir, installedExtension, ompDataDir, ternNotesDir } from "./lib/paths";
+import { configDir, docIcon, installedExtension, ompDataDir, ternNotesDir } from "./lib/paths";
 import { ensureToken, sameToken } from "./lib/auth";
 import { recentProjects } from "./lib/projects";
 import { vapidSubject } from "./lib/push";
@@ -477,8 +477,9 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           const file = str(b.file);
           const note = /^note:([0-9a-f]+)$/.exec(file)?.[1];
           const doc = note ? join(NOTES_DIR, `${note}.md`) : file && isAbsolute(file) ? file : null;
-          const raw = str(b.title, basename(str(b.program, id))).trim();
-          const icon = PUA.exec(raw)?.[0] ?? null;
+          // Tern leaves file blocks untitled: name them after the file, with a file-type glyph.
+          const raw = str(b.title).trim() || (note ? "Note" : doc ? basename(doc) : basename(str(b.program, id)));
+          const icon = PUA.exec(raw)?.[0] ?? (doc ? docIcon(doc, !!note) : null);
           const clean = raw.replace(new RegExp(PUA.source, "gu"), "").trim();
           const m = /^([\p{Lu}\d_-]{2,14}):\s+(.*)$/u.exec(clean);
           const project = projectOf(cwd, HOME);

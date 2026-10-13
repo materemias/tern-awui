@@ -88,7 +88,7 @@ test("unknown block loads, then reports it disappeared", async () => {
 });
 
 test("a note has no composer and shows loading, markdown, plain text, clipping and missing states", async () => {
-  await open(item({ agent: null, live: null, status: null, doc: "/w/note.md" }));
+  await open(item({ agent: null, live: null, status: null, doc: "/w/.local/state/tern/notes/note.md" }));
   expect(root.querySelector("textarea")).toBeNull();
   expect(root.querySelector(".row-meta")!.textContent).toContain("note");
   expect(root.querySelector(".empty")!.textContent).toBe("Loading…");

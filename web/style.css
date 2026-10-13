@@ -406,3 +406,11 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .mp-opt .seg { flex: 1; min-width: 0; max-width: 420px; }
 .mp-opt .seg button { flex: 1 1 auto; padding: 7px 6px; font-size: 13px; }
 @media (max-width: 480px) { .mp-label { width: 48px; } .mp-opt .seg button { font-size: 12.5px; padding: 7px 3px; } }
+
+/* Files and notes have no run state: keep the dot's space for alignment, drop the ring. */
+.doc-row .dot { visibility: hidden; }
+/* An opened document reads as a page: real heading sizes, a rule under the top levels. */
+.doc h1 { font-size: 22px; margin: .3em 0 .5em; }
+.doc h2 { font-size: 18px; margin-top: 1.5em; padding-bottom: .25em; border-bottom: 1px solid var(--line); }
+.doc h3 { font-size: 16px; }
+.doc h1 + p, .doc h2 + p { margin-top: .4em; }

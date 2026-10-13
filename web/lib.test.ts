@@ -429,10 +429,15 @@ describe("rowText", () => {
     const r = rowText(item({ status: "working", agent: agent({ recap: "old", lastPrompt: "fix it" }) }), NOW);
     expect(r).toEqual({ sub: "fix it", recap: false, stale: false });
   });
-  test("shells show their cwd; notes and files their kind or path", () => {
+  test("shells show their cwd; notes their kind, files their folder named from the project", () => {
     expect(rowText(item({ status: null }), NOW).sub).toBe("/home/u/code/app");
     expect(rowText(item({ doc: "/home/u/.local/state/tern/notes/x.md" }), NOW).sub).toBe("Note");
-    expect(rowText(item({ doc: "/home/u/todo.txt" }), NOW).sub).toBe("/home/u/todo.txt");
+    expect(rowText(item({ doc: "/home/u/code/app/README.md" }), NOW).sub).toBe("app");
+    expect(rowText(item({ doc: "/home/u/code/app/docs/a/b.md" }), NOW).sub).toBe("app/docs/a");
+    // A sibling folder sharing the prefix is outside the project.
+    expect(rowText(item({ doc: "/home/u/code/app2/x.md" }), NOW).sub).toBe("/home/u/code/app2");
+    expect(rowText(item({ doc: "/home/u/todo.txt" }), NOW).sub).toBe("/home/u");
+    expect(rowText(item({ cwd: "C:\\code\\app", doc: "C:\\code\\app\\src\\x.md" }), NOW).sub).toBe("app\\src");
     expect(rowText(item({ doc: "/Users/u/Library/Application Support/Tern/notes/x.md" }), NOW).sub).toBe("Note");
     expect(rowText(item({ doc: "C:\\Users\\u\\AppData\\Local\\Tern\\notes\\x.md" }), NOW).sub).toBe("Note");
   });

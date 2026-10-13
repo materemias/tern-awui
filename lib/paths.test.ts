@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join, resolve } from "node:path";
-import { configDir, installedExtension, ompDataDir, ternNotesDir } from "./paths";
+import { configDir, docIcon, installedExtension, ompDataDir, ternNotesDir } from "./paths";
 
 const HOME = "/home/u";
 const none = () => false;
@@ -61,5 +61,16 @@ describe("ternNotesDir", () => {
 
   test("$TERN_MOBILE_NOTES_DIR overrides on every OS", () => {
     for (const platform of ["linux", "darwin", "win32"] as const) expect(ternNotesDir({ TERN_MOBILE_NOTES_DIR: "/notes" }, HOME, platform)).toBe(resolve("/notes"));
+  });
+});
+
+describe("docIcon", () => {
+  test("notes, Markdown (any case) and other files get distinct glyphs", () => {
+    const note = docIcon("/n/abc.md", true);
+    const md = docIcon("/p/README.MD", false);
+    const other = docIcon("/p/todo.txt", false);
+    expect(new Set([note, md, other]).size).toBe(3);
+    expect(docIcon("/p/a.markdown", false)).toBe(md);
+    expect(docIcon("/p/md", false)).toBe(other);
   });
 });

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Untitled file blocks are named after their file with a Markdown, note or file icon, show their folder (named from the project) instead of the full path, and drop the shell status ring. Opened documents use page-sized headings.
+- README rewritten for users: features, how it differs from and integrates with Tern, platforms, install including the omp extension. The technical reference moved to `docs/architecture.md`. README screenshots come from invented sessions (`bun docs/screenshots.ts`).
 - Bare `/btw` now opens saved native omp btw history in a read-only web sheet rather than falling through to normal prompt submission. Questions, answers, statuses and follow-up turns come from the session's native history files; viewing history does not invoke a model. Existing transient web `/btw <question>` cards are unchanged.
 - Interactive desktop `->`/`=>` queue commands now display as follow-ups with clean message text, matching explicit web follow-ups instead of showing a steer plus a literal prefix. Input delivery is unchanged; whitespace-prefixed, embedded and RPC arrows remain literal.
 - Widened the desktop session content column to 1100 px, keeping the transcript, header, composer, extension notice and subagent list on the same width setting. Sidebar, desktop breakpoint and mobile layout are unchanged.

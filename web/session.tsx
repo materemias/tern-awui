@@ -44,8 +44,8 @@ export function Session({ block }: { block: string }) {
         <div class="session-title">
           {item ? <Title item={item} /> : <div class="row-title">{block}</div>}
           <div class="row-meta">
-            <Dot state={shownState} />
-            <span>{shownState ?? (item?.doc ? "note" : "shell")}</span>
+            {!(item?.doc && !shownState) && <Dot state={shownState} />}
+            <span>{shownState ?? (item?.doc ? (/[\\/]tern[\\/]notes[\\/]/i.test(item.doc) ? "note" : "file") : "shell")}</span>
             {item?.status && <span class="muted">{age(item.since, now)}</span>}
             {item && <span class="muted">{item.project}</span>}
             {item?.branch && (

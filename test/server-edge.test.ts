@@ -376,6 +376,16 @@ describe("endpoint and stream edges", () => {
     expect(item(await s.state(), 10).doc).toBeNull();
   });
 
+  test("untitled file blocks are named after their file with a file-type icon; notes are called Note", async () => {
+    const state = await s.state();
+    const md = item(state, 6), txt = item(state, 5), note = item(state, 9);
+    expect([md.title, txt.title, note.title]).toEqual(["gone.md", "big.txt", "Note"]);
+    expect(new Set([md.icon, txt.icon, note.icon]).size).toBe(3);
+    expect([md.icon, txt.icon, note.icon].every((i) => typeof i === "string" && i.length > 0)).toBe(true);
+    // A title Tern set still wins.
+    expect(item(state, 10).title).toBe("rel");
+  });
+
   test.skipIf(process.getuid?.() === 0)("an unreadable document reports an error on the stream, which recovers once it is readable", async () => {
     chmodSync(`${notes}/0bad.md`, 0);
     const events = new Events();

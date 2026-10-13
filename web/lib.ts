@@ -283,9 +283,20 @@ export function rowText(item: Item, now: number): { sub: string; recap: boolean;
   const idle = item.status === "idle";
   // Idle agents show omp's recap ("Earlier:" once turns followed it); others the last prompt.
   const recap = idle && a?.recap ? `${a.recapStale ? "Earlier: " : ""}${a.recap}` : "";
-  // Tern's notes folder on any OS: …/tern/notes/ (Linux), …/Tern/notes/ (macOS), …\Tern\notes\ (Windows).
-  const sub = item.doc ? (/[\\/]tern[\\/]notes[\\/]/i.test(item.doc) ? "Note" : item.doc) : recap || a?.lastPrompt || item.cwd;
+  const sub = item.doc ? docSub(item.doc, item.cwd) : recap || a?.lastPrompt || item.cwd;
   return { sub, recap: !!recap, stale: idle && now - item.since > 86_400_000 };
+}
+
+/** A file block's second line: "Note" for Tern's notes, else its folder, named from the block's cwd folder when inside it. */
+function docSub(doc: string, cwd: string): string {
+  // Tern's notes folder on any OS: …/tern/notes/ (Linux), …/Tern/notes/ (macOS), …\Tern\notes\ (Windows).
+  if (/[\\/]tern[\\/]notes[\\/]/i.test(doc)) return "Note";
+  const cut = Math.max(doc.lastIndexOf("/"), doc.lastIndexOf("\\"));
+  const dir = cut < 0 ? "" : doc.slice(0, cut);
+  const base = cwd.replace(/[\\/]+$/, "");
+  if (!base || !(dir === base || (dir.startsWith(base) && "/\\".includes(dir[base.length])))) return dir;
+  const name = base.slice(Math.max(base.lastIndexOf("/"), base.lastIndexOf("\\")) + 1);
+  return name + dir.slice(base.length);
 }
 
 /** The collapsed projects as stored on this device; anything unreadable counts as none. */

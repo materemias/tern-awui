@@ -29,7 +29,7 @@ function Row({ item, now, selected }: { item: Item; now: number; selected?: bool
   const { sub, recap, stale } = rowText(item, now);
   return (
     <a
-      class={`row st-${state ?? "shell"}${stale ? " stale" : ""}${item.unseen ? ` unseen-${item.unseen}` : ""}${selected ? " selected" : ""}`}
+      class={`row st-${state ?? "shell"}${item.doc ? " doc-row" : ""}${stale ? " stale" : ""}${item.unseen ? ` unseen-${item.unseen}` : ""}${selected ? " selected" : ""}`}
       href={`#/b/${item.block}`}
     >
       <Dot state={state} />
