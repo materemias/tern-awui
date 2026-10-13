@@ -33,7 +33,7 @@ class Log {
     return id;
   }
   user(text: string, at: number) { return this.add({ role: "user", content: [{ type: "text", text }] }, at); }
-  assistant(content: Part[], at: number, stop = "stop") { return this.add({ role: "assistant", content, model: "claude-opus-4-5", stopReason: stop }, at); }
+  assistant(content: Part[], at: number, stop = "stop") { return this.add({ role: "assistant", content, model: "claude-opus-5-5", stopReason: stop }, at); }
   result(id: string, name: string, at: number, details: Part = {}) {
     return this.add({ role: "toolResult", toolCallId: id, toolName: name, content: [{ type: "text", text: "ok" }], isError: false, details }, at);
   }
@@ -112,7 +112,7 @@ const agents: [string, Log, string, Part][] = [
   ["6", post, "idle", {}],
 ];
 for (const [pane, log, status, extra] of agents) {
-  const ext = new Extension(s, pane, "anthropic/claude-opus-4-5");
+  const ext = new Extension(s, pane, "anthropic/claude-opus-5-5");
   Object.assign(ext.snapshot, { sessionId: log.id, leaf: log.leaf, status, protocol: PROTOCOL, build, ...extra });
   await ext.connect();
 }

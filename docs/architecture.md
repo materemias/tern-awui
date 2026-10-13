@@ -165,7 +165,7 @@ The server reads these from its environment; the installer writes them into the 
 This is a remote shell into the desktop.
 
 - The server listens only on `127.0.0.1`. The only way in from outside is Tailscale Serve (tailnet only), which sets `Tailscale-User-Login`, and every request (the API, its stream and the app's own files) must carry an allowed login from `TERN_AWUI_ALLOW`; anything else gets 403. Tagged devices get no login header, so they are refused. There is no pairing or access token on top: anyone signed in to the tailnet as an allowed login gets a shell. **Never enable Funnel.**
-- Behind any other tunnel or reverse proxy (e.g. Cloudflare Tunnel with Access), the proxy must authenticate every request and drop any client-supplied `Tailscale-User-Login`; the server trusts that header as-is because only Tailscale Serve is expected to reach it.
+- Any other tunnel or reverse proxy (e.g. Cloudflare Tunnel with Access) must authenticate every request and then set `Tailscale-User-Login` to an allowed login, overwriting any client-supplied value; the server trusts that header as-is because only Tailscale Serve is expected to reach it.
 - POSTs require an `x-tern-mobile: 1` header, which blocks cross-site form posts. Key names are allowlisted.
 - `/bridge` refuses requests carrying a Tailscale login header (anything proxied from outside) and requires the bridge token (`<config dir>/bridge-token`).
 - `TERN_AWUI_DEV=1` turns off the login check: anyone who can reach the port gets a shell. Use it only on loopback, never behind Tailscale Serve.

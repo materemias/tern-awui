@@ -99,7 +99,10 @@ This is a remote shell into your desktop. **Never expose it publicly:** no port 
 
 Tailscale is the strongly recommended setup, and the only one the installer configures. The server listens only on `127.0.0.1`, `tailscale serve` makes it reachable on your tailnet only, and every request must carry an allowed Tailscale login.
 
-Other private setups can work too: using it only on the machine itself, or behind a tunnel or reverse proxy that does the authentication itself, for example Cloudflare Tunnel with Cloudflare Access. The app's login check only understands Tailscale's `Tailscale-User-Login` header. Behind anything else, the proxy is your only protection: it has to authenticate every request and must never pass on a `Tailscale-User-Login` header sent by the client. Otherwise anyone can claim to be you.
+Other private setups can work, but the installer doesn't set them up, and every request still needs an allowed `Tailscale-User-Login` header (403 otherwise):
+
+- **Behind an authenticating proxy** (e.g. Cloudflare Tunnel with Cloudflare Access): after authenticating, the proxy must set `Tailscale-User-Login` to an allowed login from `TERN_AWUI_ALLOW`. It must overwrite any value the client sent, or anyone can claim to be you.
+- **Only on the machine itself:** `TERN_AWUI_DEV=1` turns the login check off. Use it only when nothing but loopback can reach the port, never behind a tunnel or proxy.
 
 Details are in [how it works](docs/architecture.md#security).
 
