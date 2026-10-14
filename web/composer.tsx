@@ -90,6 +90,7 @@ export function Composer({
   useEffect(() => () => { activeBlock.current = null; }, []);
   useEffect(() => { setHistory(null); }, [block, sessionId]);
   const area = useRef<HTMLTextAreaElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
   const lastEdit = useRef(0);
   const outbox = useRef<{ busy: boolean; next: DraftWrite | null }>({ busy: false, next: null });
   const submitting = useRef(false);
@@ -358,10 +359,23 @@ export function Composer({
     if (!files.length) return;
     // Text pasted alongside an image (some apps add a file name) is dropped with it.
     e.preventDefault();
+    await addImages(files);
+  }
+
+  /** Images picked with the attach button (camera, gallery or files on a phone). */
+  async function onPick(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const files = [...(input.files ?? [])].filter((f) => f.type.startsWith("image/"));
+    // Cleared so picking the same file again still fires `change`.
+    input.value = "";
+    if (files.length) await addImages(files);
+  }
+
+  async function addImages(files: File[]) {
     const room = MAX_PASTED - pasted.length;
     if (room <= 0) return setError(`at most ${MAX_PASTED} images`);
     const next = await Promise.all(files.slice(0, room).map(pastedImage)).catch(() => null);
-    if (!next) return setError("could not read the pasted image");
+    if (!next) return setError("could not read the image");
     setPasted((p) => [...p, ...next]);
   }
 
@@ -514,6 +528,18 @@ export function Composer({
           )}
           {live && <span class="sync" title="Draft mirrors the desktop editor" />}
           <span class="spacer" />
+          {a && !terminal && (
+            <>
+              <input ref={picker} type="file" accept="image/*" multiple hidden onChange={onPick} />
+              <button type="button" class="icon-btn" disabled={sending} onClick={() => picker.current?.click()} aria-label="Attach image">
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <rect x="2.5" y="4" width="15" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.4" />
+                  <circle cx="7" cy="8.5" r="1.4" fill="currentColor" />
+                  <path d="m3 14.5 4.5-4 3 2.5 3-3 3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+                </svg>
+              </button>
+            </>
+          )}
           <button
             type="button"
             class={`icon-btn${keysShown ? " on" : ""}`}

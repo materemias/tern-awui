@@ -17,7 +17,7 @@ The screenshots show invented sessions; `bun docs/screenshots.ts` regenerates th
 - **Every omp session at a glance.** Working, waiting for you, or idle, with the time in that status, the session's title, icon and tag, and the last prompt or omp's own recap.
 - **Grouped by project.** Sessions are grouped by git repository (or folder), the most recently active first. Projects fold away, and sessions untouched for a day can be hidden with one tap.
 - **The conversation, not the terminal.** omp sessions show as a chat: prompts, Markdown answers, collapsed tool runs, todo lists, tables with bar charts, SVG and Mermaid figures, images and screenshots, advisor notes, and the reply streaming in as omp writes it.
-- **Two-way control.** Send prompts, steer a running turn or queue a follow-up, stop the agent, answer `ask` questions by tapping an option, paste images, and use omp's own `/command`, `/skill:` and `@file` completions.
+- **Two-way control.** Send prompts, steer a running turn or queue a follow-up, stop the agent, answer `ask` questions by tapping an option, attach images from the camera or gallery (or paste them), and use omp's own `/command`, `/skill:` and `@file` completions.
 - **The draft is shared.** Text typed on the phone appears in the Tern pane's prompt, and text typed on the desktop appears on the phone, so you can start on one and finish on the other.
 - **Model and effort.** Switch the model, thinking effort and service tier, or pick one of your Ctrl+P roles. A gauge shows how full the context window is and where compaction will start.
 - **Notifications.** Optional push notifications when a session finishes or needs you, and an unread count on the app icon.

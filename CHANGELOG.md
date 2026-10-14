@@ -8,6 +8,7 @@
 - `bun run assets` and `bun docs/screenshots.ts` run `optipng` when it is installed (about 25% smaller PNGs, pixel-identical).
 - README install: a copy-paste prompt to have a coding agent do the install, with the manual steps as fallback.
 - README/docs: macOS is tested (install, launchd service, `tailscale serve`, omp extension on macOS 26, Apple Silicon).
+- Attach button in the composer of omp sessions: it opens the phone's picker (camera, photos, files) and adds the chosen images to the same tray as pasted ones (up to 8, large or unusual formats re-encoded to JPEG). Before this, images could only be pasted, since mobile browsers don't drag and drop.
 
 ## 0.2.0 (2026-10-13)
 

@@ -428,11 +428,31 @@ describe("pasted images", () => {
     await paste([image("good")]);
     replace(globalThis, "createImageBitmap", async () => { throw new Error("bad image"); });
     await paste([image("broken", "image/bmp")]);
-    expect(node(".error").textContent).toBe("could not read the pasted image");
+    expect(node(".error").textContent).toBe("could not read the image");
     expect(root.querySelectorAll(".pasted-item")).toHaveLength(1);
     expect(revoked).toEqual([]);
     await click(button("Send"));
     expect(calls("submit")).toEqual([{ text: "", images: [{ data: btoa("good"), mimeType: "image/png" }], followUp: false }]);
+  });
+
+  test("the attach button picks images into the same tray, skips other files, and is absent in shells", async () => {
+    await show();
+    const picker = node('input[type="file"]') as HTMLInputElement;
+    expect(picker.accept).toBe("image/*");
+    let opened = 0;
+    picker.click = () => void opened++;
+    await click(button("Attach image"));
+    expect(opened).toBe(1);
+    replace(picker, "files", [image("camera", "image/jpeg"), new File(["x"], "notes.txt", { type: "text/plain" })]);
+    await act(() => void picker.dispatchEvent(new Event("change", { bubbles: true })));
+    await flush();
+    expect(picker.value).toBe("");
+    expect(root.querySelectorAll(".pasted-item")).toHaveLength(1);
+    await click(button("Send"));
+    expect(calls("submit")).toEqual([{ text: "", images: [{ data: btoa("camera"), mimeType: "image/jpeg" }], followUp: false }]);
+    await show({ item: item({ agent: null, live: null, status: null }), draft: null });
+    expect(root.querySelector('input[type="file"]')).toBeNull();
+    expect([...root.querySelectorAll("button")].some((b) => b.getAttribute("aria-label") === "Attach image")).toBe(false);
   });
 });
 
