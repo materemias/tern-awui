@@ -537,6 +537,19 @@ describe("endpoint and stream edges", () => {
     await until(async () => item(await s.state(), 1).live === null, "bridge closed");
   }, 5000);
 
+  test("a bridge that disconnects fails its pending commands at once, not at the reply deadline", async () => {
+    const ext = new Extension(s, "1");
+    await ext.connect();
+    await until(async () => item(await s.state(), 1).status === "working", "bridge ready");
+    ext.silent = true;
+    const started = Date.now();
+    const pending = s.action(1, "thinking", { level: "high" });
+    await ext.take("thinking");
+    ext.ws.close();
+    expect(await (await pending).json()).toEqual({ error: "omp did not answer" });
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
   test("bridge messages that aren't JSON or name no pane are ignored; the connection keeps working", async () => {
     const ext = new Extension(s, "4");
     await ext.connect();

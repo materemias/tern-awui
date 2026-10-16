@@ -233,8 +233,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   type Bridge = {
     ws: ServerWebSocket<{ pane: string | null }>;
     state: BridgeState;
-    /** Pending requests by seq; resolved with omp's reply (a snapshot, or a `reply` payload). */
-    waiting: Map<number, (reply: Obj) => void>;
+    /** Pending requests by seq; resolved with omp's reply (a snapshot, or a `reply` payload), null once this connection stops speaking for the pane. */
+    waiting: Map<number, (reply: Obj | null) => void>;
     /** The assistant message omp is writing right now, while a phone watches; null between messages. */
     live: { text: string; done: boolean } | null;
     /** Whether this omp has `/restart`, asked once its extension turns out older (see `askRestart`). */
@@ -1197,11 +1197,18 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     emit(pane, "stretch", null);
   }
 
+  /** A connection stopped speaking for its pane: its pending requests fail now, not at their timeout. */
+  function abandonRequests(b: Bridge) {
+    for (const settle of b.waiting.values()) settle(null);
+    b.waiting.clear();
+  }
+
   /** A connection now speaks for `pane`: its state starts over until it reports. */
   function registerBridge(pane: string, ws: ServerWebSocket<{ pane: string | null }>) {
     const previous = bridges.get(pane);
     if (previous) {
       previous.ws.send(JSON.stringify({ t: "watch", on: false }));
+      abandonRequests(previous);
       resetPane(pane);
     }
     bridges.set(pane, {
@@ -1229,6 +1236,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     set?.delete(ws);
     if (!set?.size) paneSockets.delete(pane);
     if (bridges.get(pane)?.ws !== ws) return;
+    abandonRequests(bridges.get(pane)!);
     resetPane(pane);
     bridges.delete(pane);
     const next = set?.size ? [...set].at(-1) : undefined;
