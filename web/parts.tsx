@@ -77,19 +77,16 @@ export function Todo({ phases, full }: { phases: TodoPhase[]; full: boolean }) {
 /**
  * A prompt, with omp's per-prompt actions: time, Copy, and Rewind (back to before this prompt,
  * its text returning to the composer). They show on hover, or on a tap where there's no hover.
- * `rewind`: the session's omp can rewind (its extension registers the command). `readOnly`: a
- * subagent's prompt, shown without actions.
+ * `rewind`: the session's omp can rewind (its extension registers the command).
  */
 export function UserMsg({
   entry,
   block,
   rewind: canRewind,
-  readOnly = false,
 }: {
   entry: Extract<ChatEntry, { role: "user" }>;
   block: string;
   rewind: boolean;
-  readOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -104,19 +101,13 @@ export function UserMsg({
     const err = await post(`/api/blocks/${block}/rewind`, { entry: entry.id });
     if (err) alert(`Rewind failed: ${err}`);
   }
-  const body = (
-    <>
+  return (
+    <div class={`msg user${open ? " acts-open" : ""}`} onClick={() => setOpen(!open)}>
       <span class="user-mark">›</span>
       <span class="user-text">
         {entry.text}
         {entry.images.length > 0 && <Thumbs images={entry.images} />}
       </span>
-    </>
-  );
-  if (readOnly) return <div class="msg user">{body}</div>;
-  return (
-    <div class={`msg user${open ? " acts-open" : ""}`} onClick={() => setOpen(!open)}>
-      {body}
       <div class="user-acts" onClick={(ev) => ev.stopPropagation()}>
         <span class="muted">{clock(entry.ts)}</span>
         {entry.text && (

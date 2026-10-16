@@ -79,9 +79,12 @@ describe("transcript lines", () => {
     expect(texts(".turn")).toEqual(["1m05s · Opus 5.5 · 21:07", "4s · 14:03"]);
   });
 
-  test("a subagent's transcript has no prompt actions", async () => {
-    await show([user("fix it")], true);
+  test("a subagent's prompt has no actions and renders as Markdown with its stretches open", async () => {
+    await show([user("### Session update\n**agent**: it {{fails|fails on a stale cache}}.")], true);
     expect(root.querySelector(".user-acts")).toBeNull();
+    expect(root.querySelector(".sub-prompt h3")!.textContent).toBe("Session update");
+    expect(root.querySelector(".sub-prompt strong")!.textContent).toBe("agent");
+    expect(root.querySelector(".sub-prompt")!.textContent).toContain("it fails on a stale cache.");
   });
 });
 

@@ -55,7 +55,7 @@ describe("SubagentChat", () => {
 
   test("shows the transcript with no composer, no prompt actions and no answerable question", async () => {
     await act(() => render(screen([job("ViewA")]), root));
-    expect(root.querySelector(".user-text")!.textContent).toBe("Run sleep 20");
+    expect(root.querySelector(".user-text")!.textContent!.trim()).toBe("Run sleep 20");
     expect(texts(".tools-last")).toEqual(["Sleeping 20 s"]);
     expect(root.querySelector("form, textarea, .composer-wrap")).toBeNull();
     expect(root.querySelector(".user-acts")).toBeNull();
@@ -129,10 +129,11 @@ describe("JobsStrip", () => {
     expect(root.querySelector(".subagents-link")!.textContent).toContain("Subagents (3)");
   });
 
-  test("finished subagents alone still get the entry; nothing at all renders nothing", async () => {
+  test("once every subagent finished, the entry goes too; a background shell alone gets no entry", async () => {
     await act(() => render(<JobsStrip block="5" jobs={[]} subagents={2} now={NOW} />, root));
-    expect(texts(".subagents-link span:nth-child(2)")).toEqual(["Subagents (2)"]);
-    await act(() => render(<JobsStrip block="5" jobs={[]} subagents={0} now={NOW} />, root));
     expect(root.innerHTML).toBe("");
+    await act(() => render(<JobsStrip block="5" jobs={[job("", "bash")]} subagents={2} now={NOW} />, root));
+    expect(texts("div.job .job-name")).toEqual(["j-bash"]);
+    expect(root.querySelector(".subagents-link")).toBeNull();
   });
 });

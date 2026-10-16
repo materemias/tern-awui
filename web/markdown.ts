@@ -30,13 +30,14 @@ marked.use({
 const SAFE_URI = /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i;
 
 // DOMPurify's default instance binds to the window present when the module loads. Bind to the
-// current one instead: test files each register their own DOM, and a stale window sanitizes nothing.
+// current document's own window instead: test files each register their own DOM, and the `window`
+// global can lag behind `document`; a purifier bound to another window strips every element.
 let purifier = DOMPurify;
-let purifierWindow: Window | undefined;
+let purifierDocument: Document | undefined;
 function purify(): typeof DOMPurify {
-  if (purifierWindow !== window) {
-    purifier = DOMPurify(window);
-    purifierWindow = window;
+  if (purifierDocument !== document) {
+    purifier = DOMPurify(document.defaultView ?? window);
+    purifierDocument = document;
   }
   return purifier;
 }

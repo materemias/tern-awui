@@ -8,7 +8,7 @@ import { post, type AdvisorNote, type Ask, type ChatEntry, type Img, type TodoPh
 import { askAnswers, askReady, clock, duration, langOf, parseAdvisorNote, prettyModel, type AskPick } from "./lib";
 import { renderMarkdown } from "./markdown";
 import { buzz, Thumbs, Todo, UserMsg } from "./parts";
-import { isLinkable, lengthOf, linkedMarkdown, parse, stretches, withOpen, writeOpen, type Segment, type Stretch } from "./stretch";
+import { isLinkable, lengthOf, linkedMarkdown, openText, parse, stretches, withOpen, writeOpen, type Segment, type Stretch } from "./stretch";
 
 let mermaidReady: Promise<Mermaid> | null = null;
 const mermaidSvgs = new Map<string, string | null>();
@@ -330,7 +330,20 @@ export function Chat({ entries, block, rewind, readOnly = false }: { entries: Ch
   return (
     <>
       {entries.map((e, n) => {
-        if (e.role === "user") return <UserMsg key={n} entry={e} block={block} rewind={rewind} readOnly={readOnly} />;
+        if (e.role === "user")
+          return readOnly ? (
+            // A subagent's prompts are written by the parent agent (task briefs, session updates):
+            // Markdown with every stretch drawn open, as btw answers.
+            <div key={n} class="msg user sub-prompt">
+              <span class="user-mark">›</span>
+              <div class="user-text">
+                <Markdown class="md" text={openText(e.text)} />
+                {e.images.length > 0 && <Thumbs images={e.images} />}
+              </div>
+            </div>
+          ) : (
+            <UserMsg key={n} entry={e} block={block} rewind={rewind} />
+          );
         if (e.role === "turn")
           return (
             <div key={n} class="turn">

@@ -202,7 +202,7 @@ test("subagent list and read-only transcript subscribe to their distinct streams
   await act(() => render(<SubagentScreen route={{ view: "subagent", block: "5", name: "Fixer" }} />, root));
   expect(FakeEventSource.last.url).toBe("/api/stream?block=5&view=chat&sub=Fixer");
   await emit("chat", { entries: [{ role: "user", id: "u1", text: "fix this", images: [], ts: 1 }] });
-  expect(root.querySelector(".user-text")!.textContent).toBe("fix this");
+  expect(root.querySelector(".user-text p")!.textContent).toBe("fix this");
   expect(root.querySelector("textarea, .user-acts")).toBeNull();
   await click("a.back");
   // No list-to-chat navigation happened: a deep link returns to its parent session.

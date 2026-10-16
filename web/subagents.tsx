@@ -19,11 +19,13 @@ type Screen = {
 };
 
 /**
- * The session's background jobs under the transcript: a running subagent opens its chat, and
- * "Subagents (N)" lists them all, finished ones too.
+ * The session's background jobs under the transcript: a running subagent opens its chat, and while
+ * one runs, "Subagents (N)" lists them all, finished ones too. Once every subagent has finished
+ * the entry goes away with them.
  */
 export function JobsStrip({ block, jobs, subagents, now }: { block: string; jobs: Job[]; subagents: number; now: number }) {
-  if (!jobs.length && !subagents) return null;
+  const running = jobs.some(isAgentJob);
+  if (!jobs.length) return null;
   return (
     <div class="jobs">
       {jobs.map((j) => {
@@ -47,7 +49,7 @@ export function JobsStrip({ block, jobs, subagents, now }: { block: string; jobs
           </div>
         );
       })}
-      {subagents > 0 && (
+      {running && subagents > 0 && (
         <a class="subagents-link" href={routeHash({ view: "subagents", block })}>
           <span class="job-mark">⑂</span>
           <span>Subagents ({subagents})</span>
