@@ -120,6 +120,10 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .md th { background: var(--panel); color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
 .md tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--raise) 35%, transparent); }
 .md a { color: var(--accent); }
+/* Stretchtext (omp's stretch.ts): a short form to tap open has a dotted underline, unlike a real
+   link; « after an opened long form closes it. */
+.md a[href^="#stretch/open/"] { text-decoration: underline dotted; text-underline-offset: 3px; text-decoration-thickness: 1.5px; }
+.md a[href^="#stretch/close/"] { text-decoration: none; padding: 0 3px; opacity: .75; }
 .md h1, .md h2, .md h3 { color: var(--fg); font-size: 15.5px; letter-spacing: .01em; margin: 1.1em 0 .35em; }
 
 /* Faded text only: opacity on .tools itself would also fade its thumbnails and their full-screen view. */

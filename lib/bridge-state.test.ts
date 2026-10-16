@@ -21,6 +21,7 @@ const snapshot = {
   protocol: 2,
   build: "0123456789abcdef",
   caps: { models: true, tiers: false, jobs: true, queue: true, rewind: true, btw: true, complete: true, levels: true },
+  stretch: { off: false, open: { "1792161451904.1": ["cache", "cache › key"] } },
 };
 
 describe("parseBridgeState", () => {
@@ -42,6 +43,7 @@ describe("parseBridgeState", () => {
       protocol: 2,
       build: "0123456789abcdef",
       caps: snapshot.caps,
+      stretch: snapshot.stretch,
     });
   });
 
@@ -70,6 +72,12 @@ describe("parseBridgeState", () => {
     expect(s.levels).toEqual([]);
     expect(s.jobs).toEqual([]);
     expect(s.queued).toEqual([]);
+  });
+
+  test("stretch state: null without stretch.ts; malformed blocks, keys and empty blocks dropped", () => {
+    expect(parseBridgeState({ ...snapshot, stretch: undefined }, fresh, 1).stretch).toBeNull();
+    const s = parseBridgeState({ ...snapshot, stretch: { off: true, open: { "12.0": ["a", 3, ""], "x.1": ["b"], "13.2": [] } } }, fresh, 1);
+    expect(s.stretch).toEqual({ off: true, open: { "12.0": ["a"] } });
   });
 
   test("drops jobs without an id and empty thinking levels; keeps the standard tier ''", () => {

@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { post, type Btw, type BtwHistoryRecord, type Item, type Role } from "./api";
 import { btwCommand, can, composerKey, currentRole, fitEdge, lineEdit, needsReencode, prettyModel, tokensShort } from "./lib";
 import { Markdown } from "./chat";
+import { openText } from "./stretch";
 import { buzz } from "./parts";
 import type { Draft } from "./hooks";
 import { EFFORT_LABEL, ModelSheet, TIER_LABEL } from "./models";
@@ -438,7 +439,7 @@ export function Composer({
           {btw.error ? (
             <div class="err small">{btw.error}</div>
           ) : btw.text ? (
-            <Markdown class="md btw-a" text={btw.text} />
+            <Markdown class="md btw-a" text={openText(btw.text)} />
           ) : (
             <div class="muted small">thinking…</div>
           )}

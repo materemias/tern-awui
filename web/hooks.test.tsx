@@ -80,7 +80,7 @@ describe("useStream", () => {
     property(navigator, "setAppBadge", badge);
     property(navigator, "clearAppBadge", clear);
     await act(() => render(<StreamHost block="5" />, root));
-    expect(snapshot()).toEqual({ state: null, chat: null, subagents: null, live: null, queued: [], btw: null, screen: null, draft: null, doc: null, online: false });
+    expect(snapshot()).toEqual({ state: null, chat: null, subagents: null, live: null, queued: [], btw: null, screen: null, draft: null, doc: null, online: false, stretch: null });
     await act(() => FakeEventSource.last.open());
     expect(snapshot()).toMatchObject({ online: true });
     const current = state([item()], { badge: 2 });
@@ -101,7 +101,8 @@ describe("useStream", () => {
     await emit("draft", { text: "Not sent", live: true });
     await emit("doc", doc);
     await emit("subagents", subagents);
-    expect(snapshot()).toMatchObject({ chat: entries, screen: { text: "<pre>shell</pre>", html: true }, draft: { text: "Not sent", live: true }, doc, subagents });
+    await emit("stretch", { off: false, open: { "1.0": ["cache"] } });
+    expect(snapshot()).toMatchObject({ chat: entries, screen: { text: "<pre>shell</pre>", html: true }, draft: { text: "Not sent", live: true }, doc, subagents, stretch: { off: false, open: { "1.0": ["cache"] } } });
     await emit("chat", null);
     expect(snapshot()).toMatchObject({ chat: [] });
     await act(() => FakeEventSource.last.fail());

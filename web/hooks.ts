@@ -1,6 +1,6 @@
 // The app's hooks: the clock, the route and back navigation, the layout, and the server stream.
 import { useEffect, useState } from "preact/hooks";
-import type { Btw, ChatEntry, Doc, State, Subagent } from "./api";
+import type { Btw, ChatEntry, Doc, State, StretchState, Subagent } from "./api";
 import { backStep, parseRoute, trackOrigin, type Route } from "./lib";
 
 /** The app icon counts updates not seen yet: finished turns and waits on you. */
@@ -109,6 +109,8 @@ export function useStream(block: string | null, view: View, sub: string | null =
   const [live, setLive] = useState<string | null>(null);
   /** Prompts omp holds for the running turn: steers, or follow-ups for after it ends. */
   const [queued, setQueued] = useState<{ text: string; followUp: boolean }[]>([]);
+  /** The pane's open stretches as its omp (stretch.ts) reports them; null when it reports none. */
+  const [stretch, setStretch] = useState<StretchState | null>(null);
   const [online, setOnline] = useState(false);
   useEffect(() => {
     setChat(null);
@@ -116,6 +118,7 @@ export function useStream(block: string | null, view: View, sub: string | null =
     setScreen(null);
     setLive(null);
     setQueued([]);
+    setStretch(null);
     const qs = block ? `?block=${block}&view=${view}${sub ? `&sub=${encodeURIComponent(sub)}` : ""}` : "";
     let es: EventSource | null = null;
     let liveEnded = false;
@@ -160,6 +163,7 @@ export function useStream(block: string | null, view: View, sub: string | null =
       src.addEventListener("screen", (e) => setScreen(JSON.parse(e.data)));
       src.addEventListener("draft", (e) => setDraft(JSON.parse(e.data)));
       src.addEventListener("queued", (e) => setQueued(JSON.parse(e.data)));
+      src.addEventListener("stretch", (e) => setStretch(JSON.parse(e.data)));
       src.addEventListener("doc", (e) => setDoc(JSON.parse(e.data)));
       src.addEventListener("subagents", (e) => setSubagents(JSON.parse(e.data)));
     };
@@ -186,5 +190,5 @@ export function useStream(block: string | null, view: View, sub: string | null =
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [block, view, sub]);
-  return { state, chat, subagents, live, queued, btw, setBtw, screen, draft, doc, online };
+  return { state, chat, subagents, live, queued, btw, setBtw, screen, draft, doc, online, stretch };
 }

@@ -21,7 +21,7 @@ import { compactAtPercent, type Compaction } from "./lib/compaction";
 import { branchOf, projectOf } from "./lib/git";
 import { queryRecaps } from "./lib/recaps";
 import { answerSteps, KEYS, promptImages, type PromptImage } from "./lib/input";
-import { emptyState, listChanged, parseBridgeState, PROTOCOL, type BridgeState, type Caps, type Context, type Job } from "./lib/bridge-state";
+import { emptyState, listChanged, parseBridgeState, PROTOCOL, STRETCH_BLOCK, type BridgeState, type Caps, type Context, type Job } from "./lib/bridge-state";
 import { extensionCheck, offersCommand, sessionMismatch, type InstallStatus, type Mismatch } from "./lib/extension-check";
 import { configDir, docIcon, installedExtension, ompDataDir, ternNotesDir } from "./lib/paths";
 import { ensureToken, sameToken } from "./lib/auth";
@@ -773,6 +773,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
             onPane("draft", draftPayload(b));
             if (b?.live) onPane("live", b.live);
             if (b?.state.queued.length) onPane("queued", b.state.queued);
+            // Always, null included: a reconnecting phone must drop state from an omp that restarted without stretch.ts.
+            onPane("stretch", b?.state.stretch ?? null);
             // Opening a session on the phone is seeing its update.
             if (unseen.delete(block)) invalidateState();
           }
@@ -981,7 +983,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
 
     // Cross-site forms cannot set custom headers; this keeps the POSTs same-origin.
     if (req.headers.get("x-tern-mobile") !== "1") return json({ error: "missing header" }, 403);
-    const m = /^\/api\/blocks\/(\d+)\/(keys|type|submit|draft|answer|model|models|thinking|tier|focus|abort|btw|close|complete|completion|rewind)$/.exec(path);
+    const m = /^\/api\/blocks\/(\d+)\/(keys|type|submit|draft|answer|model|models|thinking|tier|focus|abort|btw|close|complete|completion|rewind|stretch)$/.exec(path);
     // Commands with no arguments may omit the body; payload-bearing actions must send JSON.
     const bodyless = req.body === null && /^(models|focus|abort|close)$/.test(m?.[2] ?? "");
     const raw: unknown = bodyless ? {} : await req.json().catch(() => null);
@@ -1054,6 +1056,15 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           const images = promptImages(body.images);
           if (typeof images === "string") return json({ error: images }, 400);
           return done(await submit(block, str(body.text), images, body.followUp === true));
+        }
+        case "stretch": {
+          // Opens or closes a stretch of a reply in the pane too (omp's stretch.ts), so the desktop
+          // shows what the phone opened and the next prompt's read note counts it.
+          const reply = str(body.block);
+          const key = str(body.key);
+          if (!STRETCH_BLOCK.test(reply) || !key || key.length > 4000) return json({ error: "bad stretch" }, 400);
+          if (!bridge?.state.stretch) return json({ error: "this omp doesn't run stretch.ts" }, 409);
+          return done(bridgeError(await bridgeRequest(bridge, { t: "stretch", block: reply, key, open: body.open === true })));
         }
         case "answer":
           return done(await answer(block, item, body));
@@ -1143,6 +1154,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     doneTimers.delete(pane);
     emit(pane, "live", { text: "", done: false });
     emit(pane, "queued", []);
+    emit(pane, "stretch", null);
   }
 
   /** A connection now speaks for `pane`: its state starts over until it reports. */
@@ -1283,6 +1295,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           // A rewind moves the leaf without writing to the file: the open chat must re-read.
           if (before.leaf !== b.state.leaf) emit(pane, "leaf", null);
           if (JSON.stringify(before.queued) !== JSON.stringify(b.state.queued)) emit(pane, "queued", b.state.queued);
+          if (JSON.stringify(before.stretch) !== JSON.stringify(b.state.stretch)) emit(pane, "stretch", b.state.stretch);
           if (listChanged(before, b.state)) invalidateState();
           // `before.status` is empty on a fresh connection: a restarted omp is not a finished turn.
           if (!changedSession && before.status && before.status !== status) onStatusChange(pane, before.status, status, b.state.sessionId);

@@ -300,6 +300,14 @@ describe("parseChat tool groups", () => {
     expect(only(entries, "assistant")[0]).toEqual({ role: "assistant", text: "I slept.", ts: T0 + 30 });
     expect(only(entries, "tools").map((g) => g.calls.map((c) => c.name))).toEqual([["bash"], ["yield"]]);
   });
+
+  test("a reply part with stretchtext markup carries its block id: message timestamp and part index", () => {
+    const t = new Transcript();
+    t.user("explain", 0);
+    t.assistant([text("Plain."), call("b", "bash", {}), text("A {{b|b long}}.")], 10, { stop: "toolUse" });
+    const replies = only(parseChat(t.lines(), "", 80).entries, "assistant");
+    expect(replies.map((r) => r.block)).toEqual([undefined, `${T0 + 10}.2`]);
+  });
 });
 
 describe("parseChat images", () => {

@@ -1,8 +1,9 @@
 // An open session (chat, raw screen or note, with the composer) and its subagent screens.
-import { useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { post } from "./api";
 import { age, backStep, can, type Route } from "./lib";
-import { Chat, Markdown } from "./chat";
+import { Chat, Markdown, StretchContext, type StretchSync } from "./chat";
+import { liveText, withOpen } from "./stretch";
 import { screenHtml } from "./markdown";
 import { Dot } from "./parts";
 import { ExtensionNotice } from "./extension";
@@ -14,7 +15,33 @@ import { goBack, origins, useNow, useStream, type View } from "./hooks";
 export function Session({ block }: { block: string }) {
   const [view, setView] = useState<View>("chat");
   // The server answers a chat request for a non-omp block with its screen.
-  const { state, chat, live, queued, btw, setBtw, screen, draft, doc, online } = useStream(block, view);
+  const { state, chat, live, queued, btw, setBtw, screen, draft, doc, online, stretch } = useStream(block, view);
+  // Open stretches: the omp session's (stretch.ts) when it reports them, else this page's own.
+  const [opened, setOpened] = useState<Record<string, string[]>>({});
+  // Whether `opened` mirrors the pane: then losing the report (omp restarted without stretch.ts) drops
+  // it, while taps made with no pane state stay this page's own.
+  const mirrored = useRef(false);
+  useEffect(() => {
+    mirrored.current = false;
+    setOpened({});
+  }, [block]);
+  useEffect(() => {
+    if (stretch) setOpened(stretch.open);
+    else if (mirrored.current) setOpened({});
+    mirrored.current = stretch !== null;
+  }, [stretch]);
+  const stretchSync = useMemo<StretchSync>(
+    () => ({
+      open: opened,
+      off: stretch?.off === true,
+      set: (reply, key, open) => {
+        setOpened((o) => ({ ...o, [reply]: withOpen(o[reply] ?? [], key, open) }));
+        // The pane opens it too; its next report confirms. A failure leaves it open here only.
+        if (stretch) void post(`/api/blocks/${block}/stretch`, { block: reply, key, open });
+      },
+    }),
+    [opened, stretch, block],
+  );
   const item = state?.projects.flatMap((p) => p.items).find((i) => i.block === block);
   const isOmp = !!item?.agent;
   const scroller = useRef<HTMLDivElement>(null);
@@ -106,8 +133,10 @@ export function Session({ block }: { block: string }) {
           )
         ) : chat && view === "chat" ? (
           <>
-            <Chat entries={chat} block={block} rewind={can(item?.live, "rewind")} />
-            {live && <Markdown class="msg assistant md live" text={live} />}
+            <StretchContext.Provider value={stretchSync}>
+              <Chat entries={chat} block={block} rewind={can(item?.live, "rewind")} />
+            </StretchContext.Provider>
+            {live && <Markdown class="msg assistant md live" text={liveText(live)} />}
             {queued.map((q, i) => (
               <div key={i} class="queued" title={q.followUp ? "Sent once the running turn ends" : "Steers the running turn"}>
                 <span class="queued-mark">{q.followUp ? "→" : "↳"}</span>

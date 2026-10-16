@@ -1,4 +1,5 @@
 export type { BtwHistoryRecord, BtwHistoryTurn } from "../lib/btw-history";
+export type { StretchState } from "../lib/bridge-state";
 
 // ---------- API shapes (mirror server.ts) ----------
 
@@ -100,7 +101,8 @@ export type AskQuestion = {
 export type Ask = { role: "ask"; id: string; questions: AskQuestion[]; answer: string | null; ts: number };
 export type ChatEntry =
   | { role: "user"; id: string; text: string; images: Img[]; ts: number }
-  | { role: "assistant"; text: string; imageSources?: Record<string, string>; ts: number }
+  /** `block`: the stretchtext id of a reply holding `{{short|long}}` markup (see lib/transcript.ts). */
+  | { role: "assistant"; text: string; block?: string; imageSources?: Record<string, string>; ts: number }
   | { role: "tools"; calls: ToolCall[]; images: Img[]; todo: TodoPhase[] | null; ts: number }
   | Ask
   | { role: "turn"; ms: number; model: string; ts: number }

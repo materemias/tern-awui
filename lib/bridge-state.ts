@@ -34,7 +34,14 @@ export type BridgeState = {
   build: string;
   /** What this omp supports, from the extension's feature detection; null when it sent none. */
   caps: Caps | null;
+  /** Open stretches of the session's replies, from omp's stretch.ts; null when it isn't loaded. */
+  stretch: StretchState | null;
 };
+/**
+ * `open`: stretch keys drawn open, per reply block (`<message timestamp>.<content index>`); `off`:
+ * the session turned stretches off (`/stretch off`), so replies show every long form.
+ */
+export type StretchState = { off: boolean; open: Record<string, string[]> };
 export type Context = { tokens: number; window: number; percent: number };
 export type Queued = { text: string; followUp: boolean };
 export type Job = { id: string; type: string; label: string; agent: string; since: number };
@@ -43,7 +50,7 @@ export type Caps = Record<(typeof CAPS)[number], boolean>;
 
 /** A connection that hasn't reported yet. */
 export function emptyState(now: number): BridgeState {
-  return { sessionId: "", text: "", model: "", thinking: "", status: "", since: now, context: null, queued: [], jobs: [], leaf: "", levels: [], tiers: [], tier: "", protocol: 0, build: "", caps: null };
+  return { sessionId: "", text: "", model: "", thinking: "", status: "", since: now, context: null, queued: [], jobs: [], leaf: "", levels: [], tiers: [], tier: "", protocol: 0, build: "", caps: null, stretch: null };
 }
 
 /** The reported caps; a cap the extension doesn't name (or names oddly) is unsupported. */
@@ -51,6 +58,20 @@ function parseCaps(value: unknown): Caps | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const c = obj(value);
   return Object.fromEntries(CAPS.map((k) => [k, c[k] === true])) as Caps;
+}
+
+/** A reply block id as stretch.ts names one. */
+export const STRETCH_BLOCK = /^\d+\.\d+$/;
+
+/** The reported stretch state; malformed blocks and keys are dropped. */
+function parseStretch(value: unknown): StretchState | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const s = obj(value);
+  const open = Object.entries(obj(s.open))
+    .filter(([block]) => STRETCH_BLOCK.test(block))
+    .map(([block, keys]) => [block, arr(keys).map((k) => str(k)).filter(Boolean)] as const)
+    .filter(([, keys]) => keys.length);
+  return { off: s.off === true, open: Object.fromEntries(open) };
 }
 
 /** A `state` message as the pane's new state; `since` carries over within one session and status. */
@@ -82,6 +103,7 @@ export function parseBridgeState(msg: Obj, before: BridgeState, now: number): Br
     protocol: num(msg.protocol),
     build: str(msg.build),
     caps: parseCaps(msg.caps),
+    stretch: parseStretch(msg.stretch),
   };
 }
 

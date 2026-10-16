@@ -33,7 +33,7 @@ mock.module("mermaid", () => ({
 // Dynamic on purpose: preact binds to the DOM globals present when it loads.
 const { render } = await import("preact");
 const { act } = await import("preact/test-utils");
-const { Chat, Markdown } = await import("./chat");
+const { Chat, Markdown, StretchContext } = await import("./chat");
 
 const net = new Net();
 const buzzes: number[] = [];
@@ -310,5 +310,56 @@ describe("ask cards", () => {
     await show([ask([which], "SQLite"), { ...ask([extras]), id: "a2" }, user("never mind")]);
     expect(texts(".ask.done .ask-answer")).toEqual(["SQLite", "not answered"]);
     expect(root.querySelector(".opt")).toBeNull();
+  });
+});
+
+describe("stretchtext replies", () => {
+  const reply = (text: string): ChatEntry => ({ role: "assistant", text, block: "1792161451904.1", ts: TS });
+  const TEXT = "A monad {{wraps values|wraps values in a context}}. Done.";
+  const links = () => [...root.querySelectorAll("a[href^='#stretch/']")].map((a) => a.textContent);
+  const prose = () => root.querySelector(".msg.assistant")!.textContent?.trim();
+
+  test("a short form is a link that grows its long form in place; « closes it; the route stays", async () => {
+    location.hash = "#s/5";
+    await show([reply(TEXT)]);
+    expect(prose()).toBe("A monad wraps values. Done.");
+    expect(links()).toEqual(["wraps values"]);
+    await click(root.querySelector("a[href^='#stretch/']"));
+    await act(() => sleep(400));
+    expect(prose()).toBe("A monad wraps values in a context «. Done.");
+    expect(location.hash).toBe("#s/5");
+    await click(root.querySelector("a[href='#stretch/close/0']"));
+    expect(prose()).toBe("A monad wraps values. Done.");
+  });
+
+  test("in a session, the shared state decides what is open and a tap goes to it", async () => {
+    const set = mock((_block: string, _key: string, _open: boolean) => {});
+    const draw = (open: Record<string, string[]>, off = false) =>
+      act(() =>
+        render(
+          <StretchContext.Provider value={{ open, off, set }}>
+            <Chat entries={[reply(TEXT)]} block="5" rewind />
+          </StretchContext.Provider>,
+          root,
+        ),
+      );
+    await draw({});
+    await click(root.querySelector("a[href^='#stretch/']"));
+    expect(set.mock.calls).toEqual([["1792161451904.1", "wraps values", true]]);
+    expect(prose()).toBe("A monad wraps values. Done.");
+    // Opened in the Tern pane: it grows in here too.
+    await draw({ "1792161451904.1": ["wraps values"] });
+    await act(() => sleep(400));
+    expect(prose()).toBe("A monad wraps values in a context «. Done.");
+    // `/stretch off`: every long form, no links.
+    await draw({}, true);
+    expect(prose()).toBe("A monad wraps values in a context. Done.");
+    expect(links()).toEqual([]);
+  });
+
+  test("braces in code and replies without stretches render as written", async () => {
+    await show([said("Use `{{a|b}}` here.")]);
+    expect(prose()).toBe("Use {{a|b}} here.");
+    expect(links()).toEqual([]);
   });
 });

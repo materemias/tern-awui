@@ -1,12 +1,14 @@
 // The chat renderer, shared by sessions and their subagents: markdown (charts, mermaid), advisor
 // notes, tool lines, ask cards and prompts.
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { createContext } from "preact";
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Mermaid } from "mermaid";
 import { drawCharts } from "./charts";
 import { post, type AdvisorNote, type Ask, type ChatEntry, type Img, type TodoPhase, type ToolCall } from "./api";
 import { askAnswers, askReady, clock, duration, langOf, parseAdvisorNote, prettyModel, type AskPick } from "./lib";
 import { renderMarkdown } from "./markdown";
 import { buzz, Thumbs, Todo, UserMsg } from "./parts";
+import { isLinkable, lengthOf, linkedMarkdown, parse, stretches, withOpen, writeOpen, type Segment, type Stretch } from "./stretch";
 
 let mermaidReady: Promise<Mermaid> | null = null;
 const mermaidSvgs = new Map<string, string | null>();
@@ -38,7 +40,17 @@ async function drawMermaid(root: HTMLElement) {
   }
 }
 
-export function Markdown({ text, class: cls, imageSources }: { text: string; class: string; imageSources?: Record<string, string> }) {
+export function Markdown({
+  text,
+  class: cls,
+  imageSources,
+  onClick,
+}: {
+  text: string;
+  class: string;
+  imageSources?: Record<string, string>;
+  onClick?: (e: MouseEvent) => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const html = useMemo(() => renderMarkdown(text, imageSources), [text, imageSources]);
   const lang = useMemo(() => langOf(text), [text]);
@@ -47,7 +59,74 @@ export function Markdown({ text, class: cls, imageSources }: { text: string; cla
     drawCharts(ref.current);
     void drawMermaid(ref.current);
   }, [html]);
-  return <div ref={ref} class={cls} lang={lang} dangerouslySetInnerHTML={{ __html: html }} />;
+  return <div ref={ref} class={cls} lang={lang} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+/**
+ * Stretchtext state of the session on screen: open keys per reply block, and `off` when the omp
+ * session turned stretches off (`/stretch off`). `set` opens or closes one, in the Tern pane too
+ * when its omp runs stretch.ts. Without a provider (subagents) each reply keeps its own state.
+ */
+export type StretchSync = { open: Record<string, string[]>; off: boolean; set(block: string, key: string, open: boolean): void };
+export const StretchContext = createContext<StretchSync | null>(null);
+
+/** A growth's pace: about 45 ms per added word, at most 700 ms, as in the Tern pane. */
+const GROW_MS_PER_WORD = 45;
+const GROW_MAX_MS = 700;
+const STRETCH_HREF = /^#stretch\/(open|close)\/(\d+)$/;
+
+/** An assistant reply; with stretches, short forms are links that grow their long form in place. */
+function Reply({ entry }: { entry: Extract<ChatEntry, { role: "assistant" }> }) {
+  const parts = useMemo(() => (entry.text.includes("{{") ? parse(entry.text) : null), [entry.text]);
+  const all = useMemo(() => (parts ? stretches(parts) : []), [parts]);
+  if (!parts || !all.some(isLinkable)) return <Markdown class="msg assistant md" text={entry.text} imageSources={entry.imageSources} />;
+  return <StretchReply entry={entry} parts={parts} all={all} />;
+}
+
+function StretchReply({ entry, parts, all }: { entry: Extract<ChatEntry, { role: "assistant" }>; parts: Segment[]; all: Stretch[] }) {
+  const sync = useContext(StretchContext);
+  const shared = sync && entry.block ? { sync, block: entry.block } : null;
+  const [local, setLocal] = useState<string[]>([]);
+  const keys = shared ? (shared.sync.open[shared.block] ?? []) : local;
+  const open = useMemo(() => new Set(keys), [keys.join("\0")]);
+  const [growing, setGrowing] = useState<{ index: number; progress: number } | undefined>(undefined);
+
+  // A stretch opened here or in the Tern pane grows in; one open on arrival is simply there.
+  const before = useRef(open);
+  useLayoutEffect(() => {
+    const index = all.findIndex((s) => open.has(s.key) && !before.current.has(s.key) && isLinkable(s));
+    before.current = open;
+    const duration = index === -1 ? 0 : Math.min(GROW_MAX_MS, GROW_MS_PER_WORD * lengthOf(all[index]?.long ?? []));
+    if (duration <= 0 || matchMedia?.("(prefers-reduced-motion: reduce)").matches) return setGrowing(undefined);
+    const start = performance.now();
+    let frame = 0;
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - start) / duration);
+      setGrowing(progress < 1 ? { index, progress } : undefined);
+      if (progress < 1) frame = requestAnimationFrame(tick);
+    };
+    setGrowing({ index, progress: 0 });
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [open]);
+
+  const off = sync?.off === true;
+  const text = useMemo(
+    () => (off ? writeOpen(parts) : linkedMarkdown(parts, { href: (op, i) => `#stretch/${op}/${i}`, isOpen: (k) => open.has(k), growing })),
+    [parts, open, growing, off],
+  );
+  const onClick = (e: MouseEvent) => {
+    const link = (e.target as Element | null)?.closest?.("a[href^='#stretch/']");
+    if (!link) return;
+    // The href is a marker, not a route: never let it reach the hash router.
+    e.preventDefault();
+    const [, op, i] = STRETCH_HREF.exec(link.getAttribute("href") ?? "") ?? [];
+    const stretch = all[Number(i)];
+    if (!op || !stretch) return;
+    if (shared) shared.sync.set(shared.block, stretch.key, op === "open");
+    else setLocal((keys) => withOpen(keys, stretch.key, op === "open"));
+  };
+  return <Markdown class="msg assistant md stretchy" text={text} imageSources={entry.imageSources} onClick={onClick} />;
 }
 
 /** omp's advisor notes: severity, then `Key:`, `Evidence:`, `Impact:`, `Fix:` lines; tap to expand. */
@@ -260,7 +339,7 @@ export function Chat({ entries, block, rewind, readOnly = false }: { entries: Ch
               {` · ${clock(e.ts)}`}
             </div>
           );
-        if (e.role === "assistant") return <Markdown key={n} class="msg assistant md" text={e.text} imageSources={e.imageSources} />;
+        if (e.role === "assistant") return <Reply key={n} entry={e} />;
         if (e.role === "advisor") return <AdvisorCard key={n} notes={e.notes} />;
         if (e.role === "tools")
           return <Tools key={n} calls={e.calls} images={e.images} todo={e.todo} latestTodo={n === latestTodo} />;

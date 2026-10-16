@@ -12,6 +12,7 @@ export type State = {
 	items: Completion[]; done: boolean;
 	protocol: number; build: string;
 	caps: Record<"models" | "tiers" | "jobs" | "queue" | "rewind" | "btw" | "complete" | "levels", boolean>;
+	stretch: { off: boolean; open: Record<string, string[]> } | null;
 };
 export type RpcFrame = {
 	type: string; id: string; success: boolean; method: string;

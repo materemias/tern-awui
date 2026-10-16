@@ -171,9 +171,34 @@ type ServerMessage =
 	/** `followUp`: hold it until the running turn ends (omp's Ctrl+Q), instead of steering. */
 	| { t: "send"; text: string; images: { data: string; mimeType: string }[]; followUp?: boolean; seq: number }
 	| { t: "watch"; on: boolean }
+	/** Open or close a reply's stretch (omp's stretch.ts): `block` is `<message timestamp>.<content index>`. */
+	| { t: "stretch"; block: string; key: string; open: boolean; seq: number }
 	/** Report the current state now (the server lost track of this pane). */
 	| { t: "sync"; seq?: undefined };
 const MAX_COMPLETIONS = 40;
+
+/**
+ * What omp's stretch.ts extension (stretchtext replies) shares with this one, when it runs in the
+ * same omp process: which stretches are open, and opening one in the pane. Version 1 only.
+ */
+type StretchBridge = {
+	version: 1;
+	state(): { off: boolean; open: Record<string, string[]> };
+	setOpen(block: string, key: string, open: boolean): void;
+};
+function stretchBridge(): StretchBridge | null {
+	const shared = (globalThis as Record<symbol, { bridge?: Partial<StretchBridge> } | undefined>)[Symbol.for("omp-stretch")];
+	const b = shared?.bridge;
+	return b?.version === 1 && typeof b.state === "function" && typeof b.setOpen === "function" ? (b as StretchBridge) : null;
+}
+function stretchState(): ReturnType<StretchBridge["state"]> | null {
+	try {
+		return stretchBridge()?.state() ?? null;
+	} catch {
+		return null;
+	}
+}
+
 /** Side-turn text goes out at most this often while it streams. */
 const BTW_FLUSH_MS = 150;
 /** The assistant message being written goes out at most this often, only while a phone watches. */
@@ -284,6 +309,8 @@ export default function ternMobile(pi: Pi): void {
 				complete: completer !== null,
 				levels: typeof ai.getSupportedThinkingLevels === "function",
 			},
+			// The pane's open stretches, so the phone shows the same ones; null without stretch.ts.
+			stretch: stretchState(),
 		};
 	};
 
@@ -373,6 +400,12 @@ export default function ternMobile(pi: Pi): void {
 			return;
 		}
 		if (!ctx) return;
+		if (msg.t === "stretch") {
+			const bridge = stretchBridge();
+			if (!bridge) return reply(msg.seq, { error: "stretch.ts is not loaded in this omp" });
+			bridge.setOpen(msg.block, msg.key, msg.open);
+			return flush(true, msg.seq);
+		}
 		if (msg.t === "send") {
 			// A phone prompt sent directly: images (the editor can't take pasted ones from here) or a
 			// follow-up. The draft it replaces is cleared.

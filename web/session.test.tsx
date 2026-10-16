@@ -232,3 +232,21 @@ test("a child opened from the subagent list returns there through real hash navi
   expect(location.hash).toBe("#/b/5/sub");
   expect(FakeEventSource.last.url).toBe("/api/stream?block=5&view=subagents");
 });
+
+test("stretches: the pane's open ones show; once the pane stops reporting them they close, but local taps stay", async () => {
+  await open(item());
+  const reply = { role: "assistant", text: "A {{b|b long}} c.", block: "9.0", ts: 1 };
+  await emit("chat", { entries: [reply] });
+  const closes = () => root.querySelectorAll("a[href^='#stretch/close/']").length;
+  await emit("stretch", { off: false, open: { "9.0": ["b"] } });
+  expect(closes()).toBe(1);
+  // Reconnected after omp restarted without stretch.ts: the server's snapshot is null.
+  await emit("stretch", null);
+  expect(closes()).toBe(0);
+  // With no pane state, a tap opens it on this page only.
+  await click("a[href='#stretch/open/0']");
+  expect(closes()).toBe(1);
+  await emit("stretch", null);
+  expect(closes()).toBe(1);
+  expect(net.calls.filter((c) => c.url.endsWith("/stretch"))).toEqual([]);
+});

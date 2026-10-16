@@ -1,13 +1,14 @@
 import { useEffect, useState } from "preact/hooks";
 import type { BtwHistoryRecord, BtwHistoryTurn } from "./api";
 import { Markdown } from "./chat";
+import { openText } from "./stretch";
 
 function HistoryTurn({ turn }: { turn: BtwHistoryTurn }) {
   return (
     <section class="btw-history-turn">
       <Markdown class="md" text={turn.question} />
       <div class="muted small">{turn.status} · {new Date(turn.createdAt).toLocaleString()}</div>
-      {turn.answer && <Markdown class="md" text={turn.answer} />}
+      {turn.answer && <Markdown class="md" text={openText(turn.answer)} />}
       {turn.error && <div class="err small">{turn.error}</div>}
     </section>
   );

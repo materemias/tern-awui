@@ -150,7 +150,7 @@ describe("omp extension bridge contract", () => {
 
 	test("authenticates and snapshots all fields, sends only changes, and replaces main session context", async () => {
 		const f = fixture();
-		expect<unknown>(await f.start()).toEqual({ t: "state", pane: "test-pane", sessionId: "session-123", text: "desktop draft", model: "openai/reasoner", thinking: "medium", levels: ["off", "minimal", "low", "medium", "high", "xhigh"], tiers: ["", "flex", "priority"], tier: "", status: "idle", jobs: [], context: { tokens: 1234, window: 10000, percent: 12 }, queued: [], leaf: "entry-1", protocol: PROTOCOL, build: BUILD, caps: capsWithoutShim });
+		expect<unknown>(await f.start()).toEqual({ t: "state", pane: "test-pane", sessionId: "session-123", text: "desktop draft", model: "openai/reasoner", thinking: "medium", levels: ["off", "minimal", "low", "medium", "high", "xhigh"], tiers: ["", "flex", "priority"], tier: "", status: "idle", jobs: [], context: { tokens: 1234, window: 10000, percent: 12 }, queued: [], leaf: "entry-1", protocol: PROTOCOL, build: BUILD, caps: capsWithoutShim, stretch: null });
 		expect(f.bridge.connections[0].data.token).toBe("test-bridge-secret");
 		expect(f.state.intervals).toEqual([100]);
 		f.state.poll!();
@@ -164,6 +164,26 @@ describe("omp extension bridge contract", () => {
 		expect((await f.bridge.inbox.next()).sessionId).toBe("session-456");
 		expect(f.state.intervals).toEqual([100]);
 		expect(f.bridge.connections).toHaveLength(1);
+	});
+
+	test("stretches: reports stretch.ts's open keys, and opens one for the phone in the pane", async () => {
+		const key = Symbol.for("omp-stretch");
+		const f = fixture(); await f.start();
+		expect(await f.bridge.request({ t: "stretch", block: "1.0", key: "a", open: true })).toMatchObject({ error: "stretch.ts is not loaded in this omp" });
+		const open: Record<string, string[]> = {};
+		const calls: unknown[][] = [];
+		const g = globalThis as Record<symbol, unknown>;
+		g[key] = { bridge: { version: 1, state: () => ({ off: false, open: structuredClone(open) }), setOpen: (...args: unknown[]) => { calls.push(args); open["1.0"] = ["a"]; } } };
+		try {
+			const reply = await f.bridge.request({ t: "stretch", block: "1.0", key: "a", open: true });
+			expect(calls).toEqual([["1.0", "a", true]]);
+			expect(reply.stretch).toEqual({ off: false, open: { "1.0": ["a"] } });
+			// A newer bridge shape is not guessed at.
+			g[key] = { bridge: { version: 2, state: () => ({ off: true, open: {} }), setOpen: () => {} } };
+			expect((await f.bridge.request({ t: "sync" })).stretch).toBeNull();
+		} finally {
+			delete g[key];
+		}
 	});
 
 	test("a new session clears the previous session's queue, tools, samples and completions", async () => {

@@ -26,7 +26,11 @@ export type Img = { src: string };
 export const INLINE_IMAGE_CHARS = 256 * 1024;
 export type ChatEntry =
   | { role: "user"; id: string; text: string; images: Img[]; ts: number }
-  | { role: "assistant"; text: string; imageSources?: Record<string, string>; ts: number }
+  /**
+   * `block`: `<message timestamp>.<content index>`, as omp's stretch.ts names a text part; sent only
+   * for text with `{{` (stretchtext markup), so the phone and the Tern pane share open stretches.
+   */
+  | { role: "assistant"; text: string; block?: string; imageSources?: Record<string, string>; ts: number }
   | { role: "tools"; calls: ToolCall[]; images: Img[]; todo: TodoPhase[] | null; ts: number }
   | AskEntry
   | { role: "turn"; ms: number; model: string; ts: number }
@@ -282,8 +286,11 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
       if (text || images.length) entries.push({ role: "user", id: str(row.id), text, images, ts });
       turnStart = ts;
     } else if (msg.role === "assistant") {
-      for (const part of arr(msg.content).map(obj)) {
-        if (part.type === "text" && str(part.text).trim()) entries.push({ role: "assistant", text: str(part.text), ts });
+      for (const [index, part] of arr(msg.content).map(obj).entries()) {
+        const text = str(part.text);
+        if (part.type === "text" && text.trim()) {
+          entries.push(text.includes("{{") ? { role: "assistant", text, block: `${num(msg.timestamp)}.${index}`, ts } : { role: "assistant", text, ts });
+        }
         if (part.type !== "toolCall") continue;
         const args = obj(part.arguments);
         if (part.name === "ask" && Array.isArray(args.questions)) {
