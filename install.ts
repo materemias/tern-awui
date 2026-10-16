@@ -43,7 +43,9 @@ export type Action =
   | { kind: "remove"; path: string; ifContent?: string }
   | { kind: "run"; argv: string[]; cwd?: string; mayFail?: boolean };
 
-export const SERVICE_NAME = "tern-mobile";
+export const SERVICE_NAME = "tern-awui";
+/** The Linux unit's name before 0.3: installs and uninstalls stop and remove it, so it can't hold the port. */
+export const LEGACY_SERVICE_NAME = "tern-mobile";
 export const LAUNCHD_LABEL = "dev.tern-awui";
 export const TASK_NAME = "tern-awui";
 const DESCRIPTION = "tern-awui: phone control surface for Tern panes";
@@ -232,6 +234,10 @@ export function plan(input: PlanInput): Action[] {
 
   const unit = p.join(input.home, ".config", "systemd", "user", `${SERVICE_NAME}.service`);
   const systemctl = (...args: string[]): Extract<Action, { kind: "run" }> => ({ kind: "run", argv: ["systemctl", "--user", ...args] });
+  const dropLegacyUnit: Action[] = [
+    { ...systemctl("disable", "--now", `${LEGACY_SERVICE_NAME}.service`), mayFail: true },
+    { kind: "remove", path: p.join(input.home, ".config", "systemd", "user", `${LEGACY_SERVICE_NAME}.service`) },
+  ];
   const plist = p.join(input.home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`);
   const bootout: Action = { kind: "run", argv: ["launchctl", "bootout", `gui/${input.uid}/${LAUNCHD_LABEL}`], mayFail: true };
   const launcher = p.join(input.configDir, "tern-awui.vbs");
@@ -242,7 +248,7 @@ export function plan(input: PlanInput): Action[] {
   if (input.uninstall) {
     const service: Action[] =
       input.platform === "linux"
-        ? [{ ...systemctl("disable", "--now", `${SERVICE_NAME}.service`), mayFail: true }, { kind: "remove", path: unit }, systemctl("daemon-reload")]
+        ? [{ ...systemctl("disable", "--now", `${SERVICE_NAME}.service`), mayFail: true }, { kind: "remove", path: unit }, ...dropLegacyUnit, systemctl("daemon-reload")]
         : input.platform === "darwin"
           ? [bootout, { kind: "remove", path: plist }]
           : [
@@ -264,6 +270,7 @@ export function plan(input: PlanInput): Action[] {
   ];
   if (input.platform === "linux") {
     actions.push(
+      ...dropLegacyUnit,
       { kind: "write", path: unit, content: systemdUnit(input) },
       systemctl("daemon-reload"),
       systemctl("enable", `${SERVICE_NAME}.service`),

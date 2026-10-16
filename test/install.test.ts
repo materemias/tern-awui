@@ -60,19 +60,21 @@ describe("plan: linux", () => {
   const actions = plan(linux);
   const [, unit] = writes(actions);
 
-  test("builds, links the extension, writes the unit, starts it, serves it", () => {
-    expect(actions.map((a) => a.kind)).toEqual(["run", "symlink", "write", "write", "run", "run", "run", "run"]);
+  test("builds, links the extension, retires the old tern-mobile unit, writes the unit, starts it, serves it", () => {
+    expect(actions.map((a) => a.kind)).toEqual(["run", "symlink", "write", "run", "remove", "write", "run", "run", "run", "run"]);
     expect(actions[0]).toEqual({ kind: "run", argv: ["/home/ann/.bun/bin/bun", "build.ts"], cwd: linux.repo });
     expect(actions[1]).toEqual({
       kind: "symlink",
       path: "/home/ann/.omp/agent/extensions/tern-mobile.ts",
       target: "/home/ann/My Code/tern-awui/omp-extension/tern-mobile.ts",
     });
-    expect(unit.path).toBe("/home/ann/.config/systemd/user/tern-mobile.service");
+    expect(unit.path).toBe("/home/ann/.config/systemd/user/tern-awui.service");
+    expect(actions[4]).toEqual({ kind: "remove", path: "/home/ann/.config/systemd/user/tern-mobile.service" });
     expect(runs(actions).slice(1)).toEqual([
+      ["systemctl", "--user", "disable", "--now", "tern-mobile.service"],
       ["systemctl", "--user", "daemon-reload"],
-      ["systemctl", "--user", "enable", "tern-mobile.service"],
-      ["systemctl", "--user", "restart", "tern-mobile.service"],
+      ["systemctl", "--user", "enable", "tern-awui.service"],
+      ["systemctl", "--user", "restart", "tern-awui.service"],
       ["/usr/bin/tailscale", "serve", "--bg", "--https=4380", "http://127.0.0.1:4380"],
     ]);
   });
@@ -107,7 +109,11 @@ describe("plan: linux", () => {
   });
 
   test("no step touches an access token or a pairing link; the printed URL is the plain app URL", () => {
-    for (const a of [...plan(linux), ...plan(darwin), ...plan(win32)]) expect(["run", "symlink", "copy", "write"]).toContain(a.kind);
+    for (const a of [...plan(linux), ...plan(darwin), ...plan(win32)]) {
+      // The only removal while installing is the pre-rename unit.
+      if (a.kind === "remove") expect(a.path).toEndWith("/tern-mobile.service");
+      else expect(["run", "symlink", "copy", "write"]).toContain(a.kind);
+    }
     for (const argv of runs(plan(linux))) expect(argv).not.toContain("pair");
     expect(appUrl("box.tail1234.ts.net.", 4380)).toBe("https://box.tail1234.ts.net:4380/");
     expect(appUrl("box.tail1234.ts.net", 4380)).toBe("https://box.tail1234.ts.net:4380/");
@@ -115,6 +121,8 @@ describe("plan: linux", () => {
 
   test("uninstall stops and removes the unit, the extension link and the serve entry", () => {
     expect(plan({ ...linux, uninstall: true })).toEqual([
+      { kind: "run", argv: ["systemctl", "--user", "disable", "--now", "tern-awui.service"], mayFail: true },
+      { kind: "remove", path: "/home/ann/.config/systemd/user/tern-awui.service" },
       { kind: "run", argv: ["systemctl", "--user", "disable", "--now", "tern-mobile.service"], mayFail: true },
       { kind: "remove", path: "/home/ann/.config/systemd/user/tern-mobile.service" },
       { kind: "run", argv: ["systemctl", "--user", "daemon-reload"] },

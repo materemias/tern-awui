@@ -47,7 +47,7 @@ function deps(argv: string[], env: Record<string, string> = {}, platform = "linu
   };
 }
 const recorded = () => readFileSync(calls, "utf8").trim().split("\n").filter(Boolean);
-const unit = () => path.join(home, ".config", "systemd", "user", "tern-mobile.service");
+const unit = () => path.join(home, ".config", "systemd", "user", "tern-awui.service");
 const extension = () => path.join(ompDir, "extensions", "tern-mobile.ts");
 
 describe.skipIf(!POSIX)("main: linux", () => {
@@ -58,7 +58,7 @@ describe.skipIf(!POSIX)("main: linux", () => {
     expect(existsSync(path.join(home, ".config"))).toBe(false);
     expect(existsSync(ompDir)).toBe(false);
     const actions = out.filter((l) => l.startsWith("[dry-run] "));
-    expect(actions).toHaveLength(8);
+    expect(actions).toHaveLength(10);
     expect(actions.join("\n")).toContain(unit());
     expect(actions.join("\n")).toContain(extension());
     expect(actions.at(-1)).toContain("serve --bg --https=4380 http://127.0.0.1:4380");
@@ -81,9 +81,10 @@ describe.skipIf(!POSIX)("main: linux", () => {
     expect(recorded()).toEqual([
       "tailscale status --json",
       "bun build.ts",
+      "systemctl --user disable --now tern-mobile.service",
       "systemctl --user daemon-reload",
-      "systemctl --user enable tern-mobile.service",
-      "systemctl --user restart tern-mobile.service",
+      "systemctl --user enable tern-awui.service",
+      "systemctl --user restart tern-awui.service",
       "tailscale serve --bg --https=4380 http://127.0.0.1:4380",
     ]);
     expect(out.at(-1)).toBe("\nOpen this on the phone (signed in to Tailscale as an allowed login): https://box.tail1234.ts.net:4380/");
@@ -98,6 +99,7 @@ describe.skipIf(!POSIX)("main: linux", () => {
     expect(existsSync(unit())).toBe(false);
     expect(() => lstatSync(extension())).toThrow();
     expect(recorded()).toEqual([
+      "systemctl --user disable --now tern-awui.service",
       "systemctl --user disable --now tern-mobile.service",
       "systemctl --user daemon-reload",
       "tailscale serve --https=4380 off",

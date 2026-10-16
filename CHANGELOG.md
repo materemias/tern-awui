@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The Linux systemd unit is now `tern-awui.service`, matching the macOS launchd label and the Windows task. `bun install.ts` stops, disables and removes the old `tern-mobile.service` before starting the new one; `--uninstall` removes either. The config folder, extension file and headers keep their `tern-mobile` names.
 - CI fixes: the sanitizer binds to the current window (a test file loading it under another file's DOM left it sanitizing nothing, depending on file order); path expectations use the OS separator; installer `main()` tests, which run shell-script fakes, skip on Windows; the cold-start PowerShell test gets 30 s.
 - README security section: never expose the app publicly; Tailscale is the recommended setup. Other private setups are described with their requirements: an authenticating proxy (such as Cloudflare Access) must set an allowed `Tailscale-User-Login` itself, overwriting the client's, and `TERN_AWUI_DEV=1` is for loopback-only use.
 - README screenshots show Opus 5.5.

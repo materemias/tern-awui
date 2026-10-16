@@ -93,7 +93,7 @@ bun install.ts --uninstall        # [--dry-run]
 1. builds `dist/` (`bun build.ts`);
 2. puts the omp extension into `<omp dir>/extensions/tern-mobile.ts` (`~/.omp/agent` unless `TERN_AWUI_OMP_DIR`): a symlink to `omp-extension/tern-mobile.ts` on Linux and macOS, a copy on Windows;
 3. writes the service, with the absolute paths of bun and the checkout, a `PATH` starting with the folders of `tern`, `omp` and bun, the port and the allowed logins, and starts it (a re-run restarts it with the new settings):
-   - Linux: `~/.config/systemd/user/tern-mobile.service` (a real file; a symlink left there is replaced), `systemctl --user daemon-reload`, `enable`, `restart`;
+   - Linux: `~/.config/systemd/user/tern-awui.service` (a real file; a symlink left there is replaced), `systemctl --user daemon-reload`, `enable`, `restart`; before writing it, the pre-0.3 `tern-mobile.service` is stopped, disabled and removed (uninstall removes it too);
    - macOS: `~/Library/LaunchAgents/dev.tern-awui.plist` (`RunAtLoad`, `KeepAlive`, log in `~/Library/Logs/tern-awui.log`), `launchctl bootout` + `bootstrap gui/<uid>`;
    - Windows: a launcher `tern-awui.vbs` in the config dir that runs bun with no window and restarts it 3 s after it exits, and a scheduled task `tern-awui` that starts it at your logon (`schtasks /Create /XML`, then `/Run`);
 4. runs `tailscale serve --bg --https=<port> http://127.0.0.1:<port>`;
