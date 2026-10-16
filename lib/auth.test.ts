@@ -22,6 +22,15 @@ describe("ensureToken", () => {
     writeFileSync(file, "  kept-token\n");
     expect(ensureToken(file)).toBe("kept-token");
   });
+
+  test("an empty token file gets a new private token, which is then kept", () => {
+    const file = join(root, "empty");
+    writeFileSync(file, "\n", { mode: 0o644 });
+    const token = ensureToken(file);
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(ensureToken(file)).toBe(token);
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
+  });
 });
 
 describe("sameToken", () => {

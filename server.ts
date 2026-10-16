@@ -10,7 +10,7 @@ import { Database } from "bun:sqlite";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { existsSync, readFileSync, statSync, watch, writeFileSync, type FSWatcher } from "node:fs";
+import { existsSync, readFileSync, statSync, watch, type FSWatcher } from "node:fs";
 import type { Server, ServerWebSocket, Subprocess } from "bun";
 import webpush, { type PushSubscription, type RequestOptions } from "web-push";
 import { arr, num, obj, str, type Obj } from "./lib/json";
@@ -27,6 +27,7 @@ import { configDir, docIcon, installedExtension, ompDataDir, ternNotesDir } from
 import { ensureToken, sameToken } from "./lib/auth";
 import { recentProjects } from "./lib/projects";
 import { vapidSubject } from "./lib/push";
+import { writePrivateFile } from "./lib/private-file";
 
 const DOC_MAX_BYTES = 512 * 1024;
 /** This checkout. The phone shows it in the command that (re)installs the extension. */
@@ -99,18 +100,43 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   const VAPID_FILE = join(CONFIG_DIR, "vapid.json");
   const PUSH_FILE = join(CONFIG_DIR, "push.json");
 
-  if (!existsSync(VAPID_FILE)) writeFileSync(VAPID_FILE, JSON.stringify(webpush.generateVAPIDKeys()), { mode: 0o600 });
-  const VAPID: { publicKey: string; privateKey: string } = JSON.parse(readFileSync(VAPID_FILE, "utf8"));
+  /**
+   * The VAPID keys, made on first start. Keys that don't load (a file cut off by a crash) are
+   * replaced, and the subscriptions made for them dropped: the push service refuses them under
+   * new keys, and each phone that chose *on* subscribes again on its next check.
+   */
+  function loadVapid(): { publicKey: string; privateKey: string } {
+    if (existsSync(VAPID_FILE)) {
+      try {
+        const v = obj(JSON.parse(readFileSync(VAPID_FILE, "utf8")));
+        const publicKey = str(v.publicKey);
+        const privateKey = str(v.privateKey);
+        // P-256: a 65-byte uncompressed public point and a 32-byte private scalar.
+        if (Buffer.from(publicKey, "base64url").length === 65 && Buffer.from(privateKey, "base64url").length === 32) return { publicKey, privateKey };
+      } catch {}
+      console.error(`${VAPID_FILE} is unreadable: new push keys, phones subscribe again`);
+      writePrivateFile(PUSH_FILE, "[]");
+    }
+    const keys = webpush.generateVAPIDKeys();
+    writePrivateFile(VAPID_FILE, JSON.stringify(keys));
+    return keys;
+  }
+  const VAPID = loadVapid();
   const vapidDetails = { subject: vapidSubject(env, ALLOW), publicKey: VAPID.publicKey, privateKey: VAPID.privateKey };
   // Checks the subject and keys at startup; each send names this server's keys itself.
   webpush.setVapidDetails(vapidDetails.subject, vapidDetails.publicKey, vapidDetails.privateKey);
   const sendNotification = options.sendNotification ?? ((sub, payload, opts) => webpush.sendNotification(sub, payload, opts));
 
-  const pushSubs = new Map<string, PushSubscription>(
-    existsSync(PUSH_FILE) ? arr(JSON.parse(readFileSync(PUSH_FILE, "utf8"))).map((s) => [str(obj(s).endpoint), s as PushSubscription]) : [],
-  );
+  /** Saved subscriptions; an unreadable file (cut off by a crash) starts over with none. */
+  const pushSubs = new Map<string, PushSubscription>();
+  if (existsSync(PUSH_FILE))
+    try {
+      for (const s of arr(JSON.parse(readFileSync(PUSH_FILE, "utf8")))) pushSubs.set(str(obj(s).endpoint), s as PushSubscription);
+    } catch {
+      console.error(`${PUSH_FILE} is unreadable: phones subscribe again`);
+    }
   function savePushSubs() {
-    writeFileSync(PUSH_FILE, JSON.stringify([...pushSubs.values()]), { mode: 0o600 });
+    writePrivateFile(PUSH_FILE, JSON.stringify([...pushSubs.values()]));
   }
 
   /** Tells every subscribed phone that a session finished a turn or waits on the user. */

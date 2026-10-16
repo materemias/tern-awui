@@ -2,7 +2,7 @@
 // static app, Web Push delivery, omp without history.db or config, and endpoint/stream errors.
 
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { Database } from "bun:sqlite";
 import { arr, obj } from "../lib/json";
@@ -155,6 +155,44 @@ ${readFileSync(command, "utf8")}
     } finally {
       dev.kill();
       await dev.exited;
+    }
+  });
+});
+
+describe("startup with damaged config files", () => {
+  const s = new Sandbox();
+  afterAll(() => s.close());
+  const config = `${s.home}/.config/tern-mobile`;
+  const subscription = (endpoint: string) => ({ endpoint, keys: { p256dh: "key", auth: "auth" } });
+  const saved = () => JSON.parse(readFileSync(`${config}/push.json`, "utf8")).map((x: { endpoint: string }) => x.endpoint);
+
+  test("an empty push.json starts with no subscriptions instead of stopping the server", async () => {
+    await s.start();
+    expect((await s.post("/api/push/subscribe", subscription("https://push.test/before"))).status).toBe(200);
+    await s.stop();
+    writeFileSync(`${config}/push.json`, "");
+    await s.start();
+    expect((await s.post("/api/push/subscribe", subscription("https://push.test/after"))).status).toBe(200);
+    expect(saved()).toEqual(["https://push.test/after"]);
+    await s.stop();
+  });
+
+  test("unreadable VAPID keys are replaced, privately, and the subscriptions made for the old ones dropped", async () => {
+    await s.start();
+    const old = await (await s.get("/api/push/key")).json();
+    await s.stop();
+    for (const broken of ["", '{"publicKey":"short","privateKey":"short"}']) {
+      writeFileSync(`${config}/vapid.json`, broken);
+      await s.start();
+      const key = await (await s.get("/api/push/key")).json();
+      expect(key).not.toEqual(old);
+      expect(saved()).toEqual([]);
+      if (process.platform !== "win32") expect(statSync(`${config}/vapid.json`).mode & 0o777).toBe(0o600);
+      // The new keys load as they are on the next start.
+      await s.stop();
+      await s.start();
+      expect(await (await s.get("/api/push/key")).json()).toEqual(key);
+      await s.stop();
     }
   });
 });
