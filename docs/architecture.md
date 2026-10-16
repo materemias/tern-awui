@@ -103,7 +103,7 @@ bun install.ts --uninstall        # [--dry-run]
 4. runs `tailscale serve --bg --https=<port> http://127.0.0.1:<port>`;
 5. prints the app's URL: `https://<this machine's tailnet name>:<port>/`.
 
-The allowed login is the device's own Tailscale user (`tailscale status --json`) unless `TERN_AWUI_ALLOW` is set. `TERN_AWUI_PORT` (or `--port`) and any of `TERN_AWUI_CONFIG`, `TERN_AWUI_OMP_DIR`, `TERN_AWUI_NOTES_DIR`, `TERN_AWUI_PROJECTS`, `TERN_AWUI_VAPID_SUBJECT` set when the installer runs are written into the service. `--dry-run` prints every file it would write (with its content) and every command, and changes nothing. `--uninstall` stops and removes the service, the extension link or copy and the serve entry; the config dir (tokens, VAPID keys, subscriptions) stays.
+The allowed login is the device's own Tailscale user (`tailscale status --json`) unless `TERN_AWUI_ALLOW` is set. `TERN_AWUI_PORT` (or `--port`) and any of `TERN_AWUI_CONFIG`, `TERN_AWUI_OMP_DIR`, `TERN_AWUI_NOTES_DIR`, `TERN_AWUI_PROJECTS`, `TERN_AWUI_VAPID_SUBJECT` set when the installer runs are written into the service. `--dry-run` prints every file it would write (with its content) and every command, and changes nothing. `--uninstall` stops and removes the service, the extension link or copy (a link to another checkout's extension stays) and the serve entry; the config dir (tokens, VAPID keys, subscriptions) stays.
 
 Installed services explicitly set `TERN_AWUI_DEV=0`, even if the installing shell enables development mode. Relative config, omp and notes directories are resolved before installation. Uninstall removes bridge discovery only when it still matches this installation; missing optional cleanup commands are reported without stopping the remaining cleanup.
 

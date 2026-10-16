@@ -4,6 +4,7 @@
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { classifyInstall } from "./lib/extension-check";
 
 export type Platform = "linux" | "darwin" | "win32";
 
@@ -40,7 +41,11 @@ export type Action =
   /** Replaces whatever is at `path` with a symlink to `target`. */
   | { kind: "symlink"; path: string; target: string }
   | { kind: "copy"; from: string; to: string }
-  | { kind: "remove"; path: string; ifContent?: string }
+  /**
+   * `ifContent`: only while the file still holds it. `keepLinkAwayFrom`: kept while it is a link to
+   * a file other than this one (the extension of another checkout).
+   */
+  | { kind: "remove"; path: string; ifContent?: string; keepLinkAwayFrom?: string }
   | { kind: "run"; argv: string[]; cwd?: string; mayFail?: boolean };
 
 export const SERVICE_NAME = "tern-awui";
@@ -258,7 +263,7 @@ export function plan(input: PlanInput): Action[] {
               { kind: "remove", path: launcher },
               { kind: "remove", path: taskXml },
             ];
-    return [...service, { kind: "remove", path: extension }, { kind: "remove", path: discovery, ifContent: discoveryContent }, serveOff];
+    return [...service, { kind: "remove", path: extension, keepLinkAwayFrom: extensionSource }, { kind: "remove", path: discovery, ifContent: discoveryContent }, serveOff];
   }
 
   const actions: Action[] = [
@@ -311,7 +316,7 @@ export function describe(a: Action): string {
     case "copy":
       return `copy ${a.from} -> ${a.to}`;
     case "remove":
-      return `remove ${a.path}${a.ifContent === undefined ? "" : " (only if its content still matches this installation)"}`;
+      return `remove ${a.path}${a.ifContent === undefined ? "" : " (only if its content still matches this installation)"}${a.keepLinkAwayFrom === undefined ? "" : " (kept if it links to another checkout)"}`;
     case "run":
       return `run ${a.argv.map(quoteArg).join(" ")}${a.cwd ? `  (in ${a.cwd})` : ""}${a.mayFail ? "  (failure ignored)" : ""}`;
   }
@@ -353,6 +358,10 @@ export function execute(actions: Action[], opts: { dryRun: boolean; log?: (line:
         break;
       case "remove":
         if (a.ifContent !== undefined && (!existsSync(a.path) || readFileSync(a.path, "utf8") !== a.ifContent)) break;
+        if (a.keepLinkAwayFrom !== undefined && classifyInstall(a.path, a.keepLinkAwayFrom).status === "foreign") {
+          log(`kept ${a.path}: it links to another checkout`);
+          break;
+        }
         replace(a.path);
         break;
       case "run": {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { type MainDeps, main } from "../install";
@@ -124,6 +124,18 @@ describe.skipIf(!POSIX)("main: linux", () => {
     writeFileSync(discovery, other);
     main(deps(["--uninstall"]));
     expect(readFileSync(discovery, "utf8")).toBe(other);
+  });
+
+  test("uninstall keeps an extension link to another checkout", () => {
+    main(deps([]));
+    const other = path.join(dir, "other-checkout", "omp-extension", "tern-mobile.ts");
+    mkdirSync(path.dirname(other), { recursive: true });
+    writeFileSync(other, "// the other checkout's extension\n");
+    rmSync(extension());
+    symlinkSync(other, extension());
+    main(deps(["--uninstall"]));
+    expect(readlinkSync(extension())).toBe(other);
+    expect(out).toContain(`kept ${extension()}: it links to another checkout`);
   });
 
   test("--uninstall --dry-run removes nothing", () => {

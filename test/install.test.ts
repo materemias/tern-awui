@@ -126,7 +126,7 @@ describe("plan: linux", () => {
       { kind: "run", argv: ["systemctl", "--user", "disable", "--now", "tern-mobile.service"], mayFail: true },
       { kind: "remove", path: "/home/ann/.config/systemd/user/tern-mobile.service" },
       { kind: "run", argv: ["systemctl", "--user", "daemon-reload"] },
-      { kind: "remove", path: "/home/ann/.omp/agent/extensions/tern-mobile.ts" },
+      { kind: "remove", path: "/home/ann/.omp/agent/extensions/tern-mobile.ts", keepLinkAwayFrom: "/home/ann/My Code/tern-awui/omp-extension/tern-mobile.ts" },
       {
         kind: "remove",
         path: "/home/ann/.config/tern-mobile/bridge.json",
@@ -178,7 +178,7 @@ describe("plan: darwin", () => {
     expect(plan({ ...darwin, uninstall: true })).toEqual([
       { kind: "run", argv: ["launchctl", "bootout", "gui/501/dev.tern-awui"], mayFail: true },
       { kind: "remove", path: "/Users/ann/Library/LaunchAgents/dev.tern-awui.plist" },
-      { kind: "remove", path: "/Users/ann/.omp/agent/extensions/tern-mobile.ts" },
+      { kind: "remove", path: "/Users/ann/.omp/agent/extensions/tern-mobile.ts", keepLinkAwayFrom: "/Users/ann/Code & Stuff/<tern>/omp-extension/tern-mobile.ts" },
       {
         kind: "remove",
         path: "/Users/ann/.config/tern-mobile/bridge.json",
