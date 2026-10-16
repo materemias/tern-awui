@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Releases: pushing a `vX.Y.Z` tag publishes a GitHub release with that version's section of this changelog as its notes (`.github/workflows/release.yml`). 0.2.0 and 0.3.0 have releases too.
+
 ## 0.3.0 (2026-10-16)
 
 - A config file cut off by a crash no longer stops the server for good. An unreadable `push.json` starts with no subscriptions (phones that chose *on* subscribe again on their next check). Unreadable VAPID keys are replaced, and their subscriptions dropped. An empty `bridge-token` gets a new token instead of refusing every omp session. The server writes these files through a temporary file and a rename, mode 600.

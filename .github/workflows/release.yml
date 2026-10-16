@@ -1,0 +1,24 @@
+name: Release
+
+# Pushing a `vX.Y.Z` tag publishes a GitHub release whose notes are the `## X.Y.Z (date)`
+# section of CHANGELOG.md. A missing or empty section fails the run instead of publishing.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Release from CHANGELOG.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          awk -v v="$v" '$0 ~ "^## "v" " {f=1; next} /^## /{f=0} f' CHANGELOG.md > notes.md
+          grep -q '[^[:space:]]' notes.md || { echo "CHANGELOG.md has no notes under '## $v'"; exit 1; }
+          gh release create "$GITHUB_REF_NAME" --title "tern-awui $v" --notes-file notes.md --verify-tag
