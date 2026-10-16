@@ -197,6 +197,26 @@ describe("startup with damaged config files", () => {
   });
 });
 
+describe.skipIf(process.platform === "win32")("slow commands", () => {
+  const s = new Sandbox();
+  afterAll(() => s.close());
+
+  // Real time on purpose: the server kills the real command after its 5 s deadline.
+  test("a hanging TERN_AWUI_PROJECTS command neither blocks other requests nor the list for long", async () => {
+    writeFileSync(`${s.home}/bin/projects`, `#!/bin/sh\ntouch "$TERN_FAKE_DIR/projects-started"\nsleep 30\n`, { mode: 0o755 });
+    await s.start({ TERN_AWUI_PROJECTS: `${s.home}/bin/projects` });
+    const started = Date.now();
+    const projects = s.get("/api/projects").then((r) => r.json());
+    await until(() => existsSync(`${s.home}/projects-started`), "projects command running");
+    const asked = Date.now();
+    expect((await s.get("/api/push/key")).status).toBe(200);
+    expect(Date.now() - asked).toBeLessThan(500);
+    expect(await projects).toEqual({ projects: [], home: s.home });
+    expect(Date.now() - started).toBeLessThan(7000);
+    await s.stop();
+  }, 10_000);
+});
+
 describe("static app", () => {
   const s = new Sandbox();
   const dist = mkdtempSync(`${tmpdir()}/tern-awui-dist-`);

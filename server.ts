@@ -45,6 +45,8 @@ const SCREEN_LINES = 160;
 const BRIDGE_REPLY_MS = 2000;
 /** A finish is reported only if the session stays idle this long (no follow-up turn). */
 const DONE_SETTLE_MS = 3000;
+/** `TERN_AWUI_PROJECTS` gets this long to print its folders. */
+const PROJECTS_TIMEOUT_MS = 5000;
 
 export type ServerOptions = {
   /** Configuration (TERN_AWUI_*, omp and Tern locations) and the environment of tern, omp and the projects command. */
@@ -310,11 +312,26 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     });
   }
 
-  /** `omp config get KEY` as parsed JSON; null when omp is missing or the key is unset. */
-  function ompConfig(key: string): unknown {
+  /**
+   * A command's stdout, without blocking the server while it runs; null when it is missing or is
+   * killed after `timeoutMs`. A killed command's children may still hold its output open, so its
+   * output is not awaited then.
+   */
+  async function commandOutput(argv: string[], timeoutMs: number): Promise<string | null> {
     try {
-      const r = Bun.spawnSync(["omp", "config", "get", key], { env, stderr: "ignore" });
-      return JSON.parse(r.stdout.toString());
+      const proc = Bun.spawn(argv, { env, stdout: "pipe", stderr: "ignore", stdin: "ignore", timeout: timeoutMs });
+      const out = new Response(proc.stdout).text();
+      await proc.exited;
+      return proc.signalCode ? null : await out;
+    } catch {
+      return null;
+    }
+  }
+
+  /** `omp config get KEY` as parsed JSON; null when omp is missing or the key is unset. */
+  async function ompConfig(key: string): Promise<unknown> {
+    try {
+      return JSON.parse((await commandOutput(["omp", "config", "get", key], 10_000)) ?? "");
     } catch {
       return null;
     }
@@ -322,29 +339,24 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
 
   /** Ctrl+P roles from omp's settings: `cycleOrder` names roles, `modelRoles` maps them to models. */
   type Role = { role: string; spec: string };
-  let rolesCache: { at: number; value: Role[] } | null = null;
-  function modelRoles(): Role[] {
-    if (rolesCache && Date.now() - rolesCache.at < ROLES_TTL_MS) return rolesCache.value;
-    // A missing or moved omp only costs the model picker, never the block list.
-    const map = obj(ompConfig("modelRoles"));
-    const value = arr(ompConfig("cycleOrder"))
-      .map((r) => ({ role: str(r), spec: str(map[str(r)]) }))
-      .filter((r) => r.role && r.spec);
-    rolesCache = { at: Date.now(), value };
-    return value;
-  }
-
-  let compactionCache: { at: number; value: Compaction } | null = null;
-  function compactionSettings(): Compaction {
-    if (compactionCache && Date.now() - compactionCache.at < ROLES_TTL_MS) return compactionCache.value;
-    const reserve = ompConfig("compaction.reserveTokens");
-    const value = {
-      enabled: ompConfig("compaction.enabled") !== false,
-      thresholdTokens: num(ompConfig("compaction.thresholdTokens")),
-      thresholdPercent: num(ompConfig("compaction.thresholdPercent")),
-      reserveTokens: typeof reserve === "number" ? reserve : null,
-    };
-    compactionCache = { at: Date.now(), value };
+  type OmpSettings = { roles: Role[]; compaction: Compaction };
+  let settingsCache: { at: number; value: Promise<OmpSettings> } | null = null;
+  /** The omp settings the list needs, read at most every few minutes; a missing omp only costs the picker and the gauge's tick. */
+  function ompSettings(): Promise<OmpSettings> {
+    if (settingsCache && Date.now() - settingsCache.at < ROLES_TTL_MS) return settingsCache.value;
+    const keys = ["modelRoles", "cycleOrder", "compaction.enabled", "compaction.thresholdTokens", "compaction.thresholdPercent", "compaction.reserveTokens"];
+    const value = Promise.all(keys.map(ompConfig)).then(([roles, order, enabled, tokens, percent, reserve]) => ({
+      roles: arr(order)
+        .map((r) => ({ role: str(r), spec: str(obj(roles)[str(r)]) }))
+        .filter((r) => r.role && r.spec),
+      compaction: {
+        enabled: enabled !== false,
+        thresholdTokens: num(tokens),
+        thresholdPercent: num(percent),
+        reserveTokens: typeof reserve === "number" ? reserve : null,
+      },
+    }));
+    settingsCache = { at: Date.now(), value };
     return value;
   }
 
@@ -487,7 +499,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   }
 
   async function buildState(): Promise<State> {
-    const [ls, agents] = await Promise.all([tern(["ls", "--json"]), readAgents()]);
+    const [ls, agents, settings] = await Promise.all([tern(["ls", "--json"]), readAgents(), ompSettings()]);
     let tree: Obj = {};
     try {
       tree = obj(JSON.parse(ls.out));
@@ -536,7 +548,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
                   levels: bridge.state.levels,
                   tiers: bridge.state.tiers,
                   tier: bridge.state.tier,
-                  context: bridge.state.context && { ...bridge.state.context, compactAt: compactAtPercent(compactionSettings(), bridge.state.context.window) },
+                  context: bridge.state.context && { ...bridge.state.context, compactAt: compactAtPercent(settings.compaction, bridge.state.context.window) },
                   jobs: bridge.state.jobs,
                   protocol: bridge.state.protocol,
                   caps: bridge.state.caps,
@@ -563,7 +575,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     return {
       projects,
       counts,
-      roles: modelRoles(),
+      roles: settings.roles,
       badge: unseen.size,
       at: Date.now(),
       extension: { ...extension.install(), path: INSTALLED_EXTENSION, repo: REPO, windows: process.platform === "win32" },
@@ -986,13 +998,9 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
       // Folders for a new omp: the open blocks' and past omp sessions' cwds, or a configured command's list.
       let projects: string[];
       if (PROJECTS_SCRIPT) {
-        let out = "";
-        try {
-          const cmd = /\.py$/i.test(PROJECTS_SCRIPT) ? ["python3", PROJECTS_SCRIPT] : [PROJECTS_SCRIPT];
-          out = Bun.spawnSync(cmd, { env, stderr: "ignore" }).stdout.toString();
-        } catch {
-          // A missing command lists nothing.
-        }
+        const cmd = /\.py$/i.test(PROJECTS_SCRIPT) ? ["python3", PROJECTS_SCRIPT] : [PROJECTS_SCRIPT];
+        // A missing, hanging or failed command lists nothing; the server keeps serving meanwhile.
+        const out = (await commandOutput(cmd, PROJECTS_TIMEOUT_MS)) ?? "";
         projects = out
           .split("\n")
           .map((l) => l.trim())
@@ -1113,7 +1121,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           return done(bridgeError(await bridgeRequest(bridge, { t: "set", text: str(body.text) })));
         case "model": {
           // A Ctrl+P role (its model and thinking), or any model omp lists: `provider/id`.
-          const spec = body.role !== undefined ? modelRoles().find((r) => r.role === str(body.role))?.spec : str(body.spec);
+          const spec = body.role !== undefined ? (await ompSettings()).roles.find((r) => r.role === str(body.role))?.spec : str(body.spec);
           if (!spec || !spec.includes("/")) return json({ error: "unknown model" }, 400);
           if (!bridge) return json({ error: "no bridge" }, 409);
           invalidateState();

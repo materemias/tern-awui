@@ -161,7 +161,7 @@ The server reads these from its environment; the installer writes them into the 
 | `TERN_AWUI_CONFIG` | `~/.config/tern-mobile`, on every OS | `bridge-token`, `vapid.json`, `push.json` (mode 600 where the OS has modes) |
 | `TERN_AWUI_OMP_DIR` | as omp: `$PI_CODING_AGENT_DIR`, else `~/.omp/agent`, or `$XDG_DATA_HOME/omp` on Linux/macOS once it exists | omp's data: `sessions/`, `blobs/`, `history.db`. The installer puts the extension into `<dir>/extensions/` (default `~/.omp/agent`) |
 | `TERN_AWUI_NOTES_DIR` | Linux: `$XDG_STATE_HOME/tern/notes` or `~/.local/state/tern/notes`; macOS: `~/Library/Application Support/Tern/notes`; Windows: `%LOCALAPPDATA%\Tern\notes` (macOS/Windows unverified) | Tern notes |
-| `TERN_AWUI_PROJECTS` | the cwds of open Tern blocks and omp sessions, newest first | command printing one folder per line for **+ omp**; a `.py` path runs with `python3` |
+| `TERN_AWUI_PROJECTS` | the cwds of open Tern blocks and omp sessions, newest first | command printing one folder per line for **+ omp**; a `.py` path runs with `python3`; killed after 5 s, which lists nothing |
 | `TERN_AWUI_VAPID_SUBJECT` | `mailto:<first allowed login>` if it contains `@`, else `https://tern-mobile.invalid` | Web Push contact |
 | `TERN_AWUI_DEV` | — | `1` turns off the login check. Unsafe: dev on loopback only |
 | `TERN_AWUI_SYMBOLS_FONT` | `/usr/share/fonts/TTF/SymbolsNerdFont-Regular.ttf` | `bun run assets` only |
