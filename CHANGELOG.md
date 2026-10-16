@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-10-16)
 
 - A config file cut off by a crash no longer stops the server for good. An unreadable `push.json` starts with no subscriptions (phones that chose *on* subscribe again on their next check). Unreadable VAPID keys are replaced, and their subscriptions dropped. An empty `bridge-token` gets a new token instead of refusing every omp session. The server writes these files through a temporary file and a rename, mode 600.
 - A slow or hanging `TERN_AWUI_PROJECTS` command no longer freezes the server (streams, bridges, every request) while it runs: it runs in the background and is killed after 5 s, which lists no folders. The `omp config` reads behind the model picker's roles and the context gauge's compaction tick no longer block the server either (about 0.4 s every 5 minutes before).
