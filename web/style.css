@@ -99,6 +99,11 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .msg.user.acts-open .user-acts { display: flex; }
 @media (hover: hover) { .msg.user:hover .user-acts { display: flex; } }
 .turn { font: 11px var(--mono); color: var(--muted); opacity: .55; text-align: right; padding-bottom: 10px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
+/* omp's idle recap, as the terminal prints it: ※ and italic, under the turn it sums up. */
+.chat-recap { display: flex; gap: 8px; align-items: baseline; margin: -2px 0 12px; color: var(--muted); font-style: italic; font-size: 14px; }
+.chat-recap-mark { flex: none; font-style: normal; color: var(--accent); opacity: .8; }
+.chat-recap .md { min-width: 0; }
+.chat-recap .md p { margin: 0; }
 /* Body text a step below white so bold reads as emphasis; hyphenation follows each message's lang. */
 .msg.md { font-size: 14.5px; line-height: 1.62; color: #cfd3da; hyphens: auto; -webkit-hyphens: auto; }
 .md strong, .md b { color: var(--fg); font-weight: 600; }

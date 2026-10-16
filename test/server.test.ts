@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { appendFileSync, chmodSync, copyFileSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { Database } from "bun:sqlite";
 import { resolve } from "node:path";
 import { arr, obj } from "../lib/json";
 import { PROTOCOL } from "../lib/bridge-state";
@@ -226,6 +227,13 @@ test("SSE streams chat, draft, live and queued updates and pushes state without 
   agent.report({ leaf: "" });
   appendFileSync(s.transcriptPath, s.transcript.lines().at(-1)! + "\n");
   await events.take("chat", (c) => arr(obj(c).entries).some((e) => obj(e).text === "new on disk"));
+  // omp's idle recap lands in history.db with the transcript unchanged: the open chat gets it after the reply.
+  const db = new Database(`${s.home}/.omp/agent/history.db`);
+  db.run("INSERT INTO session_recaps (session_id, recap, created_at) VALUES (?, 'You asked for a route.', ?)", [s.session, Math.floor((T0 + 6000) / 1000)]);
+  db.close();
+  const recapped = obj(await events.take("chat", (c) => arr(obj(c).entries).some((e) => obj(e).role === "recap")));
+  expect(arr(recapped.entries).slice(-3).map((e) => obj(e).role)).toEqual(["assistant", "turn", "recap"]);
+  expect(obj(arr(recapped.entries).at(-1)).text).toBe("You asked for a route.");
   agent.report({ leaf: s.leaf });
   events.close();
   expect((await agent.take("watch")).on).toBe(false);

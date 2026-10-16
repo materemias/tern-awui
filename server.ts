@@ -19,7 +19,7 @@ import { countSubagents, listSubagents, regularFile, subagentDir, subagentFile, 
 import { readBtwHistory } from "./lib/btw-history";
 import { compactAtPercent, type Compaction } from "./lib/compaction";
 import { branchOf, projectOf } from "./lib/git";
-import { queryRecaps } from "./lib/recaps";
+import { queryRecaps, querySessionRecaps, withRecaps } from "./lib/recaps";
 import { answerSteps, KEYS, promptImages, type PromptImage } from "./lib/input";
 import { emptyState, listChanged, parseBridgeState, PROTOCOL, STRETCH_BLOCK, type BridgeState, type Caps, type Context, type Job } from "./lib/bridge-state";
 import { extensionCheck, offersCommand, sessionMismatch, type InstallStatus, type Mismatch } from "./lib/extension-check";
@@ -419,18 +419,21 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   }
 
   let historyDb: Database | null = null;
-  /** The newest recap omp wrote for each session, with its time (whole seconds). */
-  function readRecaps(ids: string[]): Map<string, { text: string; createdAt: number }> {
-    if (!ids.length) return new Map();
+  /** Reads omp's history.db; without it (none yet, or a schema this omp doesn't have) gives `fallback`. */
+  function fromHistory<T>(read: (db: Database) => T, fallback: T): T {
     try {
       historyDb ??= new Database(HISTORY_DB, { readonly: true });
-      return queryRecaps(historyDb, ids);
+      return read(historyDb);
     } catch {
-      // No history.db yet, or a schema this omp doesn't have: rows go without recaps.
       historyDb?.close();
       historyDb = null;
-      return new Map();
+      return fallback;
     }
+  }
+  /** The newest recap omp wrote for each session, with its time (whole seconds). */
+  function readRecaps(ids: string[]): Map<string, { text: string; createdAt: number }> {
+    // Without history.db rows go without recaps.
+    return ids.length ? fromHistory((db) => queryRecaps(db, ids), new Map()) : new Map();
   }
 
   /** The omp session of every pane whose omp is connected to the bridge. */
@@ -644,7 +647,9 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     if (!path) return null;
     // The session's own leaf: its bridge knows it even before anything is appended after a rewind.
     const leaf = [...bridges.values()].find((b) => b.state.sessionId === sessionId)?.state.leaf ?? "";
-    return transcriptImages.attach(await readChatFile(path, leaf, limit));
+    const chat = await readChatFile(path, leaf, limit);
+    const recaps = fromHistory((db) => querySessionRecaps(db, sessionId), []);
+    return transcriptImages.attach({ entries: withRecaps(chat.entries, recaps) });
   }
 
   const subagentFacts = new Map<string, SubagentFacts>();
@@ -857,7 +862,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
               const path = transcriptPath(item.agent.sessionId);
               follow(path);
               const st = path ? statSync(path) : null;
-              const etag = st ? `${path}:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}:${bridges.get(block!)?.state.leaf ?? ""}` : "none";
+              // The recap: omp writes it to history.db once the session sat idle, with the transcript unchanged.
+              const etag = st ? `${path}:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}:${bridges.get(block!)?.state.leaf ?? ""}:${item.agent.recap}` : "none";
               if (etag !== lastDetail) {
                 const chat = await readChat(item.agent.sessionId, 80);
                 lastDetail = etag;

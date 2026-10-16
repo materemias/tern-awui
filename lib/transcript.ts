@@ -34,7 +34,9 @@ export type ChatEntry =
   | { role: "tools"; calls: ToolCall[]; images: Img[]; todo: TodoPhase[] | null; ts: number }
   | AskEntry
   | { role: "turn"; ms: number; model: string; ts: number }
-  | { role: "advisor"; notes: AdvisorNote[]; ts: number };
+  | { role: "advisor"; notes: AdvisorNote[]; ts: number }
+  /** omp's idle recap of the session (history.db), merged in by time; see lib/recaps.ts. */
+  | { role: "recap"; text: string; ts: number };
 export type AskEntry = { role: "ask"; id: string; questions: AskQuestion[]; answer: string | null; ts: number };
 /** A note from omp's advisor model: `Key:`/`Evidence:`/`Impact:`/`Fix:` lines. */
 export type AdvisorNote = { advisor: string; severity: string; note: string };

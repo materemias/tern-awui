@@ -341,6 +341,13 @@ export function Chat({ entries, block, rewind, readOnly = false }: { entries: Ch
           );
         if (e.role === "assistant") return <Reply key={n} entry={e} />;
         if (e.role === "advisor") return <AdvisorCard key={n} notes={e.notes} />;
+        if (e.role === "recap")
+          return (
+            <div key={n} class="chat-recap" title={`omp's recap · ${clock(e.ts)}`}>
+              <span class="chat-recap-mark">※</span>
+              <Markdown class="md" text={e.text} />
+            </div>
+          );
         if (e.role === "tools")
           return <Tools key={n} calls={e.calls} images={e.images} todo={e.todo} latestTodo={n === latestTodo} />;
         return <AskCard key={e.id} ask={e} block={block} pending={!readOnly && n > lastTalk} />;

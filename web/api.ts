@@ -106,7 +106,9 @@ export type ChatEntry =
   | { role: "tools"; calls: ToolCall[]; images: Img[]; todo: TodoPhase[] | null; ts: number }
   | Ask
   | { role: "turn"; ms: number; model: string; ts: number }
-  | { role: "advisor"; notes: AdvisorNote[]; ts: number };
+  | { role: "advisor"; notes: AdvisorNote[]; ts: number }
+  /** omp's idle recap, merged in by time (see lib/recaps.ts). */
+  | { role: "recap"; text: string; ts: number };
 export type AdvisorNote = { advisor: string; severity: string; note: string };
 export type Img = { src: string };
 export type Doc = { text: string; markdown: boolean; missing: boolean; clipped: boolean };
