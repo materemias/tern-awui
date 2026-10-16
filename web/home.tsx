@@ -250,7 +250,7 @@ export function Home({ wide = false, selected = null, rail = false, onRail }: { 
 
   return (
     <div class="screen">
-      <header class="bar">
+      <header class="bar list-bar">
         {/* On the desktop the brand is the minimize button: « takes its place on hover, in the same box. */}
         {onRail ? (
           <button class="brand brand-toggle" onClick={onRail} aria-label="Minimize the session list" title="Minimize the session list (Ctrl+\)">
@@ -292,17 +292,17 @@ export function Home({ wide = false, selected = null, rail = false, onRail }: { 
         )}
         <PushButton />
         <button
-          class={`icon-btn${hideOld ? " on" : ""}`}
+          class={`icon-btn hide-old${hideOld ? " on" : ""}`}
           onClick={toggleOld}
           aria-label={hideOld ? `Show ${oldCount} sessions older than a day` : "Hide sessions older than a day"}
           title={hideOld ? `Show ${oldCount} sessions older than a day` : "Hide sessions older than a day"}
         >
+          {/* An open eye; while hiding, the button is lit and the hidden count sits beside it. */}
           <svg viewBox="0 0 20 20" aria-hidden="true">
-            <circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" stroke-width="1.4" />
-            <path d="M10 6.5V10l2.5 1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-            {hideOld && <path d="M3.5 3.5 16.5 16.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />}
+            <path d="M1.8 10S4.8 4.5 10 4.5 18.2 10 18.2 10 15.2 15.5 10 15.5 1.8 10 1.8 10Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+            <circle cx="10" cy="10" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4" />
           </svg>
-          {hideOld && oldCount > 0 && <span class="icon-count">{oldCount}</span>}
+          {hideOld && oldCount > 0 && <span class="hidden-count">{oldCount}</span>}
         </button>
         <button class="ghost" onClick={() => setPicker(true)} aria-label="New omp in a project">
           + omp

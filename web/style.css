@@ -400,9 +400,15 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .icon-btn.push-pending { animation: blink 1.2s ease-in-out infinite; }
 .icon-btn.push-pending:disabled { cursor: progress; }
 
-/* Hide-old toggle: how many sessions it hides. */
 .icon-btn { position: relative; }
-.icon-count { position: absolute; top: 1px; right: 0; min-width: 14px; padding: 0 3px; border-radius: 7px; background: var(--raise); border: 1px solid var(--line); color: var(--muted); font: 600 9.5px/12px var(--mono); }
+/* Hide-old toggle: an eye; while hiding, a lit pill with the hidden count beside the eye. */
+.icon-btn.hide-old { width: auto; min-width: 30px; padding: 0 7px; gap: 4px; grid-auto-flow: column; border-radius: 7px; }
+.hidden-count { font-size: 13px; font-variant-numeric: tabular-nums; }
+/* The list header's icons sized to its 13 px counts: 16 px glyphs in 30 px buttons. */
+.list-bar .icon-btn { width: 30px; height: 30px; }
+.list-bar .icon-btn.hide-old { width: auto; }
+.list-bar .icon-btn svg { width: 16px; height: 16px; }
+.list-bar .ghost { font-size: 12.5px; padding: 3px 9px; }
 
 /* The extension doesn't match the server: a banner on the list, a notice under a session's header,
    a chip in the list header counting such sessions and a mark on their rows. */

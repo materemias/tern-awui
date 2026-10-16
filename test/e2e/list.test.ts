@@ -90,7 +90,7 @@ describe.skipIf(!CHROMIUM)("session list", () => {
     // Blocks without a time (shells, the note, htop) always stay.
     await texts(page.locator(".row .title"), ["htop", "Terminal", "Note"]);
     expect(await clock.getAttribute("aria-label")).toBe("Show 1 sessions older than a day");
-    expect(await clock.locator(".icon-count").textContent()).toBe("1");
+    expect(await clock.locator(".hidden-count").textContent()).toBe("1");
     // A filter searches the hidden ones too.
     await page.locator(".search input").fill("phone");
     await texts(page.locator(".row .title"), ["Build phone UI"]);

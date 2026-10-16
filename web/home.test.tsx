@@ -127,7 +127,7 @@ describe("Home", () => {
     expect(row("old")).toBeNull();
     expect(root.querySelectorAll(".row").length).toBe(6);
     expect(row("selected")?.classList.contains("selected")).toBe(true);
-    expect(root.querySelector('[aria-label="Show 1 sessions older than a day"] .icon-count')?.textContent).toBe("1");
+    expect(root.querySelector('[aria-label="Show 1 sessions older than a day"] .hidden-count')?.textContent).toBe("1");
     expect(localStorage.getItem("tern-mobile:hide-old")).toBe("on");
     await input(".search input", "Ancient entry");
     expect(root.querySelectorAll(".row").length).toBe(1);
