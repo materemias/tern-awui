@@ -45,7 +45,7 @@ describe.skipIf(!CHROMIUM)("session list", () => {
     expect(await shell.locator(".dot").getAttribute("class")).toBe("dot dot-shell");
     expect(await shell.locator(".age").textContent()).toBe("");
     expect(await page.locator('a.row[href="#/b/3"] .row-sub').textContent()).toBe("Note");
-    expect(await page.locator(".counts").textContent()).toContain("1 idle");
+    expect(await page.locator('.counts span[title="1 idle"]').textContent()).toBe("1");
   });
 
   test("the filter matches project, tag, title and prompt; clearing it restores the list", async () => {

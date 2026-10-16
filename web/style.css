@@ -26,11 +26,20 @@ a { color: inherit; text-decoration: none; }
 .screen { display: flex; flex-direction: column; height: 100dvh; padding-bottom: env(safe-area-inset-bottom); }
 .bar { display: flex; align-items: center; gap: 10px; padding: calc(10px + env(safe-area-inset-top)) 14px 10px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .brand { font-weight: 650; letter-spacing: .02em; }
+/* The desktop brand doubles as the sidebar's minimize button: both labels share one grid cell, so the box keeps the word's size and only « shows on hover or keyboard focus. */
+.brand-toggle { display: inline-grid; padding: 0; border: 0; background: none; font-size: inherit; line-height: inherit; }
+.brand-toggle > span { grid-area: 1 / 1; text-align: center; }
+.brand-arrow { visibility: hidden; color: var(--accent); font-size: 18px; line-height: 1; align-self: center; }
+.brand-toggle:hover .brand-text, .brand-toggle:focus-visible .brand-text { visibility: hidden; }
+.brand-toggle:hover .brand-arrow, .brand-toggle:focus-visible .brand-arrow { visibility: visible; }
 /* A subagent's prompt (written by its parent agent) renders as Markdown inside the prompt rail. */
 .msg.user.sub-prompt { white-space: normal; }
 .sub-prompt .user-text { flex: 1; }
 .sub-prompt .md > :first-child { margin-top: 0; }
 .sub-prompt .md > :last-child { margin-bottom: 0; }
+/* Header labels never break mid-label ("+ / omp"). */
+.bar .ghost { white-space: nowrap; }
+.bar .net { flex: none; }
 .spacer { flex: 1; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
@@ -40,6 +49,9 @@ a { color: inherit; text-decoration: none; }
 .counts { display: flex; gap: 10px; font-size: 13px; }
 .c-working { color: var(--working); }
 .c-blocked { color: var(--blocked); font-weight: 600; }
+/* Header counts: the rows' status dot, smaller and still, then the number. */
+.count { display: inline-flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; }
+.count .dot { width: 8px; height: 8px; animation: none; }
 
 .search { padding: 8px 12px; border-bottom: 1px solid var(--line); }
 .search input { width: 100%; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit; outline: none; }
@@ -284,6 +296,29 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
   .desk-main .composer-wrap { padding-inline: max(16px, calc((100% - var(--reading-width) - 24px) / 2)); }
   .desk-main .session-bar { padding-inline: max(16px, calc((100% - var(--reading-width) - 24px) / 2)); }
   .desk-main .ext-session { margin-inline: max(12px, calc((100% - var(--reading-width)) / 2)); }
+  /* The sidebar minimized to a rail (Ctrl+\): one icon per session, ringed in its status colour. */
+  .desk.rail { grid-template-columns: 56px 1fr; }
+  .rail-toggle { flex: none; font-size: 18px; line-height: 1; color: var(--muted); }
+  .rail-toggle:hover { color: var(--fg); background: var(--raise); }
+  .side-rail { align-items: center; padding-bottom: 8px; }
+  .rail-head { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 0; width: 100%; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .rail-list { width: 100%; display: flex; flex-direction: column; align-items: center; scrollbar-width: none; padding-bottom: 8px; }
+  .rail-group { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0 4px; }
+  .rail-group + .rail-group { border-top: 1px solid var(--line); }
+  .rail-project { position: relative; border: 0; background: none; padding: 0 2px; color: var(--muted); font-size: 9.5px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+  .rail-project:hover { color: var(--fg); }
+  .rail-project .group-hot { margin-left: 2px; color: var(--working); }
+  .rail-item { position: relative; width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: 50%; border: 2px solid var(--line); background: var(--raise); }
+  .rail-item:hover { border-color: var(--muted); }
+  .rail-item.st-working { border-color: var(--working); }
+  .rail-item.st-blocked { border-color: var(--blocked); background: color-mix(in srgb, var(--blocked) 15%, var(--raise)); }
+  .rail-item.stale { opacity: .5; }
+  /* The open session: an accent bar at the rail's left edge, as the full row's left border. */
+  .rail-item.selected::before { content: ""; position: absolute; left: -12px; top: 6px; bottom: 6px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); }
+  .rail-glyph { font-size: 11px; font-weight: 700; letter-spacing: .02em; color: var(--fg); }
+  .rail-glyph.nf { width: auto; font-size: 16px; color: var(--fg); }
+  .rail-item .new-dot { position: absolute; top: -2px; right: -2px; margin: 0; border: 2px solid var(--bg); width: 11px; height: 11px; }
+  .rail-new { width: 36px; height: 36px; padding: 0; font-size: 18px; border-radius: 50%; }
 }
 
 /* Images pasted into the composer, waiting to be sent. */

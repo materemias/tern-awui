@@ -52,6 +52,53 @@ function Row({ item, now, selected }: { item: Item; now: number; selected?: bool
   );
 }
 
+/** What a rail button shows: the title's own icon, else the block's tag, else the title's first two letters (π alone can't tell omps apart). */
+export function railGlyph(item: Item): { text: string; nf: boolean } {
+  if (item.icon) return { text: item.icon, nf: true };
+  if (item.tag) return { text: item.tag.slice(0, 3), nf: false };
+  const letters = item.title.replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(" ").filter(Boolean);
+  const text = letters.length > 1 ? letters[0][0] + letters[1][0] : (letters[0] ?? "?").slice(0, 2);
+  return { text: text.toUpperCase(), nf: false };
+}
+
+/** A session on the minimized sidebar: its glyph in a ring colored by status, the unseen dot, and the row's text as the tooltip. */
+function RailItem({ item, now, selected }: { item: Item; now: number; selected: boolean }) {
+  const state = item.status ?? undefined;
+  const { sub, stale } = rowText(item, now);
+  const glyph = railGlyph(item);
+  return (
+    <a
+      class={`rail-item st-${state ?? "shell"}${stale ? " stale" : ""}${item.unseen ? ` unseen-${item.unseen}` : ""}${selected ? " selected" : ""}`}
+      href={`#/b/${item.block}`}
+      title={sub ? `${item.title}\n${sub}` : item.title}
+      aria-label={item.title}
+    >
+      <span class={`rail-glyph${glyph.nf ? " nf" : ""}`}>{glyph.text}</span>
+      {item.unseen && <span class={`new-dot new-${item.unseen}`} />}
+    </a>
+  );
+}
+
+function PushButton() {
+  const [push, togglePush] = usePush();
+  if (push === "unsupported") return null;
+  return (
+    <button
+      class={`icon-btn push-${push}${push === "on" ? " on" : ""}`}
+      disabled={push === "pending"}
+      onClick={() => (push === "denied" ? alert("Notifications are blocked: allow them in the site settings.") : togglePush())}
+      aria-label={PUSH_LABEL[push]}
+      title={PUSH_LABEL[push]}
+    >
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M5 13.5V9a5 5 0 0 1 10 0v4.5l1.5 1.5h-13L5 13.5ZM8.5 17a1.5 1.5 0 0 0 3 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+        {(push === "off" || push === "denied") && <path d="M3.5 3.5 16.5 16.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />}
+        {push === "on" && <circle cx="15" cy="5" r="2.6" fill="var(--working)" stroke="none" />}
+      </svg>
+    </button>
+  );
+}
+
 /** The folders a new omp can open in (open blocks and past omp sessions, newest first), filtered as you type. */
 function ProjectSheet({ open, onPick, onClose }: { open: Set<string>; onPick: (dir: string) => void; onClose: () => void }) {
   const [projects, setProjects] = useState<string[] | null>(null);
@@ -97,13 +144,17 @@ function ProjectSheet({ open, onPick, onClose }: { open: Set<string>; onPick: (d
 const COLLAPSED_KEY = "tern-mobile:collapsed-projects";
 const HIDE_OLD_KEY = "tern-mobile:hide-old";
 
-/** The session list. `wide`: shown beside the open session, which `selected` marks. */
-export function Home({ wide = false, selected = null }: { wide?: boolean; selected?: string | null }) {
+/**
+ * The session list. `wide`: shown beside the open session, which `selected` marks. `rail`: minimized
+ * to a column of session icons; `onRail` toggles that (desktop only).
+ */
+export function Home({ wide = false, selected = null, rail = false, onRail }: { wide?: boolean; selected?: string | null; rail?: boolean; onRail?: () => void }) {
   const { state, online } = useStream(null, "chat");
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const now = useNow(15_000);
-  const needle = q.trim().toLowerCase();
+  // The rail has no filter field, so a filter typed before minimizing doesn't hide its sessions.
+  const needle = rail ? "" : q.trim().toLowerCase();
   // Hiding sessions untouched for a day, remembered on this device. Working, waiting, unseen and
   // open sessions always stay; so do blocks without a time (shells, notes) and filter matches.
   const [hideOld, setHideOld] = useState(() => localStorage.getItem(HIDE_OLD_KEY) === "on");
@@ -129,7 +180,6 @@ export function Home({ wide = false, selected = null }: { wide?: boolean; select
       return next;
     });
   }
-  const [push, togglePush] = usePush();
   // Only the phone's single-pane list guards against leaving on back.
   const exitHint = useExitGuard(!wide);
 
@@ -152,10 +202,64 @@ export function Home({ wide = false, selected = null }: { wide?: boolean; select
     }
   }
 
+  const sheet = picker && (
+    <ProjectSheet
+      open={new Set(state?.projects.flatMap((p) => p.items.map((i) => i.cwd)) ?? [])}
+      onClose={() => setPicker(false)}
+      onPick={(dir) => {
+        setPicker(false);
+        void newAgent(dir, dir, false);
+      }}
+    />
+  );
+
+  if (rail) {
+    const blocked = state?.counts.blocked ?? 0;
+    return (
+      <div class="screen side-rail">
+        <header class="rail-head">
+          <button class="icon-btn rail-toggle" onClick={onRail} aria-label="Expand the session list" title="Expand the session list (Ctrl+\)">
+            »
+          </button>
+          <span class={`net ${online ? "on" : "off"}`} title={online ? "Connected" : "Offline"} />
+          {blocked > 0 && <span class="c-blocked small" title={`${blocked} blocked`}>{blocked}</span>}
+          <PushButton />
+        </header>
+        <nav class="list rail-list">
+          {projects.map((p) => {
+            const shut = collapsed.has(p.name);
+            const hot = p.items.filter((i) => i.status === "working" || i.status === "blocked").length;
+            return (
+              <section key={p.name} class="rail-group">
+                <button class="rail-project" onClick={() => toggleProject(p.name)} title={`${p.name} · ${p.items.length}${shut ? " (collapsed)" : ""}`}>
+                  {p.name.slice(0, 4)}
+                  {shut && hot > 0 && <span class="group-hot">{hot}</span>}
+                </button>
+                {!shut && p.items.map((i) => <RailItem key={i.block} item={i} now={now} selected={i.block === selected} />)}
+              </section>
+            );
+          })}
+        </nav>
+        <button class="ghost rail-new" onClick={() => setPicker(true)} aria-label="New omp in a project" title="New omp in a project">
+          +
+        </button>
+        {sheet}
+      </div>
+    );
+  }
+
   return (
     <div class="screen">
       <header class="bar">
-        <span class="brand">tern</span>
+        {/* On the desktop the brand is the minimize button: « takes its place on hover, in the same box. */}
+        {onRail ? (
+          <button class="brand brand-toggle" onClick={onRail} aria-label="Minimize the session list" title="Minimize the session list (Ctrl+\)">
+            <span class="brand-text">tern</span>
+            <span class="brand-arrow" aria-hidden="true">«</span>
+          </button>
+        ) : (
+          <span class="brand">tern</span>
+        )}
         <span class={`net ${online ? "on" : "off"}`} />
         <span class="spacer" />
         {state && (
@@ -169,26 +273,24 @@ export function Home({ wide = false, selected = null }: { wide?: boolean; select
                 {outdated}
               </span>
             )}
-            {state.counts.blocked > 0 && <span class="c-blocked">{state.counts.blocked} blocked</span>}
-            <span class="c-working">{state.counts.working ?? 0} working</span>
-            <span class="muted">{state.counts.idle ?? 0} idle</span>
+            {/* A status dot (as on the rows) and a number; the word shows on hover (and is the accessible name). */}
+            {(
+              [
+                ["blocked", "c-blocked", state.counts.blocked ?? 0],
+                ["working", "c-working", state.counts.working ?? 0],
+                ["idle", "muted", state.counts.idle ?? 0],
+              ] as const
+            )
+              .filter(([status, , n]) => status !== "blocked" || n > 0)
+              .map(([status, cls, n]) => (
+                <span key={status} class={`count ${cls}`} title={`${n} ${status}`} aria-label={`${n} ${status}`}>
+                  <Dot state={status} />
+                  {n}
+                </span>
+              ))}
           </span>
         )}
-        {push !== "unsupported" && (
-          <button
-            class={`icon-btn push-${push}${push === "on" ? " on" : ""}`}
-            disabled={push === "pending"}
-            onClick={() => (push === "denied" ? alert("Notifications are blocked: allow them in the site settings.") : togglePush())}
-            aria-label={PUSH_LABEL[push]}
-            title={PUSH_LABEL[push]}
-          >
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M5 13.5V9a5 5 0 0 1 10 0v4.5l1.5 1.5h-13L5 13.5ZM8.5 17a1.5 1.5 0 0 0 3 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
-              {(push === "off" || push === "denied") && <path d="M3.5 3.5 16.5 16.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />}
-              {push === "on" && <circle cx="15" cy="5" r="2.6" fill="var(--working)" stroke="none" />}
-            </svg>
-          </button>
-        )}
+        <PushButton />
         <button
           class={`icon-btn${hideOld ? " on" : ""}`}
           onClick={toggleOld}
@@ -246,16 +348,7 @@ export function Home({ wide = false, selected = null }: { wide?: boolean; select
           );
         })}
       </main>
-      {picker && (
-        <ProjectSheet
-          open={new Set(state?.projects.flatMap((p) => p.items.map((i) => i.cwd)) ?? [])}
-          onClose={() => setPicker(false)}
-          onPick={(dir) => {
-            setPicker(false);
-            void newAgent(dir, dir, false);
-          }}
-        />
-      )}
+      {sheet}
       {exitHint && <div class="toast">Press back again to exit</div>}
     </div>
   );

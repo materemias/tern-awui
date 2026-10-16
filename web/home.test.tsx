@@ -8,7 +8,7 @@ afterAll(() => GlobalRegistrator.unregister());
 // Preact and the component must bind to the registered browser globals, not Bun's initial globals.
 const { render } = await import("preact");
 const { act } = await import("preact/test-utils");
-const { Home } = await import("./home");
+const { Home, railGlyph } = await import("./home");
 
 const net = new Net();
 let root: HTMLElement;
@@ -84,7 +84,7 @@ describe("Home", () => {
       FakeEventSource.last.emit("state", state([item()], { counts: { blocked: 2, working: 3, idle: 4 } }));
     });
     expect(root.querySelector(".net.on")).not.toBeNull();
-    expect(root.querySelector(".counts")?.textContent).toBe("2 blocked3 working4 idle");
+    expect([...root.querySelectorAll(".counts > span")].map((c) => [c.textContent, c.getAttribute("title")])).toEqual([["2", "2 blocked"], ["3", "3 working"], ["4", "4 idle"]]);
     expect(row("5")?.querySelector(".pi")?.textContent).toBe("π");
     await act(() => FakeEventSource.last.fail());
     expect(root.querySelector(".net.off")).not.toBeNull();
@@ -277,5 +277,60 @@ describe("Home", () => {
     history.replaceState(null, "", "/");
     await act(() => { window.dispatchEvent(new PopStateEvent("popstate")); });
     expect(root.querySelector(".toast")?.textContent).toBe("Press back again to exit");
+  });
+});
+
+describe("sidebar rail", () => {
+  async function mountRail(items: Item[], selected: string | null = null, onRail = () => {}) {
+    await act(() => render(<Home wide rail onRail={onRail} selected={selected} />, root));
+    await act(() => { FakeEventSource.last.open(); FakeEventSource.last.emit("state", state(items)); });
+    await act(() => settle());
+  }
+  const railItem = (block: string) => root.querySelector<HTMLAnchorElement>(`.rail-item[href="#/b/${block}"]`);
+
+  test("a session shows its own icon, else its tag, else two letters of its title", () => {
+    expect(railGlyph(item({ icon: "\uf121", tag: "PR" }))).toEqual({ text: "\uf121", nf: true });
+    expect(railGlyph(item({ tag: "REVIEW" }))).toEqual({ text: "REV", nf: false });
+    expect(railGlyph(item({ title: "fix the login" }))).toEqual({ text: "FT", nf: false });
+    expect(railGlyph(item({ title: "— deploy —" }))).toEqual({ text: "DE", nf: false });
+    expect(railGlyph(item({ title: "" }))).toEqual({ text: "?", nf: false });
+  });
+
+  test("each session links to itself with its status, unseen mark, selection and full text as tooltip", async () => {
+    await mountRail([item({ status: "blocked", unseen: "blocked" }), item({ block: "6", title: "Other", status: "working" })], "6");
+    expect(railItem("5")?.className).toContain("st-blocked");
+    expect(railItem("5")?.querySelector(".new-dot.new-blocked")).not.toBeNull();
+    expect(railItem("5")?.title).toStartWith("Fix login\n");
+    expect(railItem("6")?.className).toContain("selected");
+    expect(railItem("5")?.className).not.toContain("selected");
+    expect(row("5")).toBeNull();
+  });
+
+  test("a filter typed in the full list doesn't hide sessions on the rail", async () => {
+    const items = [item(), item({ block: "6", title: "Other", agent: null, live: null })];
+    await mount(items);
+    await input(".search input", "login");
+    expect(row("6")).toBeNull();
+    await act(() => render(<Home wide rail selected={null} />, root));
+    expect(railItem("6")).not.toBeNull();
+  });
+
+  test("collapsed projects keep only their label with the active count; the label toggles them", async () => {
+    localStorage.setItem("tern-mobile:collapsed-projects", '["app"]');
+    await mountRail([item({ status: "working" })]);
+    expect(railItem("5")).toBeNull();
+    expect(root.querySelector(".rail-project .group-hot")?.textContent).toBe("1");
+    await click(root.querySelector(".rail-project"));
+    expect(railItem("5")).not.toBeNull();
+    expect(localStorage.getItem("tern-mobile:collapsed-projects")).toBe("[]");
+  });
+
+  test("the toggle in either layout asks to switch", async () => {
+    let toggles = 0;
+    await mountRail([item()], null, () => toggles++);
+    await click(root.querySelector('[aria-label="Expand the session list"]'));
+    await act(() => render(<Home wide onRail={() => toggles++} selected={null} />, root));
+    await click(root.querySelector('[aria-label="Minimize the session list"]'));
+    expect(toggles).toBe(2);
   });
 });

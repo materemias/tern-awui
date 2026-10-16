@@ -24,7 +24,7 @@ The screenshots show invented sessions; `bun docs/screenshots.ts` regenerates th
 - **Rewind and side questions.** Copy or rewind to an earlier prompt, ask a quick `/btw` question without touching the session, and browse the session's saved btw history with bare `/btw`.
 - **Subagents.** See running subagents and background jobs, and read any subagent's conversation.
 - **Shells and files too.** Plain terminals show their screen with a key bar (Esc, ^C, arrows, Tab), and Tern notes and opened files are readable.
-- **Phone and desktop.** On a phone it is one column; in a desktop browser the session list stays in a sidebar next to the open session.
+- **Phone and desktop.** On a phone it is one column; in a desktop browser the session list stays in a sidebar next to the open session, or shrinks to a rail of status-colored session icons (Ctrl+\).
 
 ## How it differs from Tern
 
