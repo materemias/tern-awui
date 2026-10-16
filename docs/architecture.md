@@ -70,6 +70,8 @@ The bell in the list header turns on Web Push for that device (service worker `s
 
 One notification per session (a newer one replaces it); tapping opens that session. A fresh bridge connection (restarted omp) never notifies. Payloads are end-to-end encrypted, but they travel through the browser's push service (FCM for Chrome), which also sees the VAPID subject: `mailto:` the first allowed login when it is an address, else a placeholder (`TERN_AWUI_VAPID_SUBJECT` overrides). Subscriptions the push service reports as gone (404/410) are dropped.
 
+A device that chose *on* repeats the load-time check whenever the app returns to the foreground or the network comes back, because an installed app can stay open in the background for days while the server prunes or loses its subscription. A failed recheck keeps the bell on and tries again next time. A toggle made during a recheck wins. When the browser replaces a subscription on its own (`pushsubscriptionchange`), the service worker registers the new one, so this works with the app closed.
+
 ## Requirements
 
 On every OS: [Bun](https://bun.sh) (1.4 tested), Tern with its `tern` CLI on `PATH`, omp (`omp` on `PATH`), and Tailscale logged in with MagicDNS and HTTPS certificates enabled for the tailnet (Tailscale Serve needs both). git is optional: without it projects group by folder and no branch shows. Building needs nothing beyond Bun (see [Build](#build)).

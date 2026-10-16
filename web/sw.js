@@ -24,6 +24,32 @@ self.addEventListener("push", (e) => {
   );
 });
 
+// The browser replaced or expired the subscription, possibly while the app is closed: register
+// the new one so pushes keep arriving without the app being opened first.
+self.addEventListener("pushsubscriptionchange", (e) => {
+  const post = (path, sub) =>
+    fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-tern-mobile": "1" },
+      body: JSON.stringify(sub.toJSON ? sub.toJSON() : sub),
+    });
+  e.waitUntil(
+    (async () => {
+      const old = e.oldSubscription;
+      const sub =
+        e.newSubscription ||
+        (await self.registration.pushManager.subscribe(
+          old?.options ?? {
+            userVisibleOnly: true,
+            applicationServerKey: (await (await fetch("/api/push/key")).json()).key,
+          },
+        ));
+      await post("/api/push/subscribe", sub);
+      if (old && old.endpoint !== sub.endpoint) await post("/api/push/unsubscribe", old).catch(() => {});
+    })(),
+  );
+});
+
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
   const url = e.notification.data?.url || "/";

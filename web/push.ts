@@ -1,5 +1,5 @@
 // Push notifications: the bell's state and its toggle, against the service worker's push manager.
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { post } from "./api";
 import { vapidBytes } from "./lib";
 
@@ -44,35 +44,69 @@ function workerReady(): Promise<ServiceWorkerRegistration> {
 /** Push notifications for finished and blocked sessions; on/off per device. */
 export function usePush(): [PushState, () => void] {
   const [state, setState] = useState<PushState>("pending");
+  /** Bumped by each check and toggle; a result whose number is stale is dropped. */
+  const op = useRef(0);
+  const toggling = useRef(false);
+  /** The running check; a toggle waits for it so the two never change the subscription at once. */
+  const checking = useRef<Promise<void>>(Promise.resolve());
   const offState = (): PushState => (Notification.permission === "denied" ? "denied" : "off");
   useEffect(() => {
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return setState("unsupported");
-    void (async () => {
+    /**
+     * Re-registers this device when it was turned on here. Runs at start, whenever the app comes
+     * back to the foreground and when the network returns: the browser can drop a subscription
+     * (app update, storage cleanup, key rotation) and the server prunes ones its push service
+     * reports gone, while an installed app may stay open in the background for days.
+     */
+    async function sync() {
+      const mine = ++op.current;
       try {
         const reg = await workerReady();
         const sub = await reg.pushManager.getSubscription();
-        // Turned on here before: keep it on. The browser can drop a subscription (app update,
-        // storage cleanup) while the permission stays granted, so make a new one silently.
         const choice = localStorage.getItem(PUSH_WANTED_KEY);
         const wanted = choice === "on" || (sub !== null && choice === null);
-        if (!wanted || Notification.permission !== "granted") return setState(offState());
+        if (!wanted || Notification.permission !== "granted") {
+          if (mine === op.current) setState(offState());
+          return;
+        }
+        // A toggle since this check began owns the subscription now.
+        if (mine !== op.current) return;
         const now = await ensureSubscription(reg);
-        // The server may have lost or pruned it: on only once it has it again.
         const err = await post("/api/push/subscribe", now.toJSON());
         if (err) throw new Error(err);
+        // A toggle since this check began has the final say, including the remembered choice.
+        if (mine !== op.current) return;
         localStorage.setItem(PUSH_WANTED_KEY, "on");
         setState("on");
       } catch {
-        // Any failure leaves the bell tappable, so a tap can retry.
-        setState(offState());
+        // A failed recheck does not undo a confirmed subscription; the next one retries. Before any
+        // confirmation the bell stays tappable, so a tap can retry too.
+        if (mine === op.current) setState((s) => (s === "on" ? s : offState()));
       }
-    })();
+    }
+    const check = () => {
+      if (!toggling.current) checking.current = sync();
+    };
+    const onVisible = () => document.visibilityState === "visible" && check();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", check);
+    check();
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", check);
+    };
   }, []);
   async function toggle() {
     if (state === "unsupported" || state === "pending") return;
     const wasOn = state === "on";
+    // A check already running started before this choice; its result is stale.
+    op.current++;
+    toggling.current = true;
     setState("pending");
     try {
+      // A check that already passed its last staleness test may still subscribe; turning off must
+      // run after it, or it would leave that new subscription live.
+      await checking.current;
       const reg = await workerReady();
       if (wasOn) {
         localStorage.setItem(PUSH_WANTED_KEY, "off");
@@ -93,6 +127,8 @@ export function usePush(): [PushState, () => void] {
       alert(`Notifications failed: ${e}`);
       // Turning off already cleared the choice; the server drops a dead subscription on its own.
       setState(wasOn ? "off" : offState());
+    } finally {
+      toggling.current = false;
     }
   }
   return [state, toggle];

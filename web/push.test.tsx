@@ -187,6 +187,64 @@ test("remembered on silently renews a browser-dropped subscription", async () =>
   expect(requestPermission).not.toHaveBeenCalled();
 });
 
+test("returning to the foreground or the network re-registers a remembered device; a failed recheck stays on", async () => {
+  const sub = existing();
+  await mount();
+  expectState("on");
+  // The server pruned it while the app sat in the background.
+  await act(async () => {
+    document.dispatchEvent(new Event("visibilitychange"));
+    await settle(40);
+  });
+  expectState("on");
+  expect(net.to("/api/push/subscribe")).toEqual([sub.toJSON(), sub.toJSON()]);
+  net.reply = (call) => call.url === "/api/push/subscribe" ? Response.json({ error: "offline" }, { status: 503 }) : reply(call.url);
+  await act(async () => {
+    window.dispatchEvent(new Event("online"));
+    await settle(40);
+  });
+  expectState("on");
+  expect(net.to("/api/push/subscribe")).toHaveLength(3);
+  expect(requestPermission).not.toHaveBeenCalled();
+});
+
+test("a failed start is retried when the network returns", async () => {
+  existing();
+  localStorage.setItem(CHOICE, "on");
+  net.reply = (call) => call.url === "/api/push/subscribe" ? Response.json({ error: "offline" }, { status: 503 }) : reply(call.url);
+  await mount();
+  expectState("off");
+  net.reply = (call) => reply(call.url);
+  await act(async () => {
+    window.dispatchEvent(new Event("online"));
+    await settle(40);
+  });
+  expectState("on");
+});
+
+test.each(["/api/push/key", "/api/push/subscribe"])("turning off during a recheck held at %s leaves browser and server unsubscribed", async (held) => {
+  existing();
+  await mount();
+  const gate = Promise.withResolvers<void>();
+  net.reply = async (call) => {
+    if (call.url === held) await gate.promise;
+    return reply(call.url);
+  };
+  await act(async () => {
+    document.dispatchEvent(new Event("visibilitychange"));
+    await settle(40);
+  });
+  await click();
+  // Turning off waits for the recheck rather than racing it.
+  expectState("pending");
+  gate.resolve();
+  await flush();
+  expectState("off");
+  expect(localStorage.getItem(CHOICE)).toBe("off");
+  expect(manager.current).toBeNull();
+  expect(net.to("/api/push/unsubscribe")).toHaveLength(1);
+});
+
 test.each([
   ["missing", null],
   ["different length", new Uint8Array([1, 2]).buffer],

@@ -9,6 +9,7 @@
 - README install: a copy-paste prompt to have a coding agent do the install, with the manual steps as fallback.
 - README/docs: macOS is tested (install, launchd service, `tailscale serve`, omp extension on macOS 26, Apple Silicon).
 - Attach button in the composer of omp sessions: it opens the phone's picker (camera, photos, files) and adds the chosen images to the same tray as pasted ones (up to 8, large or unusual formats re-encoded to JPEG). Before this, images could only be pasted, since mobile browsers don't drag and drop.
+- Notifications stay on more reliably. A device that turned them on re-registers with the server every time the app comes back to the foreground or the network returns, not only when the app loads. Before this, an app left open in the background stayed unregistered once the server had dropped its subscription. A failed recheck no longer shows the bell as off. The service worker also registers a subscription the browser replaced by itself (`pushsubscriptionchange`), even when the app is closed.
 
 ## 0.2.0 (2026-10-13)
 
