@@ -61,7 +61,8 @@ beforeEach(() => {
   };
 });
 afterEach(() => {
-  render(null, root);
+  // act: the unmount's effect cleanups (revoking previews) run here, not in the next test.
+  act(() => render(null, root));
   root.remove();
   for (const restore of restores.splice(0).reverse()) restore();
   jest.useRealTimers();
@@ -332,6 +333,14 @@ describe("pasted images", () => {
     expect(calls("submit")).toEqual([{ text: "", images: [{ data: btoa("two"), mimeType: "image/png" }], followUp: false }]);
     expect(revoked).toEqual(["blob:composer-1", "blob:composer-2"]);
     expect(root.querySelector(".pasted")).toBeNull();
+  });
+
+  test("leaving the session revokes the previews of images never sent", async () => {
+    await show();
+    await paste([image("one"), image("two")]);
+    expect(revoked).toEqual([]);
+    await act(() => render(null, root));
+    expect(revoked).toEqual(["blob:composer-1", "blob:composer-2"]);
   });
 
   test("plain text and non-image files keep the browser's default paste behavior", async () => {

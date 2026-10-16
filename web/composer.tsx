@@ -79,6 +79,10 @@ export function Composer({
   const [sending, setSending] = useState(false);
   /** Images pasted into the prompt; they go out with the next send. */
   const [pasted, setPasted] = useState<PastedImage[]>([]);
+  const pastedRef = useRef(pasted);
+  pastedRef.current = pasted;
+  // Leaving the session with images still attached: their previews hold the image bytes.
+  useEffect(() => () => { for (const p of pastedRef.current) URL.revokeObjectURL(p.url); }, []);
   // Shells (no agent) open with the key bar shown: fzf and history need the arrows and Enter.
   const [keysOpen, setKeysOpen] = useState<boolean | null>(null);
   const [sheet, setSheet] = useState(false);
