@@ -47,8 +47,11 @@ export function usePush(): [PushState, () => void] {
   /** Bumped by each check and toggle; a result whose number is stale is dropped. */
   const op = useRef(0);
   const toggling = useRef(false);
-  /** The running check; a toggle waits for it so the two never change the subscription at once. */
-  const checking = useRef<Promise<void>>(Promise.resolve());
+  /**
+   * The one running check, or null. Checks never overlap, so a toggle that waits for it waits for
+   * every subscription change a check can still make.
+   */
+  const checking = useRef<Promise<void> | null>(null);
   const offState = (): PushState => (Notification.permission === "denied" ? "denied" : "off");
   useEffect(() => {
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return setState("unsupported");
@@ -85,7 +88,10 @@ export function usePush(): [PushState, () => void] {
       }
     }
     const check = () => {
-      if (!toggling.current) checking.current = sync();
+      if (toggling.current || checking.current) return;
+      checking.current = sync().finally(() => {
+        checking.current = null;
+      });
     };
     const onVisible = () => document.visibilityState === "visible" && check();
     document.addEventListener("visibilitychange", onVisible);

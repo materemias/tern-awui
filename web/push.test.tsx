@@ -226,14 +226,17 @@ test.each(["/api/push/key", "/api/push/subscribe"])("turning off during a rechec
   existing();
   await mount();
   const gate = Promise.withResolvers<void>();
+  let holds = 1;
   net.reply = async (call) => {
-    if (call.url === held) await gate.promise;
+    if (call.url === held && holds-- > 0) await gate.promise;
     return reply(call.url);
   };
-  await act(async () => {
-    document.dispatchEvent(new Event("visibilitychange"));
-    await settle(40);
-  });
+  // A second trigger while the first check is held must not start a check off waits for in vain.
+  for (const [target, type] of [[document, "visibilitychange"], [window, "online"]] as const)
+    await act(async () => {
+      target.dispatchEvent(new Event(type));
+      await settle(40);
+    });
   await click();
   // Turning off waits for the recheck rather than racing it.
   expectState("pending");
