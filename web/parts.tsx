@@ -105,8 +105,8 @@ export function UserMsg({
     <div class={`msg user${open ? " acts-open" : ""}`} onClick={() => setOpen(!open)}>
       <span class="user-mark">›</span>
       <span class="user-text">
-        {entry.text}
         {entry.images.length > 0 && <Thumbs images={entry.images} />}
+        {entry.text}
       </span>
       <div class="user-acts" onClick={(ev) => ev.stopPropagation()}>
         <span class="muted">{clock(entry.ts)}</span>

@@ -216,7 +216,10 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .role { font-weight: 600; }
 
 .thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-.thumb { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); background: var(--raise); }
+/* Like Tern: the whole image at its own aspect ratio, capped in height, never upscaled or cropped. */
+.thumb { display: block; width: auto; height: auto; max-width: min(100%, 480px); max-height: 180px; object-fit: contain; border-radius: 8px; border: 1px solid var(--line); background: var(--raise); }
+/* In a prompt the images come first, as Tern draws them, then the text. */
+.user-text > .thumbs:first-child { margin: 0 0 8px; }
 /* Opaque, in the app's own colour: a see-through backdrop let the chat show through the photo. */
 .lightbox { position: fixed; inset: 0; z-index: 20; background: var(--bg); display: grid; place-items: center; padding: 12px; }
 .lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; }

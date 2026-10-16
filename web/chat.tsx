@@ -337,8 +337,8 @@ export function Chat({ entries, block, rewind, readOnly = false }: { entries: Ch
             <div key={n} class="msg user sub-prompt">
               <span class="user-mark">›</span>
               <div class="user-text">
-                <Markdown class="md" text={openText(e.text)} />
                 {e.images.length > 0 && <Thumbs images={e.images} />}
+                <Markdown class="md" text={openText(e.text)} />
               </div>
             </div>
           ) : (
