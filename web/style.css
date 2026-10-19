@@ -181,6 +181,19 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .working { color: var(--working); font-size: 12px; animation: blink 1.6s ease-in-out infinite; }
 @keyframes blink { 50% { opacity: .4; } }
 .term { margin: 0; font: 11.5px/1.35 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Syntax colors (highlight.js classes) for opened files and their fenced code. */
+.hljs-comment, .hljs-quote { color: #7d8590; font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-doctag, .hljs-meta .hljs-keyword, .hljs-template-tag { color: #ff7b72; }
+.hljs-string, .hljs-regexp, .hljs-meta .hljs-string, .hljs-addition { color: #a5d6ff; }
+.hljs-number, .hljs-literal, .hljs-symbol, .hljs-bullet, .hljs-variable.constant_ { color: #79c0ff; }
+.hljs-title, .hljs-title.function_, .hljs-section { color: #d2a8ff; }
+.hljs-title.class_, .hljs-type, .hljs-built_in, .hljs-selector-class, .hljs-selector-id { color: #ffa657; }
+.hljs-attr, .hljs-attribute, .hljs-property, .hljs-params, .hljs-variable, .hljs-template-variable { color: #79c0ff; }
+.hljs-name, .hljs-tag, .hljs-selector-attr, .hljs-selector-pseudo { color: #7ee787; }
+.hljs-meta, .hljs-link { color: #8b949e; }
+.hljs-deletion { color: #ffa198; }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }
 
 .composer-wrap { padding: 12px 10px 10px; background: var(--bg); }
 .keys { display: flex; gap: 6px; padding: 0 0 8px; overflow-x: auto; scrollbar-width: none; }

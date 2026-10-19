@@ -7,6 +7,7 @@ import { drawCharts } from "./charts";
 import { post, type AdvisorNote, type Ask, type ChatEntry, type Img, type TodoPhase, type ToolCall } from "./api";
 import { askAnswers, askReady, clock, duration, langOf, parseAdvisorNote, prettyModel, type AskPick } from "./lib";
 import { renderMarkdown } from "./markdown";
+import { highlightFences } from "./highlight";
 import { buzz, Thumbs, Todo, UserMsg } from "./parts";
 import { isLinkable, lengthOf, linkedMarkdown, openText, parse, stretches, withOpen, writeOpen, type Segment, type Stretch } from "./stretch";
 
@@ -44,11 +45,14 @@ export function Markdown({
   text,
   class: cls,
   imageSources,
+  highlight,
   onClick,
 }: {
   text: string;
   class: string;
   imageSources?: Record<string, string>;
+  /** Colors fenced code by its language (opened files; chat stays plain). */
+  highlight?: boolean;
   onClick?: (e: MouseEvent) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -58,6 +62,7 @@ export function Markdown({
     if (!ref.current) return;
     drawCharts(ref.current);
     void drawMermaid(ref.current);
+    if (highlight) void highlightFences(ref.current);
   }, [html]);
   return <div ref={ref} class={cls} lang={lang} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />;
 }

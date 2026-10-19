@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Releases: pushing a `vX.Y.Z` tag publishes a GitHub release with that version's section of this changelog as its notes (`.github/workflows/release.yml`). 0.2.0 and 0.3.0 have releases too.
+- Opened files are syntax highlighted by their extension, as are fenced code blocks in opened markdown files (highlight.js, loaded on first use). Files over 256 KB stay plain.
 
 ## 0.3.0 (2026-10-16)
 

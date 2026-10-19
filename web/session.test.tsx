@@ -103,6 +103,29 @@ test("a note has no composer and shows loading, markdown, plain text, clipping a
   expect(root.querySelector(".empty")!.textContent).toBe("The file is gone.");
 });
 
+/** Lets the highlighter's lazy import resolve and its result render. */
+const highlighted = () => act(() => new Promise<void>((r) => setTimeout(r, 50)));
+
+test("an opened file is colored by its extension, as are fences in an opened markdown file", async () => {
+  await open(item({ agent: null, live: null, status: null, doc: "/w/src/app.ts" }));
+  await emit("doc", { text: "const a = 1; // <x>", markdown: false, missing: false, clipped: false });
+  await highlighted();
+  expect(root.querySelector("pre.term .hljs-keyword")!.textContent).toBe("const");
+  expect(root.querySelector("pre.term .hljs-comment")!.textContent).toBe("// <x>");
+  expect(root.querySelector("pre.term")!.textContent).toBe("const a = 1; // <x>");
+  // An unknown extension stays plain.
+  await emit("state", state([item({ agent: null, live: null, status: null, doc: "/w/notes.xyz" })]));
+  await emit("doc", { text: "const b", markdown: false, missing: false, clipped: false });
+  await highlighted();
+  expect(root.querySelector("pre.term")!.textContent).toBe("const b");
+  expect(root.querySelector("pre.term span")).toBeNull();
+  await emit("doc", { text: "```py\ndef f(): pass\n```\n\n```nolang\ndef g\n```", markdown: true, missing: false, clipped: false });
+  await highlighted();
+  const [py, unknown] = root.querySelectorAll(".doc pre code");
+  expect(py.querySelector(".hljs-keyword")!.textContent).toBe("def");
+  expect(unknown.querySelector("span")).toBeNull();
+});
+
 test("shell screen supports plain and sanitized colored capture", async () => {
   await open(item({ agent: null, live: null, status: null }));
   await emit("screen", { text: "prompt $", html: false });

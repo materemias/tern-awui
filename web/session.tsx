@@ -1,5 +1,6 @@
 // An open session (chat, raw screen or note, with the composer) and its subagent screens.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { highlightFile } from "./highlight";
 import { post } from "./api";
 import { age, backStep, can, type Route } from "./lib";
 import { Chat, Markdown, StretchContext, type StretchSync } from "./chat";
@@ -124,9 +125,9 @@ export function Session({ block }: { block: string }) {
             doc.missing ? (
               <div class="empty">The file is gone.</div>
             ) : doc.markdown ? (
-              <Markdown class="msg md doc" text={doc.text} />
+              <Markdown class="msg md doc" text={doc.text} highlight />
             ) : (
-              <pre class="term">{doc.text}</pre>
+              <FileText text={doc.text} path={item.doc} />
             )
           ) : (
             <div class="empty">Loading…</div>
@@ -171,6 +172,18 @@ export function Session({ block }: { block: string }) {
       )}
     </div>
   );
+}
+
+/** A plain file, colored by its extension once the highlighter loads; plain until then. */
+function FileText({ text, path }: { text: string; path: string }) {
+  const [colored, setColored] = useState<{ text: string; path: string; html: string } | null>(null);
+  useEffect(() => {
+    let current = true;
+    void highlightFile(text, path).then((html) => current && setColored(html === null ? null : { text, path, html }));
+    return () => void (current = false);
+  }, [text, path]);
+  if (colored?.text === text && colored.path === path) return <pre class="term hljs" dangerouslySetInnerHTML={{ __html: colored.html }} />;
+  return <pre class="term">{text}</pre>;
 }
 
 /** A session's subagent list, or one subagent's chat; both read-only. */
