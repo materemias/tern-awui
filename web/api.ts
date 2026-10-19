@@ -78,6 +78,8 @@ export type State = {
   /** Unseen updates across sessions. */
   badge: number;
   at: number;
+  /** The server's dist/ build id; a page from another build reloads. */
+  app: string;
   /** The extension file omp loads (`<omp dir>/extensions/tern-mobile.ts`) against this checkout. */
   extension: Install;
 };

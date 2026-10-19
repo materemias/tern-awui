@@ -5,6 +5,7 @@
 - Releases: pushing a `vX.Y.Z` tag publishes a GitHub release with that version's section of this changelog as its notes (`.github/workflows/release.yml`). 0.2.0 and 0.3.0 have releases too.
 - Opened files are syntax highlighted by their extension, as are fenced code blocks in opened markdown files (highlight.js, loaded on first use). Files over 256 KB stay plain.
 - A session's chat has ↑ and ↓ buttons floating over its bottom right corner: ↑ glides to the previous prompt, ↓ to the next one, or to the end of the conversation after the last prompt. Quick repeated taps step one prompt each. With reduced motion on, they jump.
+- Open pages reload by themselves after `bun run build`: each build has an id (a hash of `dist/`'s files), the server sends the current one and a page from another build reloads. A page whose composer holds unsent text or images waits until it is empty. The service needs no restart for app-only changes.
 
 ## 0.3.0 (2026-10-16)
 

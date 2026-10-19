@@ -184,6 +184,7 @@ export function state(items: Item[], over: Partial<State> = {}): State {
     roles: [],
     badge: 0,
     at: 0,
+    app: "",
     extension: { status: "ok", path: "/x", target: "", repo: "/r", windows: false },
     ...over,
   };

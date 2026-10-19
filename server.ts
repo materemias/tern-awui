@@ -7,7 +7,7 @@
 // (`Tailscale-User-Login`, checked against TERN_AWUI_ALLOW) is the gate.
 
 import { Database } from "bun:sqlite";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync, statSync, watch, type FSWatcher } from "node:fs";
@@ -422,6 +422,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     /** Unseen updates across sessions: the app icon's badge. */
     badge: number;
     at: number;
+    /** dist/'s build id (build.ts); a page built from another one reloads. "" when unbuilt. */
+    app: string;
     /** The extension as installed for omp; the phone shows a banner unless `ok`. */
     extension: {
       status: InstallStatus;
@@ -572,12 +574,18 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     const activity = (i: Item) => i.since;
     const projects = [...groups].map(([name, items]) => ({ name, items: items.sort((x, y) => activity(y) - activity(x)) }));
     projects.sort((x, y) => activity(y.items[0]) - activity(x.items[0]));
+    // dist/'s build id: "" until `bun run build` has run.
+    let app = "";
+    try {
+      app = readFileSync(join(DIST, "build-id"), "utf8").trim();
+    } catch {}
     return {
       projects,
       counts,
       roles: settings.roles,
       badge: unseen.size,
       at: Date.now(),
+      app,
       extension: { ...extension.install(), path: INSTALLED_EXTENSION, repo: REPO, windows: process.platform === "win32" },
     };
   }
@@ -654,6 +662,13 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   try {
     historyWatcher = watch(dirname(HISTORY_DB), (_e, f) => f?.startsWith("history.db") && invalidateState());
     historyWatcher.on("error", () => {});
+  } catch {}
+  // `bun run build` swaps dist/ in with a rename: open pages learn the new id and reload.
+  let distWatcher: FSWatcher | null = null;
+  try {
+    const distName = basename(resolve(DIST));
+    distWatcher = watch(dirname(resolve(DIST)), (_e, f) => f === distName && invalidateState());
+    distWatcher.on("error", () => {});
   } catch {}
 
   async function findItem(block: string): Promise<Item | undefined> {
@@ -854,7 +869,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
 
           const step = async () => {
             const s = await getState();
-            const key = JSON.stringify([s.projects, s.counts, s.roles, s.extension, s.badge]);
+            const key = JSON.stringify([s.projects, s.counts, s.roles, s.extension, s.badge, s.app]);
             if (key !== lastState) {
               lastState = key;
               send("state", s);
@@ -1258,6 +1273,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     for (const timer of doneTimers.values()) clearTimeout(timer);
     ternEvents?.kill();
     historyWatcher?.close();
+    distWatcher?.close();
     for (const finish of [...openStreams]) finish();
     await server?.stop(true);
     clearTimeout(stateTimer ?? undefined);

@@ -127,6 +127,8 @@ bun run build && TERN_AWUI_DEV=1 TERN_AWUI_PORT=4381 bun server.ts
 
 Build output is prepared in a temporary sibling directory. Compilation or missing-asset failures leave the previous `dist/` intact; replacement happens only after the new files are ready.
 
+Each build gets an id, a hash of its files: `dist/build-id`, also baked into the bundle. Rebuilding unchanged sources keeps the id. The server serves `dist/` from disk, so a rebuild needs no restart. It watches for the new `dist/` and sends its id with the list (`state.app`). An open page built from another id reloads itself, once its composer holds no unsent text or images.
+
 `bun run assets` (`bun assets.ts`) regenerates them after changing the icon or updating the font. It needs ImageMagick's `magick`, `pyftsubset` (fonttools with brotli) and the font at `/usr/share/fonts/TTF/SymbolsNerdFont-Regular.ttf` or `TERN_AWUI_SYMBOLS_FONT`. If `optipng` is installed, it and `bun docs/screenshots.ts` shrink the PNGs losslessly (`-o7 -strip all`); without it they write unoptimized PNGs.
 
 ## Tests

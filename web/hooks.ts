@@ -9,6 +9,26 @@ function setBadge(count: number) {
   void (count > 0 ? navigator.setAppBadge(count) : navigator.clearAppBadge()).catch(() => {});
 }
 
+declare const __TERN_AWUI_BUILD__: string | undefined;
+/** The build this page runs (build.ts); "" outside a build (tests), which never reloads. */
+const BUILD = typeof __TERN_AWUI_BUILD__ === "string" ? __TERN_AWUI_BUILD__ : "";
+let reloading: number | undefined;
+/**
+ * The server serves another build (`bun run build` ran): reload into it, once the composer holds
+ * no unsent text or images, so nothing typed is lost.
+ */
+function reloadInto(build: string) {
+  if (!BUILD || !build || build === BUILD || reloading !== undefined) return;
+  const tryReload = () => {
+    const typing = [...document.querySelectorAll("textarea")].some((t) => t.value.trim()) || document.querySelector(".pasted-item");
+    if (typing) return;
+    clearInterval(reloading);
+    location.reload();
+  };
+  reloading = window.setInterval(tryReload, 2000);
+  tryReload();
+}
+
 export type Draft = { live: boolean; text: string };
 export type View = "chat" | "screen" | "subagents";
 
@@ -142,6 +162,7 @@ export function useStream(block: string | null, view: View, sub: string | null =
         const s: State = JSON.parse(e.data);
         setState(s);
         setBadge(s.badge);
+        reloadInto(s.app);
       });
       src.addEventListener("chat", (e) => {
         setChat(JSON.parse(e.data)?.entries ?? []);
