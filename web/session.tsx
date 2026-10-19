@@ -47,6 +47,7 @@ export function Session({ block }: { block: string }) {
   const isOmp = !!item?.agent;
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
+  const glide = useRef<Glide | null>(null);
   const now = useNow(5000);
 
   useLayoutEffect(() => {
@@ -106,58 +107,77 @@ export function Session({ block }: { block: string }) {
         )}
       </header>
       {item && state && <ExtensionNotice item={item} install={state.extension} />}
-      <div
-        class="scroll"
-        ref={scroller}
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-        }}
-      >
-        {isOmp && view === "screen" && (
-          <button class="raw-note" onClick={() => setView("chat")}>
-            Raw screen · back to chat
-          </button>
-        )}
-        {state && !item && <div class="empty">This block is gone.</div>}
-        {item?.doc ? (
-          doc ? (
-            doc.missing ? (
-              <div class="empty">The file is gone.</div>
-            ) : doc.markdown ? (
-              <Markdown class="msg md doc" text={doc.text} highlight />
+      <div class="scroll-wrap">
+        <div
+          class="scroll"
+          ref={scroller}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            // Mid-glide the position says nothing about following: jumpTurn decided that.
+            if (gliding(glide.current, el)) return;
+            glide.current = null;
+            pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+          }}
+        >
+          {isOmp && view === "screen" && (
+            <button class="raw-note" onClick={() => setView("chat")}>
+              Raw screen · back to chat
+            </button>
+          )}
+          {state && !item && <div class="empty">This block is gone.</div>}
+          {item?.doc ? (
+            doc ? (
+              doc.missing ? (
+                <div class="empty">The file is gone.</div>
+              ) : doc.markdown ? (
+                <Markdown class="msg md doc" text={doc.text} highlight />
+              ) : (
+                <FileText text={doc.text} path={item.doc} />
+              )
             ) : (
-              <FileText text={doc.text} path={item.doc} />
+              <div class="empty">Loading…</div>
+            )
+          ) : chat && view === "chat" ? (
+            <>
+              <StretchContext.Provider value={stretchSync}>
+                <Chat entries={chat} block={block} rewind={can(item?.live, "rewind")} />
+              </StretchContext.Provider>
+              {live && <Markdown class="msg assistant md live" text={liveText(live)} />}
+              {queued.map((q, i) => (
+                <div key={i} class="queued" title={q.followUp ? "Sent once the running turn ends" : "Steers the running turn"}>
+                  <span class="queued-mark">{q.followUp ? "→" : "↳"}</span>
+                  <span class="queued-text">{q.text}</span>
+                </div>
+              ))}
+            </>
+          ) : screen != null ? (
+            screen.html ? (
+              // Tern's colored capture: <pre> and styled <span>s; scripts and links are stripped.
+              <div class="term" dangerouslySetInnerHTML={{ __html: screenHtml(screen.text) }} />
+            ) : (
+              <pre class="term">{screen.text}</pre>
             )
           ) : (
             <div class="empty">Loading…</div>
-          )
-        ) : chat && view === "chat" ? (
-          <>
-            <StretchContext.Provider value={stretchSync}>
-              <Chat entries={chat} block={block} rewind={can(item?.live, "rewind")} />
-            </StretchContext.Provider>
-            {live && <Markdown class="msg assistant md live" text={liveText(live)} />}
-            {queued.map((q, i) => (
-              <div key={i} class="queued" title={q.followUp ? "Sent once the running turn ends" : "Steers the running turn"}>
-                <span class="queued-mark">{q.followUp ? "→" : "↳"}</span>
-                <span class="queued-text">{q.text}</span>
-              </div>
-            ))}
-          </>
-        ) : screen != null ? (
-          screen.html ? (
-            // Tern's colored capture: <pre> and styled <span>s; scripts and links are stripped.
-            <div class="term" dangerouslySetInnerHTML={{ __html: screenHtml(screen.text) }} />
-          ) : (
-            <pre class="term">{screen.text}</pre>
-          )
-        ) : (
-          <div class="empty">Loading…</div>
+          )}
+          {doc?.clipped && <div class="muted small">Showing the first 512 KB.</div>}
+          {working && <div class="working">working · {item ? age(item.since, now) : ""}</div>}
+          {item && <JobsStrip block={block} jobs={item.live?.jobs ?? []} subagents={item.agent?.subagents ?? 0} now={now} />}
+        </div>
+        {!item?.doc && chat && view === "chat" && (
+          <div class="turn-jump">
+            <button title="Previous prompt" aria-label="Previous prompt" onClick={() => jumpTurn(scroller.current, -1, glide, pinned)}>
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M10 15.5v-11M5.5 9 10 4.5 14.5 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+            <button title="Next prompt, else the end" aria-label="Next prompt, else the end" onClick={() => jumpTurn(scroller.current, 1, glide, pinned)}>
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M10 4.5v11M5.5 11 10 15.5 14.5 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+          </div>
         )}
-        {doc?.clipped && <div class="muted small">Showing the first 512 KB.</div>}
-        {working && <div class="working">working · {item ? age(item.since, now) : ""}</div>}
-        {item && <JobsStrip block={block} jobs={item.live?.jobs ?? []} subagents={item.agent?.subagents ?? 0} now={now} />}
       </div>
       {!item?.doc && (
         <Composer
@@ -172,6 +192,35 @@ export function Session({ block }: { block: string }) {
       )}
     </div>
   );
+}
+
+/** Air left above a prompt jumped to. */
+const JUMP_GAP = 8;
+/** A prompt jump under way: where it is headed, and when it started. */
+type Glide = { top: number; at: number };
+/** A glide not arrived after this long counts as over (a hand on the screen stopped it). */
+const GLIDE_MAX_MS = 1500;
+
+function gliding(glide: Glide | null, scroller: HTMLElement): glide is Glide {
+  return !!glide && Math.abs(scroller.scrollTop - glide.top) > 2 && performance.now() - glide.at < GLIDE_MAX_MS;
+}
+
+/**
+ * Glides `scroller` to the previous (`-1`) or next (`1`) prompt above or below the one at its
+ * top; past the last prompt, to the end, and before the first, to the top. Only a glide to the
+ * end keeps following new output: otherwise a live update would snap the glide back down.
+ */
+function jumpTurn(scroller: HTMLElement | null, dir: -1 | 1, glide: { current: Glide | null }, pinned: { current: boolean }) {
+  if (!scroller) return;
+  const max = scroller.scrollHeight - scroller.clientHeight;
+  const base = scroller.getBoundingClientRect().top - scroller.scrollTop;
+  const tops = [...scroller.querySelectorAll<HTMLElement>(".msg.user")].map((el) => Math.min(max, Math.max(0, el.getBoundingClientRect().top - base - JUMP_GAP)));
+  // Repeated taps step on from the pending target: the glide's midpoint would land on the same prompt again.
+  const at = gliding(glide.current, scroller) ? glide.current.top : scroller.scrollTop;
+  const target = dir < 0 ? tops.findLast((t) => t < at - 2) ?? 0 : tops.find((t) => t > at + 2) ?? max;
+  glide.current = { top: target, at: performance.now() };
+  pinned.current = target >= max - 2;
+  scroller.scrollTo({ top: target, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 }
 
 /** A plain file, colored by its extension once the highlighter loads; plain until then. */

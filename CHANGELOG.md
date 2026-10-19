@@ -4,6 +4,7 @@
 
 - Releases: pushing a `vX.Y.Z` tag publishes a GitHub release with that version's section of this changelog as its notes (`.github/workflows/release.yml`). 0.2.0 and 0.3.0 have releases too.
 - Opened files are syntax highlighted by their extension, as are fenced code blocks in opened markdown files (highlight.js, loaded on first use). Files over 256 KB stay plain.
+- A session's chat has ↑ and ↓ buttons floating over its bottom right corner: ↑ glides to the previous prompt, ↓ to the next one, or to the end of the conversation after the last prompt. Quick repeated taps step one prompt each. With reduced motion on, they jump.
 
 ## 0.3.0 (2026-10-16)
 
