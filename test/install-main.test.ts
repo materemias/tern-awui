@@ -126,6 +126,31 @@ describe.skipIf(!POSIX)("main: linux", () => {
     expect(readFileSync(discovery, "utf8")).toBe(other);
   });
 
+  test("uninstall without a port turns off the installed one and removes its discovery", () => {
+    main(deps(["--port", "5123"]));
+    writeFileSync(calls, "");
+    main(deps(["--uninstall"]));
+    expect(recorded().at(-1)).toBe("tailscale serve --https=5123 off");
+    expect(existsSync(path.join(home, ".config", "tern-mobile", "bridge.json"))).toBe(false);
+  });
+
+  test("reinstalling on a new port unpublishes the old one (shown in a dry run too)", () => {
+    main(deps([]));
+    main(deps(["--dry-run", "--port", "5123"]));
+    expect(out.filter((l) => l.startsWith("[dry-run] ")).join("\n")).toContain("serve --https=4380 off");
+    writeFileSync(calls, "");
+    main(deps(["--port", "5123"]));
+    expect(recorded().slice(-2)).toEqual(["tailscale serve --https=4380 off", "tailscale serve --bg --https=5123 http://127.0.0.1:5123"]);
+  });
+
+  test("a relative TERN_AWUI_PROJECTS path resolves against the installer's cwd; a bare command stays", () => {
+    main(deps(["--dry-run"], { TERN_AWUI_PROJECTS: "bin/projects" }));
+    expect(out.join("\n")).toContain(`TERN_AWUI_PROJECTS=${path.resolve("bin/projects")}`);
+    out = [];
+    main(deps(["--dry-run"], { TERN_AWUI_PROJECTS: "list-projects" }));
+    expect(out.join("\n")).toContain("TERN_AWUI_PROJECTS=list-projects");
+  });
+
   test("uninstall keeps an extension link to another checkout", () => {
     main(deps([]));
     const other = path.join(dir, "other-checkout", "omp-extension", "tern-mobile.ts");

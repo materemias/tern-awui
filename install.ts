@@ -25,6 +25,8 @@ export interface PlanInput {
   /** `~/.config/tern-mobile` unless TERN_AWUI_CONFIG. */
   configDir: string;
   port: number;
+  /** The port the current install published (from bridge.json), if any; a different one is unpublished. */
+  installedPort?: number;
   /** Allowed Tailscale logins. Unused when uninstalling. */
   allow: string[];
   /** Further TERN_AWUI_* settings baked into the service (see PASSTHROUGH_ENV). */
@@ -48,14 +50,14 @@ export type Action =
   | { kind: "remove"; path: string; ifContent?: string; keepLinkAwayFrom?: string }
   | { kind: "run"; argv: string[]; cwd?: string; mayFail?: boolean };
 
-export const SERVICE_NAME = "tern-awui";
+const SERVICE_NAME = "tern-awui";
 /** The Linux unit's name before 0.3: installs and uninstalls stop and remove it, so it can't hold the port. */
-export const LEGACY_SERVICE_NAME = "tern-mobile";
-export const LAUNCHD_LABEL = "dev.tern-awui";
-export const TASK_NAME = "tern-awui";
+const LEGACY_SERVICE_NAME = "tern-mobile";
+const LAUNCHD_LABEL = "dev.tern-awui";
+const TASK_NAME = "tern-awui";
 const DESCRIPTION = "tern-awui: phone control surface for Tern panes";
 /** Settings passed through from the installer's environment into the service when set. */
-export const PASSTHROUGH_ENV = [
+const PASSTHROUGH_ENV = [
   "TERN_AWUI_CONFIG",
   "TERN_AWUI_OMP_DIR",
   "TERN_AWUI_NOTES_DIR",
@@ -68,7 +70,7 @@ function pathFor(platform: Platform): typeof path.posix {
 }
 
 /** The service's PATH entries: the folders of tern, omp and bun, then the system defaults. */
-export function servicePath(input: PlanInput): string[] {
+function servicePath(input: PlanInput): string[] {
   const p = pathFor(input.platform);
   const dirs = [input.tern, input.omp, input.bun].map((f) => p.dirname(f));
   if (input.platform === "darwin") dirs.push("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin");
@@ -90,7 +92,7 @@ const sdSpec = (s: string) => s.replaceAll("%", "%%");
 const sdQuote = (s: string) => `"${sdSpec(s).replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 const sdExecArg = (s: string) => sdQuote(s).replaceAll("$", "$$$$");
 
-export function systemdUnit(input: PlanInput): string {
+function systemdUnit(input: PlanInput): string {
   const server = path.posix.join(input.repo, "server.ts");
   const env = [["PATH", servicePath(input).join(":")] as [string, string], ...serviceEnv(input)];
   return [
@@ -111,10 +113,10 @@ export function systemdUnit(input: PlanInput): string {
   ].join("\n");
 }
 
-export const xmlEscape = (s: string) =>
+const xmlEscape = (s: string) =>
   s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
 
-export function launchdPlist(input: PlanInput): string {
+function launchdPlist(input: PlanInput): string {
   const str = (s: string) => `<string>${xmlEscape(s)}</string>`;
   const log = path.posix.join(input.home, "Library", "Logs", "tern-awui.log");
   const env = [["PATH", servicePath(input).join(":")] as [string, string], ...serviceEnv(input)];
@@ -145,7 +147,7 @@ export function launchdPlist(input: PlanInput): string {
 const vbsString = (s: string) => `"${s.replaceAll('"', '""')}"`;
 
 /** Runs bun with no window and restarts it 3 s after it exits, like systemd's Restart= and launchd's KeepAlive. */
-export function windowsLauncher(input: PlanInput): string {
+function windowsLauncher(input: PlanInput): string {
   const server = path.win32.join(input.repo, "server.ts");
   const cmd = `"${input.bun}" "${server}"`;
   return [
@@ -164,7 +166,7 @@ export function windowsLauncher(input: PlanInput): string {
 }
 
 /** Task Scheduler XML: a logon trigger for this user only (no admin needed) and no 72-hour run limit. */
-export function windowsTask(input: PlanInput, launcher: string): string {
+function windowsTask(input: PlanInput, launcher: string): string {
   const user = xmlEscape(input.winUser);
   return [
     '<?xml version="1.0" encoding="UTF-16"?>',
@@ -192,7 +194,7 @@ export function psString(s: string): string {
   return `'${s.replaceAll("'", "''")}'`;
 }
 
-export type OurProcesses = { bun: string; server: string; launcher: string };
+type OurProcesses = { bun: string; server: string; launcher: string };
 
 /**
  * Stops only tern-awui's own processes: bun (by name or our bun path) with our server.ts as an argument, and
@@ -213,7 +215,8 @@ export function windowsStopScript(port: number, ours: OurProcesses, checkConflic
   if (checkConflict) {
     lines.push(
       "if ($mine.Count -gt 0) { Start-Sleep -Seconds 1 }",
-      `$held = @(Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | ForEach-Object { $_.OwningProcess } | Sort-Object -Unique)`,
+      // Only loopback and wildcard listeners: Tailscale serve (kernel mode) holds the port on the 100.x/fd7a: address.
+      `$held = @(Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalAddress -in @('127.0.0.1', '0.0.0.0', '::', '::1') } | ForEach-Object { $_.OwningProcess } | Sort-Object -Unique)`,
       `if ($held.Count -gt 0) { [Console]::Error.WriteLine("Port ${port} is in use by another program (PID $($held -join ', ')); stop it or pick another --port."); exit 1 }`,
     );
   }
@@ -299,15 +302,17 @@ export function plan(input: PlanInput): Action[] {
       { kind: "run", argv: ["schtasks", "/Run", "/TN", TASK_NAME] },
     );
   }
+  if (input.installedPort !== undefined && input.installedPort !== input.port)
+    actions.push({ kind: "run", argv: [input.tailscale, "serve", `--https=${input.installedPort}`, "off"], mayFail: true });
   actions.push(serveOn);
   return actions;
 }
 
-export function quoteArg(a: string): string {
+function quoteArg(a: string): string {
   return /^[\w@%+=:,./\\-]+$/.test(a) ? a : `'${a.replaceAll("'", `'\\''`)}'`;
 }
 
-export function describe(a: Action): string {
+function describe(a: Action): string {
   switch (a.kind) {
     case "write":
       return `write ${a.path}${a.encoding === "utf16le" ? " (UTF-16LE)" : ""}\n${a.content.replace(/\r?\n$/, "").replace(/^/gm, "    ")}`;
@@ -424,6 +429,16 @@ function which(name: string, platform: Platform, PATH: string | undefined, optio
   return found ?? name;
 }
 
+function readInstalledPort(discovery: string, tokenFile: string): number | undefined {
+  try {
+    const d = JSON.parse(readFileSync(discovery, "utf8")) as { endpoint?: string; tokenFile?: string };
+    const port = Number(/^ws:\/\/127\.0\.0\.1:(\d+)\/bridge$/.exec(d.endpoint ?? "")?.[1]);
+    return d.tokenFile === tokenFile && Number.isInteger(port) && port > 0 ? port : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** What `main` reads from the process; injectable so tests can run it against a temp HOME and fake tools. */
 export interface MainDeps {
   argv: string[];
@@ -443,7 +458,11 @@ export function main(deps: MainDeps): void {
   const env = deps.env;
   const home = deps.home;
   const p = pathFor(platform);
-  const port = args.port ?? (env.TERN_AWUI_PORT ? parsePort(env.TERN_AWUI_PORT, "TERN_AWUI_PORT") : 4380);
+  // The port the current install published, if bridge.json is still ours (points at our token file).
+  const configDir = env.TERN_AWUI_CONFIG ? p.resolve(env.TERN_AWUI_CONFIG) : p.join(home, ".config", "tern-mobile");
+  const installedPort = readInstalledPort(p.join(home, ".config", "tern-mobile", "bridge.json"), p.join(configDir, "bridge-token"));
+  const explicit = args.port ?? (env.TERN_AWUI_PORT ? parsePort(env.TERN_AWUI_PORT, "TERN_AWUI_PORT") : undefined);
+  const port = explicit ?? (args.uninstall ? installedPort : undefined) ?? 4380;
   const tailscale = which("tailscale", platform, env.PATH, args.uninstall);
   let tern = "", omp = "", dnsName = "", allow: string[] = [];
   if (!args.uninstall) {
@@ -461,6 +480,8 @@ export function main(deps: MainDeps): void {
   for (const key of ["TERN_AWUI_CONFIG", "TERN_AWUI_OMP_DIR", "TERN_AWUI_NOTES_DIR"]) {
     if (extraEnv[key]) extraEnv[key] = p.resolve(extraEnv[key]);
   }
+  // A path (not a bare command name looked up on PATH) is relative to the installer's cwd.
+  if (extraEnv.TERN_AWUI_PROJECTS && /[/\\]/.test(extraEnv.TERN_AWUI_PROJECTS)) extraEnv.TERN_AWUI_PROJECTS = p.resolve(extraEnv.TERN_AWUI_PROJECTS);
   const actions = plan({
     platform,
     uninstall: args.uninstall,
@@ -471,8 +492,9 @@ export function main(deps: MainDeps): void {
     omp,
     tailscale,
     ompDir: extraEnv.TERN_AWUI_OMP_DIR ?? p.join(home, ".omp", "agent"),
-    configDir: extraEnv.TERN_AWUI_CONFIG ?? p.join(home, ".config", "tern-mobile"),
+    configDir,
     port,
+    installedPort,
     allow,
     extraEnv,
     uid: deps.uid,

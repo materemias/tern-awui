@@ -296,18 +296,18 @@ describe("plan: win32", () => {
 const pwsh = Bun.which("pwsh");
 describe.skipIf(!pwsh)("windowsStopScript under pwsh with fake processes", () => {
   const ours = { bun: "C:\\Users\\Ann\\.bun\\bin\\bun.exe", server: "C:\\Ann's Code\\tern-awui\\server.ts", launcher: "C:\\Users\\Ann\\.config\\tern-mobile\\tern-awui.vbs" };
-  type Proc = { id: number | "$PID"; name: string; cmd: string; exe?: string; port?: number };
+  type Proc = { id: number | "$PID"; name: string; cmd: string; exe?: string; port?: number; addr?: string };
   const run = (procs: Proc[], install: boolean) => {
     const script = windowsStopScript(4380, ours, install);
     const fake = procs
-      .map((p) => `[pscustomobject]@{ ProcessId = ${p.id}; Name = ${psString(p.name)}; ExecutablePath = ${psString(p.exe ?? "")}; CommandLine = ${psString(p.cmd)}; Port = ${p.port ?? 0} }`)
+      .map((p) => `[pscustomobject]@{ ProcessId = ${p.id}; Name = ${psString(p.name)}; ExecutablePath = ${psString(p.exe ?? "")}; CommandLine = ${psString(p.cmd)}; Port = ${p.port ?? 0}; Addr = ${psString(p.addr ?? "0.0.0.0")} }`)
       .join(", ");
     const mocks = [
       `$global:procs = [System.Collections.ArrayList]@(${fake})`,
       "function Get-CimInstance { [CmdletBinding()] param([string]$ClassName) $global:procs.ToArray() }",
       "function Stop-Process { [CmdletBinding()] param([int]$Id, [switch]$Force) Write-Output \"stopped $Id\"; $global:procs.Remove(@($global:procs | Where-Object { $_.ProcessId -eq $Id })[0]) }",
       "function Start-Sleep { [CmdletBinding()] param([int]$Seconds) }",
-      "function Get-NetTCPConnection { [CmdletBinding()] param([int]$LocalPort, [string]$State) $global:procs | Where-Object { $_.Port -eq $LocalPort } | ForEach-Object { [pscustomobject]@{ OwningProcess = $_.ProcessId } } }",
+      "function Get-NetTCPConnection { [CmdletBinding()] param([int]$LocalPort, [string]$State) $global:procs | Where-Object { $_.Port -eq $LocalPort } | ForEach-Object { [pscustomobject]@{ OwningProcess = $_.ProcessId; LocalAddress = $_.Addr } } }",
     ].join("; ");
     const r = spawnSync(pwsh!, ["-NoProfile", "-NonInteractive", "-Command", `${mocks}; ${script}`], { encoding: "utf8" });
     return { code: r.status, stopped: r.stdout.trim().split(/\r?\n/).filter(Boolean).sort(), err: r.stderr };
@@ -334,6 +334,14 @@ describe.skipIf(!pwsh)("windowsStopScript under pwsh with fake processes", () =>
     expect(r.stopped).toEqual(["stopped 10"]);
     expect(r.err).toContain("Port 4380 is in use by another program (PID 20)");
     expect(r.code).toBe(1);
+  });
+
+  test("install ignores Tailscale serve listening on the tailnet address at the same port", () => {
+    const tailscaled: Proc = { id: 30, name: "tailscaled.exe", cmd: "tailscaled.exe", port: 4380, addr: "100.101.102.103" };
+    const tailscaled6: Proc = { id: 31, name: "tailscaled.exe", cmd: "tailscaled.exe", port: 4380, addr: "fd7a:115c:a1e0::1" };
+    const r = run([server, tailscaled, tailscaled6, ...survivors], true);
+    expect(r.stopped).toEqual(["stopped 10"]);
+    expect(r.code).toBe(0);
   });
 
   test("uninstall stops ours and ignores an unrelated listener", () => {

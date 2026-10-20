@@ -14,6 +14,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # Publish only a tag that typechecks, passes the platform suites and builds.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test lib web test/install omp-extension/tern-mobile.test.ts
+      - run: bun build.ts
       - name: Release from CHANGELOG.md
         env:
           GH_TOKEN: ${{ github.token }}
