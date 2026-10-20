@@ -134,7 +134,7 @@ type Completer = {
 /** The part of an omp message this bridge reads. */
 type Message = { role?: string; content?: unknown };
 type Pi = {
-	on(event: "session_start" | "session_shutdown", handler: (event: unknown, ctx: Ctx) => unknown): void;
+	on(event: "session_start" | "session_switch" | "session_shutdown", handler: (event: unknown, ctx: Ctx) => unknown): void;
 	on(
 		event: "tool_execution_start" | "tool_execution_end" | "tool_approval_requested" | "tool_approval_resolved",
 		handler: (event: ToolEvent) => unknown,
@@ -157,7 +157,8 @@ type Pi = {
 	): void;
 };
 type ServerMessage =
-	| { t: "set"; text: string; seq: number }
+	/** `expected`: the draft the phone last saw; refused when the editor moved on since. */
+	| { t: "set"; text: string; expected?: string; seq: number }
 	/** `spec`: provider/id, optionally `:thinking`. */
 	| { t: "model"; spec: string; seq: number }
 	| { t: "models"; seq: number }
@@ -169,7 +170,8 @@ type ServerMessage =
 	| { t: "abort"; seq: number }
 	| { t: "btw"; id: string; text: string; seq: number }
 	/** `followUp`: hold it until the running turn ends (omp's Ctrl+Q), instead of steering. */
-	| { t: "send"; text: string; images: { data: string; mimeType: string }[]; followUp?: boolean; seq: number }
+	/** `expected`: clear the editor afterwards only if it still holds this draft. */
+	| { t: "send"; text: string; images: { data: string; mimeType: string }[]; followUp?: boolean; expected?: string; seq: number }
 	| { t: "watch"; on: boolean }
 	/** Open or close a reply's stretch (omp's stretch.ts): `block` is `<message timestamp>.<content index>`. */
 	| { t: "stretch"; block: string; key: string; open: boolean; seq: number }
@@ -408,8 +410,8 @@ export default function ternMobile(pi: Pi): void {
 		}
 		if (msg.t === "send") {
 			// A phone prompt sent directly: images (the editor can't take pasted ones from here) or a
-			// follow-up. The draft it replaces is cleared.
-			ctx.ui.setEditorText("");
+			// follow-up. Refused without a model so the phone keeps its text.
+			if (!ctx.model) return reply(msg.seq, { error: "no model selected" });
 			const followUp = msg.followUp === true && !ctx.isIdle();
 			if (!ctx.isIdle()) noteQueued(msg.text || "(image)", followUp);
 			pi.sendUserMessage(
@@ -419,6 +421,8 @@ export default function ternMobile(pi: Pi): void {
 				],
 				followUp ? { deliverAs: "followUp" } : undefined,
 			);
+			// The draft it replaces is cleared, unless the desktop typed something newer meanwhile.
+			if (msg.expected === undefined || ctx.ui.getEditorText() === msg.expected) ctx.ui.setEditorText("");
 			return flush(true, msg.seq);
 		}
 		if (msg.t === "abort") {
@@ -448,7 +452,11 @@ export default function ternMobile(pi: Pi): void {
 			reply(msg.seq, { text });
 			return flush(true);
 		}
-		if (msg.t === "set") ctx.ui.setEditorText(msg.text);
+		if (msg.t === "set") {
+			// Never overwrite desktop text the phone hasn't seen.
+			if (typeof msg.expected === "string" && ctx.ui.getEditorText() !== msg.expected) return reply(msg.seq, { error: "draft changed" });
+			ctx.ui.setEditorText(msg.text);
+		}
 		if (msg.t === "model") {
 			// Model ids may hold `/` and `:` themselves (openrouter's `vendor/name:free`).
 			const m = /^([^/]+)\/(.+?)(?::(off|minimal|low|medium|high|xhigh|max))?$/.exec(msg.spec);
@@ -471,7 +479,10 @@ export default function ternMobile(pi: Pi): void {
 			}));
 			return reply(msg.seq, { models });
 		}
-		if (msg.t === "thinking" && thinkingLevels(ctx.model ?? { provider: "", id: "" }).includes(msg.level)) pi.setThinkingLevel(msg.level);
+		if (msg.t === "thinking") {
+			if (!thinkingLevels(ctx.model ?? { provider: "", id: "" }).includes(msg.level)) return reply(msg.seq, { error: "this model has no such thinking level" });
+			pi.setThinkingLevel(msg.level);
+		}
 		if (msg.t === "tier") {
 			const family = ctx.model && tierFamily(ctx.model);
 			if (!family || !pi.setServiceTier || !TIERS[family].includes(msg.tier)) return reply(msg.seq, { error: "this model has no such tier" });
@@ -509,7 +520,7 @@ export default function ternMobile(pi: Pi): void {
 		socket.onerror = () => socket.close();
 	};
 
-	pi.on("session_start", (_event, c) => {
+	const onSession = (_event: unknown, c: Ctx) => {
 		// Subagents run in this process under the same pane; only the session on screen is bridged.
 		if (c.hasUI === false || c.agent?.kind === "sub") return;
 		const first = ctx === null;
@@ -532,7 +543,10 @@ export default function ternMobile(pi: Pi): void {
 			return current;
 		});
 		connect();
-	});
+	};
+	// Older omp emits a second session_start on /new and /resume; current omp emits session_switch.
+	pi.on("session_start", onSession);
+	pi.on("session_switch", onSession);
 	// The phone's Rewind on a prompt: the server submits this command (only command handlers may
 	// move the leaf). omp rewinds past a user prompt and puts its text back in the editor.
 	pi.registerCommand("tern-mobile-rewind", {

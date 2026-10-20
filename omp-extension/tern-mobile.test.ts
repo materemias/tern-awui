@@ -198,7 +198,7 @@ describe("omp extension bridge contract", () => {
 		f.state.sessionId = "new-session"; f.state.text = "/";
 		f.state.idle = true; f.state.pending = false; f.state.jobs = [];
 		f.state.usage = { tokens: 0, contextWindow: 10000, percent: 0 };
-		f.emit("session_start");
+		f.emit("session_switch");
 		expect(await f.bridge.inbox.next()).toMatchObject({
 			sessionId: "new-session", status: "idle", queued: [], jobs: [],
 			context: { tokens: 0, window: 10000, percent: 0 },
@@ -266,8 +266,11 @@ describe("omp extension bridge contract", () => {
 		const f = fixture(); await f.start();
 		expect(await f.bridge.request({ t: "set", text: "phone\ndraft" })).toMatchObject({ t: "state", text: "phone\ndraft" });
 		expect(f.state.text).toBe("phone\ndraft");
+		// The desktop typed since the phone last saw the draft: refused, editor untouched.
+		expect(await f.bridge.request({ t: "set", text: "stale", expected: "phone" })).toMatchObject({ error: "draft changed" });
+		expect(await f.bridge.request({ t: "set", text: "newer", expected: "phone\ndraft" })).toMatchObject({ text: "newer" });
 		f.bridge.connections[0].send("not JSON");
-		expect(await f.bridge.request({ t: "future-command" })).toMatchObject({ t: "state", text: "phone\ndraft" });
+		expect(await f.bridge.request({ t: "future-command" })).toMatchObject({ t: "state", text: "newer" });
 	});
 
 	test("parses model ids containing slash and colon, thinking suffixes, and model failures", async () => {
@@ -298,9 +301,9 @@ describe("omp extension bridge contract", () => {
 	test("thinking refuses unsupported effort without changing current effort", async () => {
 		const f = fixture(); await f.start();
 		expect((await f.bridge.request({ t: "thinking", level: "high" })).thinking).toBe("high");
-		expect((await f.bridge.request({ t: "thinking", level: "nonsense" })).thinking).toBe("high");
+		expect(await f.bridge.request({ t: "thinking", level: "nonsense" })).toMatchObject({ error: "this model has no such thinking level" });
 		f.state.model = { provider: "plain", id: "plain", reasoning: false };
-		expect((await f.bridge.request({ t: "thinking", level: "low" })).levels).toEqual(["off"]);
+		expect(await f.bridge.request({ t: "thinking", level: "low" })).toMatchObject({ error: "this model has no such thinking level" });
 		expect(f.state.thinkingCalls).toEqual(["high"]);
 		expect((await f.bridge.request({ t: "thinking", level: "off" })).thinking).toBe("off");
 	});
@@ -346,6 +349,17 @@ describe("omp extension bridge contract", () => {
 		expect((await f.bridge.request({ t: "sync" })).queued).toEqual([]);
 		f.emit("input", { text: " /help " }); f.state.idle = true; f.emit("input", { text: "ordinary idle input" });
 		expect((await f.bridge.request({ t: "sync" })).queued).toEqual([]);
+	});
+
+	test("send keeps newer desktop text, and refuses without a model before touching the editor", async () => {
+		const f = fixture(); await f.start();
+		f.state.text = "desktop";
+		expect(await f.bridge.request({ t: "send", text: "x", images: [], expected: "phone" })).toMatchObject({ text: "desktop" });
+		expect(await f.bridge.request({ t: "send", text: "y", images: [], expected: "desktop" })).toMatchObject({ text: "" });
+		f.state.text = "draft"; f.state.model = undefined;
+		expect(await f.bridge.request({ t: "send", text: "keep", images: [] })).toMatchObject({ error: "no model selected" });
+		expect(f.state.text).toBe("draft");
+		expect(f.state.sends).toHaveLength(2);
 	});
 
 	test("native interactive queue prefixes and explicit phone follow-ups publish the same clean queue", async () => {
