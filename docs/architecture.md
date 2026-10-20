@@ -60,7 +60,7 @@ The app holds a stream only while it is visible: 10 s after it is hidden (anothe
 - reports its bridge `protocol` and `build` (the sha256 prefix of its own file), so the app can flag a session that loaded another version (see *Extension check*);
 - registers `/tern-mobile-rewind`, which the phone's Rewind submits.
 
-The phone shows a green dot by the model chip while mirroring. Its own edits win for 800 ms over echoes from the desktop. Submitting sets the draft to the final text, waits for omp's acknowledgment, then sends Enter, so slash commands work as typed.
+The phone shows a green dot by the model chip while mirroring. Its own edits win for 800 ms over echoes from the desktop; live keystrokes are last-writer-wins on both sides. A draft write may carry the draft it replaces (`expected`, used by the phone's clear after a handled command); the extension refuses it ("draft changed") when omp's editor holds something else by then. Keystrokes don't carry it: the server's copy lags omp's editor by up to one 100 ms poll, so a guard would refuse the phone's own fast typing. Submitting always sets the draft to the phone's text, waits for omp's acknowledgment, then sends Enter, so slash commands work as typed. An image or follow-up `send` clears omp's editor only when it still holds the draft the server last saw.
 
 omp loads extensions at startup: sessions started before the extension was installed don't mirror until restarted, and sessions started before it changed keep the version they loaded (the app flags them). Without the bridge, the composer types the prompt with `tern send` and the model sheet can only cycle (Ctrl+P).
 
@@ -110,7 +110,7 @@ bun install.ts --uninstall        # [--dry-run]
 
 The allowed login is the device's own Tailscale user (`tailscale status --json`) unless `TERN_AWUI_ALLOW` is set. `TERN_AWUI_PORT` (or `--port`) and any of `TERN_AWUI_CONFIG`, `TERN_AWUI_OMP_DIR`, `TERN_AWUI_NOTES_DIR`, `TERN_AWUI_PROJECTS`, `TERN_AWUI_VAPID_SUBJECT` set when the installer runs are written into the service. `--dry-run` prints every file it would write (with its content) and every command, and changes nothing. `--uninstall` stops and removes the service, the extension link or copy (a link to another checkout's extension stays) and the serve entry; the config dir (tokens, VAPID keys, subscriptions) stays.
 
-Installed services explicitly set `TERN_AWUI_DEV=0`, even if the installing shell enables development mode. Relative config, omp and notes directories are resolved before installation. Uninstall removes bridge discovery only when it still matches this installation; missing optional cleanup commands are reported without stopping the remaining cleanup.
+Installed services explicitly set `TERN_AWUI_DEV=0`, even if the installing shell enables development mode. Relative config, omp and notes directories, and a `TERN_AWUI_PROJECTS` path containing a separator, are resolved before installation. The installed port is read back from `bridge.json` (when it belongs to this config dir): a re-install on another port turns the old `tailscale serve` port off, and `--uninstall` without `--port` or `TERN_AWUI_PORT` uses it. Uninstall removes bridge discovery only when it still matches this installation; missing optional cleanup commands are reported without stopping the remaining cleanup.
 
 **Opening it.** Open the printed URL on the phone, signed in to Tailscale as an allowed login; in Chrome on Android, ⋮ → *Add to Home screen* installs it. Any device of an allowed login on the tailnet gets in, so there is nothing to pair.
 
@@ -184,8 +184,10 @@ This is a remote shell into the desktop.
 - POSTs require an `x-tern-mobile: 1` header, which blocks cross-site form posts. Key names are allowlisted.
 - `/bridge` refuses requests carrying a Tailscale login header (anything proxied from outside) and requires the bridge token (`<config dir>/bridge-token`).
 - `TERN_AWUI_DEV=1` turns off the login check: anyone who can reach the port gets a shell. Use it only on loopback, never behind Tailscale Serve.
-- tern can report errors with exit status 0, so non-WARN stderr counts as failure and is returned to the phone.
+- tern can report errors with exit status 0, so non-WARN stderr counts as failure and is returned to the phone. Typed text goes after `--`, so text like `--help` is typed, not read as tern's flags.
 - Agent markdown goes through DOMPurify. Only `http(s)` and `mailto` links are kept, and raw HTML is shown as text.
+- Responses carry a Content-Security-Policy (`default-src 'self'`, images also `data:`/`blob:`, inline styles allowed for mermaid): images agent markdown points to on other sites are never fetched, so a prompt injection can't leak data through an image URL.
+- Texts sent for a block (prompts, drafts, completions) are capped at 1,000,000 characters; Bun closes bridge frames over 16 MB.
 
 ## Limits
 
