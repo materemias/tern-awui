@@ -69,6 +69,7 @@ describe.skipIf(!POSIX)("main: linux", () => {
     main(deps([], { TERN_AWUI_NOTES_DIR: "/notes" }));
     const u = readFileSync(unit(), "utf8");
     expect(u).toContain("TERN_AWUI_ALLOW=ann@example.com");
+    expect(u).toContain("TERN_AWUI_HOSTS=box.tail1234.ts.net\"");
     expect(u).toContain("TERN_AWUI_PORT=4380");
     expect(u).toContain("TERN_AWUI_NOTES_DIR=/notes");
     expect(u).toContain(`TERN_AWUI_OMP_DIR=${ompDir}`);

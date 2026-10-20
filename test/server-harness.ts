@@ -111,7 +111,7 @@ esac
   /** The server's environment: this sandbox's HOME, fake tern/omp first on PATH, two allowed logins. */
   env(extraEnv: Record<string, string> = {}): Record<string, string> {
     return isolatedEnv(this.home, { PATH: `${this.home}/bin:${process.env.PATH}`, TERN_FAKE_DIR: this.home,
-      TERN_AWUI_ALLOW: ` ${this.login}, second@example.test `, TERN_AWUI_DEV: "0", ...extraEnv });
+      TERN_AWUI_ALLOW: ` ${this.login}, second@example.test `, ...extraEnv });
   }
 
   async start(extraEnv: Record<string, string> = {}) {

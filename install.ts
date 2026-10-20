@@ -29,6 +29,8 @@ export interface PlanInput {
   installedPort?: number;
   /** Allowed Tailscale logins. Unused when uninstalling. */
   allow: string[];
+  /** Host names the server answers to besides loopback: the tailnet name, then TERN_AWUI_HOSTS. Unused when uninstalling. */
+  hosts: string[];
   /** Further TERN_AWUI_* settings baked into the service (see PASSTHROUGH_ENV). */
   extraEnv: Record<string, string>;
   /** macOS: the user's uid (launchctl domain `gui/<uid>`). */
@@ -82,8 +84,8 @@ function serviceEnv(input: PlanInput): [string, string][] {
   return [
     ["TERN_AWUI_PORT", String(input.port)],
     ["TERN_AWUI_ALLOW", input.allow.join(",")],
+    ["TERN_AWUI_HOSTS", input.hosts.join(",")],
     ...Object.entries(input.extraEnv),
-    ["TERN_AWUI_DEV", "0"],
   ];
 }
 
@@ -464,7 +466,7 @@ export function main(deps: MainDeps): void {
   const explicit = args.port ?? (env.TERN_AWUI_PORT ? parsePort(env.TERN_AWUI_PORT, "TERN_AWUI_PORT") : undefined);
   const port = explicit ?? (args.uninstall ? installedPort : undefined) ?? 4380;
   const tailscale = which("tailscale", platform, env.PATH, args.uninstall);
-  let tern = "", omp = "", dnsName = "", allow: string[] = [];
+  let tern = "", omp = "", dnsName = "", allow: string[] = [], hosts: string[] = [];
   if (!args.uninstall) {
     tern = which("tern", platform, env.PATH);
     omp = which("omp", platform, env.PATH);
@@ -474,6 +476,9 @@ export function main(deps: MainDeps): void {
     dnsName = status.dnsName;
     allow = (env.TERN_AWUI_ALLOW ?? status.login).split(",").map((s) => s.trim()).filter(Boolean);
     if (allow.length === 0) throw new Error("no allowed login: set TERN_AWUI_ALLOW (tailscale reports no user for this device)");
+    // Tailscale Serve keeps the browser's Host: the tailnet name.
+    const extraHosts = (env.TERN_AWUI_HOSTS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    hosts = [...new Set([dnsName.replace(/\.$/, ""), ...extraHosts])];
   }
   const extraEnv = Object.fromEntries(PASSTHROUGH_ENV.flatMap((k) => (env[k] ? [[k, env[k] as string]] : [])));
   // Resolve before the service changes its working directory to the checkout.
@@ -496,6 +501,7 @@ export function main(deps: MainDeps): void {
     port,
     installedPort,
     allow,
+    hosts,
     extraEnv,
     uid: deps.uid,
     winUser: env.USERDOMAIN ? `${env.USERDOMAIN}\\${env.USERNAME ?? ""}` : (env.USERNAME ?? ""),

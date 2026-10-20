@@ -3,8 +3,10 @@
 // from its history.db (see lib/paths.ts for where omp keeps them); writes input with `tern send`.
 // omp sessions running the tern-mobile extension also connect to /bridge: they stream their
 // prompt draft, model and busy state, and take drafts and model picks from the phone.
-// Listens on loopback only; `tailscale serve` is the way in, and its identity header
-// (`Tailscale-User-Login`, checked against TERN_AWUI_ALLOW) is the gate.
+// Listens on loopback only and has no authentication of its own: whoever reaches the port controls
+// the panes. Protecting it is the job of what sits in front (loopback only, Tailscale Serve, another
+// authenticating proxy). Built in: a Host check against DNS rebinding, a custom header on POSTs, the
+// bridge token, and an optional Tailscale login allowlist (TERN_AWUI_ALLOW).
 
 import { Database } from "bun:sqlite";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
@@ -64,14 +66,11 @@ export type ServerOptions = {
 
 export type ServerHandle = {
   port: number;
-  dev: boolean;
+  /** Allowed Tailscale logins; empty: no login check. */
   allow: string[];
   /** Closes the listener, streams and bridges and stops following Tern. */
   stop(): Promise<void>;
 };
-
-/** A configuration the server refuses to start with. */
-export class ConfigError extends Error {}
 
 export function startServer(options: ServerOptions = {}): ServerHandle {
   const env = options.env ?? process.env;
@@ -79,8 +78,17 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   const CONFIG_DIR = configDir(env, HOME);
 
   const PORT = Number(env.TERN_AWUI_PORT ?? 4380);
+  /** Optional: when set, every request (but the bridge) needs one of these in `Tailscale-User-Login`. */
   const ALLOW = (env.TERN_AWUI_ALLOW ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-  const DEV = env.TERN_AWUI_DEV === "1";
+  /**
+   * Host names this server answers to. Any other `Host` is refused: a web page that rebinds its own
+   * name to 127.0.0.1 would otherwise count as same-origin and could set every header.
+   */
+  const HOSTS = new Set(
+    ["localhost", "127.0.0.1", "[::1]", ...(env.TERN_AWUI_HOSTS ?? "").split(",")]
+      .map((h) => h.trim().toLowerCase().replace(/\.$/, ""))
+      .filter(Boolean),
+  );
   const OMP_DATA = ompDataDir(env, HOME, process.platform);
   const SESSIONS_DIR = join(OMP_DATA, "sessions");
   const HISTORY_DB = join(OMP_DATA, "history.db");
@@ -93,9 +101,6 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   /** Where omp loads the extension from, and the checkout's file it should be (or link to). */
   const INSTALLED_EXTENSION = installedExtension(env, HOME);
   const extension = extensionCheck(INSTALLED_EXTENSION, join(REPO, "omp-extension", "tern-mobile.ts"));
-
-  if (!DEV && ALLOW.length === 0)
-    throw new ConfigError("TERN_AWUI_ALLOW must list the Tailscale logins allowed in (or set TERN_AWUI_DEV=1)");
 
   const BRIDGE_TOKEN = ensureToken(join(CONFIG_DIR, "bridge-token"));
   /** Set by `stop`: background loops and late callbacks end. */
@@ -1216,6 +1221,12 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     return sameToken(req.headers.get("x-tern-mobile-bridge") ?? "", BRIDGE_TOKEN);
   }
 
+  /** Whether a request's `Host` header (port aside) names this server; a missing or malformed one doesn't. */
+  function knownHost(host: string | null): boolean {
+    const name = /^(\[[\d:a-f.]+\]|[\w.-]+)(?::\d{1,5})?$/i.exec(host ?? "")?.[1];
+    return !!name && HOSTS.has(name.toLowerCase().replace(/\.$/, ""));
+  }
+
   /** Every bridge connection per pane; the newest is the pane's bridge. */
   const paneSockets = new Map<string, Set<ServerWebSocket<{ pane: string | null }>>>();
 
@@ -1304,6 +1315,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
       port: PORT,
       idleTimeout: 0, // SSE streams stay open
       async fetch(req, server) {
+        if (!knownHost(req.headers.get("host"))) return new Response("unknown host: add it to TERN_AWUI_HOSTS", { status: 403 });
         const url = new URL(req.url);
         // omp sessions on this machine; Tailscale Serve requests always carry a login header.
         if (url.pathname === "/bridge" && !req.headers.get("tailscale-user-login")) {
@@ -1311,7 +1323,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           return server.upgrade(req, { data: { pane: null } }) ? undefined : new Response("upgrade failed", { status: 400 });
         }
         const login = req.headers.get("tailscale-user-login");
-        if (!DEV && !(login && ALLOW.includes(login))) return new Response("forbidden", { status: 403 });
+        if (ALLOW.length && !(login && ALLOW.includes(login))) return new Response("forbidden", { status: 403 });
         if (url.pathname.startsWith("/api/")) return handleApi(req, url);
         const rel = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
         if (rel.includes("..")) return new Response("bad path", { status: 400 });
@@ -1395,16 +1407,12 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     void stop();
     throw err;
   }
-  return { port: server.port!, dev: DEV, allow: ALLOW, stop };
+  return { port: server.port!, allow: ALLOW, stop };
 }
 
 if (import.meta.main) {
-  try {
-    const { port, dev, allow } = startServer();
-    console.log(`tern-mobile on http://127.0.0.1:${port}${dev ? " (dev: no auth)" : ` allow=${allow.join(",")}`}`);
-  } catch (err) {
-    if (!(err instanceof ConfigError)) throw err;
-    console.error(err.message);
-    process.exit(2);
-  }
+  const { port, allow } = startServer();
+  console.log(
+    `tern-mobile on http://127.0.0.1:${port} ${allow.length ? `allow=${allow.join(",")}` : "(no login check: whoever reaches this port controls your terminals)"}`,
+  );
 }

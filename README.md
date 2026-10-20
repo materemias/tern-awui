@@ -1,6 +1,6 @@
 # tern-awui (another web UI for Tern)
 
-A web app for following and steering the [omp](https://github.com/can1357/oh-my-pi) agents running in [Tern](https://stencil.so/tern), from a phone or another browser, over your Tailscale network.
+A web app for following and steering the [omp](https://github.com/can1357/oh-my-pi) agents running in [Tern](https://stencil.so/tern), from a phone or another browser. It has no login of its own: you reach it over a private network you control, such as Tailscale (see [Security](#security)).
 
 I built it for how I work. Tern stays open on the desktop with its panes, tern-awui sits next to it in a browser tab, and the same app is installed on my Android phone as a PWA. When I step away, I can still see which agent finished, which one is waiting for an answer, and reply. It's a companion to Tern, not a replacement, and a stopgap until Tern's official mobile client ships.
 
@@ -53,7 +53,7 @@ It works with Tern rather than beside it:
 - [Bun](https://bun.sh) 1.4 or newer
 - Tern, with the `tern` command on `PATH`
 - omp, with the `omp` command on `PATH`
-- [Tailscale](https://tailscale.com), logged in, with MagicDNS and HTTPS certificates enabled for the tailnet
+- [Tailscale](https://tailscale.com) (optional, but the installer needs it), logged in, with MagicDNS and HTTPS certificates enabled for the tailnet. Without it, see [Without Tailscale](#without-tailscale).
 - git (optional, for grouping by repository and showing branches)
 
 ## Install
@@ -67,12 +67,12 @@ Install tern-awui (https://github.com/materemias/tern-awui) on this machine.
 
 1. Read its README, especially Requirements, Install and Security.
 2. Check every requirement and tell me what is missing instead of working around it.
-   Tailscale must be logged in with MagicDNS and HTTPS certificates enabled.
+   The installer needs Tailscale logged in with MagicDNS and HTTPS certificates enabled.
 3. Clone it to ~/code/tern-awui (ask me if I want a different place), then run `bun install`.
 4. Run `bun install.ts --dry-run`, summarize what it will write and run, and wait for my OK.
 5. Run `bun install.ts` and give me the address it prints.
 
-Never use Tailscale Funnel, port forwarding or a public tunnel, and don't set TERN_AWUI_DEV.
+Never use Tailscale Funnel, port forwarding or a public tunnel.
 At the end, remind me to run /restart in omp sessions that were already running.
 ```
 
@@ -85,7 +85,7 @@ bun install
 bun install.ts            # add --dry-run to see every step first
 ```
 
-The installer does everything once:
+The installer sets it up with Tailscale, in one go:
 
 1. builds the web app;
 2. installs the omp extension (see below);
@@ -93,7 +93,18 @@ The installer does everything once:
 4. publishes it on your tailnet with `tailscale serve`;
 5. prints the address, e.g. `https://my-desktop.tailnet-name.ts.net:4380/`.
 
-Open that address on each device while signed in to Tailscale. On Android, use Chrome's ⋮ → *Add to Home screen* to install it as an app. On iPhone, use Safari's Share → *Add to Home Screen*. Only your own Tailscale login is let in, so there is nothing to pair.
+Open that address on each device while signed in to Tailscale. On Android, use Chrome's ⋮ → *Add to Home screen* to install it as an app. On iPhone, use Safari's Share → *Add to Home Screen*. The installer turns on the login allowlist with your own Tailscale login (see [Security](#security)), so there is nothing to pair.
+
+### Without Tailscale
+
+The server runs on its own, on loopback only:
+
+```bash
+bun install && bun run build
+bun server.ts                    # http://127.0.0.1:4380/, TERN_AWUI_PORT changes the port
+```
+
+Put the omp extension in place by hand (below). Starting the server at login, and reaching it from other devices, is up to you. Read [Security](#security) first: whatever you put in front of the port is the only thing protecting your terminals.
 
 ### The omp extension
 
@@ -116,14 +127,22 @@ bun install.ts --uninstall      # remove the service, the extension and the tail
 
 ## Security
 
-This is a remote shell into your desktop with no authentication of its own: it trusts whoever sits in front of it (Tailscale by default). **Never expose it publicly:** no port forwarding, no Tailscale Funnel, no open tunnel.
+**tern-awui has no authentication.** Anyone who can send it a request controls your terminals: they can type commands, read your agents' conversations and open files. It doesn't pretend otherwise.
 
-Tailscale is the strongly recommended setup, and the only one the installer configures. The server listens only on `127.0.0.1`, `tailscale serve` makes it reachable on your tailnet only, and every request must carry an allowed Tailscale login.
+It listens on `127.0.0.1` only. Who reaches that port is decided by you and by what you put in front of it, not by tern-awui:
 
-Other private setups can work, but the installer doesn't set them up, and every request still needs an allowed `Tailscale-User-Login` header (403 otherwise):
+- **Loopback only** (no proxy): only programs on this machine reach it.
+- **Tailscale Serve** (what the installer sets up): only devices on your tailnet reach it. Set `TERN_AWUI_ALLOW` (the installer does) to let in only your own Tailscale login rather than everyone on the tailnet.
+- **Another authenticating proxy** (e.g. Cloudflare Tunnel with Cloudflare Access, an SSH tunnel): it must refuse everyone but you. Add the name it serves under to `TERN_AWUI_HOSTS`.
 
-- **Behind an authenticating proxy** (e.g. Cloudflare Tunnel with Cloudflare Access): after authenticating, the proxy must set `Tailscale-User-Login` to an allowed login from `TERN_AWUI_ALLOW`. It must overwrite any value the client sent, or anyone can claim to be you.
-- **Only on the machine itself:** `TERN_AWUI_DEV=1` turns the login check off. Use it only when nothing but loopback can reach the port, never behind a tunnel or proxy.
+**Never expose it publicly:** no port forwarding, no Tailscale Funnel, no tunnel without its own login.
+
+What it assumes:
+
+- **A single-user machine.** Every local account can connect to `127.0.0.1` and so control your terminals. Nothing in tern-awui stops that.
+- **`TERN_AWUI_ALLOW` is only as good as Tailscale Serve.** It checks the `Tailscale-User-Login` header, which Tailscale Serve sets and anything else can fake. Behind another proxy it is only trustworthy if the proxy overwrites that header itself.
+
+What it does on its own is narrow: it stops websites open in your own browser from using it. A page can't post to it (a custom header is required), can't open its bridge (that needs a token from a file only your account can read), and can't rebind its own domain to 127.0.0.1 (requests naming any host but loopback and `TERN_AWUI_HOSTS` get 403). It also sends a Content-Security-Policy, so agent output can't load images from other sites.
 
 Details are in [how it works](docs/architecture.md#security).
 

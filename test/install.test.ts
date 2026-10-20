@@ -18,6 +18,7 @@ const linux: PlanInput = {
   configDir: "/home/ann/.config/tern-mobile",
   port: 4380,
   allow: ["ann@example.com", "bob@example.com"],
+  hosts: ["box.tail1234.ts.net"],
   extraEnv: {},
   uid: 1000,
   winUser: "",
@@ -393,12 +394,6 @@ describe("bridge discovery", () => {
       expect(actions.indexOf(discovery)).toBe(2);
     });
   }
-});
-
-test("installed services disable inherited development mode before Tailscale publishes them", () => {
-  expect(writes(plan(linux))[1].content).toContain('Environment="TERN_AWUI_DEV=0"\n');
-  expect(writes(plan(darwin))[1].content).toContain("<key>TERN_AWUI_DEV</key><string>0</string>");
-  expect(writes(plan(win32))[1].content).toContain('env("TERN_AWUI_DEV") = "0"\r\n');
 });
 
 describe("execute", () => {

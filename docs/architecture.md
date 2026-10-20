@@ -83,7 +83,7 @@ No web API shows that Android permission: `Notification.permission`, `permission
 
 ## Requirements
 
-On every OS: [Bun](https://bun.sh) (1.4 tested), Tern with its `tern` CLI on `PATH`, omp (`omp` on `PATH`), and Tailscale logged in with MagicDNS and HTTPS certificates enabled for the tailnet (Tailscale Serve needs both). git is optional: without it projects group by folder and no branch shows. Building needs nothing beyond Bun (see [Build](#build)).
+On every OS: [Bun](https://bun.sh) (1.4 tested), Tern with its `tern` CLI on `PATH` and omp (`omp` on `PATH`). The installer also needs Tailscale logged in with MagicDNS and HTTPS certificates enabled for the tailnet (Tailscale Serve needs both); without Tailscale, run the server yourself (end of [Install](#install)). git is optional: without it projects group by folder and no branch shows. Building needs nothing beyond Bun (see [Build](#build)).
 
 - **Linux** (Arch, verified): a systemd user session. The service runs while you're logged in; `loginctl enable-linger $USER` keeps it running after logout and starts it at boot.
 - **macOS** (verified on macOS 26, Apple Silicon): launchd. If `tailscale` isn't on `PATH`, the installer uses the App Store / standalone app's CLI at `/Applications/Tailscale.app/Contents/MacOS/Tailscale`.
@@ -108,18 +108,18 @@ bun install.ts --uninstall        # [--dry-run]
 4. runs `tailscale serve --bg --https=<port> http://127.0.0.1:<port>`;
 5. prints the app's URL: `https://<this machine's tailnet name>:<port>/`.
 
-The allowed login is the device's own Tailscale user (`tailscale status --json`) unless `TERN_AWUI_ALLOW` is set. `TERN_AWUI_PORT` (or `--port`) and any of `TERN_AWUI_CONFIG`, `TERN_AWUI_OMP_DIR`, `TERN_AWUI_NOTES_DIR`, `TERN_AWUI_PROJECTS`, `TERN_AWUI_VAPID_SUBJECT` set when the installer runs are written into the service. `--dry-run` prints every file it would write (with its content) and every command, and changes nothing. `--uninstall` stops and removes the service, the extension link or copy (a link to another checkout's extension stays) and the serve entry; the config dir (tokens, VAPID keys, subscriptions) stays.
+The allowed login is the device's own Tailscale user (`tailscale status --json`) unless `TERN_AWUI_ALLOW` is set; the installer refuses to publish without one. `TERN_AWUI_HOSTS` is written as the device's tailnet name (Tailscale Serve keeps the browser's `Host`), followed by any names `TERN_AWUI_HOSTS` held when the installer ran. `TERN_AWUI_PORT` (or `--port`) and any of `TERN_AWUI_CONFIG`, `TERN_AWUI_OMP_DIR`, `TERN_AWUI_NOTES_DIR`, `TERN_AWUI_PROJECTS`, `TERN_AWUI_VAPID_SUBJECT` set when the installer runs are written into the service. `--dry-run` prints every file it would write (with its content) and every command, and changes nothing. `--uninstall` stops and removes the service, the extension link or copy (a link to another checkout's extension stays) and the serve entry; the config dir (tokens, VAPID keys, subscriptions) stays.
 
-Installed services explicitly set `TERN_AWUI_DEV=0`, even if the installing shell enables development mode. Relative config, omp and notes directories, and a `TERN_AWUI_PROJECTS` path containing a separator, are resolved before installation. The installed port is read back from `bridge.json` (when it belongs to this config dir): a re-install on another port turns the old `tailscale serve` port off, and `--uninstall` without `--port` or `TERN_AWUI_PORT` uses it. Uninstall removes bridge discovery only when it still matches this installation; missing optional cleanup commands are reported without stopping the remaining cleanup.
+Relative config, omp and notes directories, and a `TERN_AWUI_PROJECTS` path containing a separator, are resolved before installation. The installed port is read back from `bridge.json` (when it belongs to this config dir): a re-install on another port turns the old `tailscale serve` port off, and `--uninstall` without `--port` or `TERN_AWUI_PORT` uses it. Uninstall removes bridge discovery only when it still matches this installation; missing optional cleanup commands are reported without stopping the remaining cleanup.
 
 **Opening it.** Open the printed URL on the phone, signed in to Tailscale as an allowed login; in Chrome on Android, ⋮ → *Add to Home screen* installs it. Any device of an allowed login on the tailnet gets in, so there is nothing to pair.
 
 omp loads extensions at startup, so omp sessions already running don't bridge until restarted (`/restart`). The app flags bridged sessions running an older extension and offers Reload (omp's `/restart`) where omp has it.
 
-For development, without the service and **without any auth** (everything that can reach the port gets a shell; loopback only, never behind Tailscale Serve):
+Without the installer (no Tailscale, or for development), run the server directly. Without `TERN_AWUI_ALLOW` it has no login check, so everything that can reach the port gets a shell (see [Security](#security)):
 
 ```bash
-bun run build && TERN_AWUI_DEV=1 TERN_AWUI_PORT=4381 bun server.ts
+bun run build && TERN_AWUI_PORT=4381 bun server.ts
 ```
 
 ## Build
@@ -166,24 +166,30 @@ The server reads these from its environment; the installer writes them into the 
 | Env | Default | |
 |---|---|---|
 | `TERN_AWUI_PORT` | `4380` | loopback port, and the HTTPS port Tailscale Serve uses |
-| `TERN_AWUI_ALLOW` | — (required; the installer uses the device's Tailscale login) | comma-separated Tailscale logins |
+| `TERN_AWUI_ALLOW` | — (no login check; the installer sets the device's Tailscale login) | comma-separated Tailscale logins; when set, every request but the bridge's needs one of them in `Tailscale-User-Login` |
+| `TERN_AWUI_HOSTS` | — (the installer sets the tailnet name) | comma-separated host names (no port) the server answers to besides `localhost`, `127.0.0.1` and `[::1]` |
 | `TERN_AWUI_CONFIG` | `~/.config/tern-mobile`, on every OS | `bridge-token`, `vapid.json`, `push.json` (mode 600 where the OS has modes) |
 | `TERN_AWUI_OMP_DIR` | as omp: `$PI_CODING_AGENT_DIR`, else `~/.omp/agent`, or `$XDG_DATA_HOME/omp` on Linux/macOS once it exists | omp's data: `sessions/`, `blobs/`, `history.db`. The installer puts the extension into `<dir>/extensions/` (default `~/.omp/agent`) |
 | `TERN_AWUI_NOTES_DIR` | Linux: `$XDG_STATE_HOME/tern/notes` or `~/.local/state/tern/notes`; macOS: `~/Library/Application Support/Tern/notes`; Windows: `%LOCALAPPDATA%\Tern\notes` (macOS/Windows unverified) | Tern notes |
 | `TERN_AWUI_PROJECTS` | the cwds of open Tern blocks and omp sessions, newest first | command printing one folder per line for **+ omp**; a `.py` path runs with `python3`; killed after 5 s, which lists nothing |
 | `TERN_AWUI_VAPID_SUBJECT` | `mailto:<first allowed login>` if it contains `@`, else `https://tern-mobile.invalid` | Web Push contact |
-| `TERN_AWUI_DEV` | — | `1` turns off the login check. Unsafe: dev on loopback only |
 | `TERN_AWUI_SYMBOLS_FONT` | `/usr/share/fonts/TTF/SymbolsNerdFont-Regular.ttf` | `bun run assets` only |
 
 ## Security
 
-This is a remote shell into the desktop.
+This is a remote shell into the desktop, and it has **no authentication of its own**. Access control belongs to whatever stands in front of the port; the server only makes sure that "loopback only" means that, and offers one optional identity check for Tailscale.
 
-- The server listens only on `127.0.0.1`. The only way in from outside is Tailscale Serve (tailnet only), which sets `Tailscale-User-Login`, and every request (the API, its stream and the app's own files) must carry an allowed login from `TERN_AWUI_ALLOW`; anything else gets 403. Tagged devices get no login header, so they are refused. There is no pairing or access token on top: anyone signed in to the tailnet as an allowed login gets a shell. **Never enable Funnel.**
-- Any other tunnel or reverse proxy (e.g. Cloudflare Tunnel with Access) must authenticate every request and then set `Tailscale-User-Login` to an allowed login, overwriting any client-supplied value; the server trusts that header as-is because only Tailscale Serve is expected to reach it.
-- POSTs require an `x-tern-mobile: 1` header, which blocks cross-site form posts. Key names are allowlisted.
-- `/bridge` refuses requests carrying a Tailscale login header (anything proxied from outside) and requires the bridge token (`<config dir>/bridge-token`).
-- `TERN_AWUI_DEV=1` turns off the login check: anyone who can reach the port gets a shell. Use it only on loopback, never behind Tailscale Serve.
+Out of scope, by design:
+
+- **Who reaches the port.** The server listens only on `127.0.0.1`. Keeping it on loopback, or publishing it through Tailscale Serve (what the installer does), Cloudflare Access, an SSH tunnel or similar, is the user's choice and the user's responsibility. **Never enable Funnel** or forward the port publicly.
+- **Other local accounts.** Any account on the machine can connect to `127.0.0.1` and set any header. The machine must be single-user.
+
+Built in:
+
+- **Host check (DNS rebinding).** Every request, the bridge's too, must name `localhost`, `127.0.0.1`, `[::1]` or a `TERN_AWUI_HOSTS` entry in `Host` (any port, case and a trailing dot ignored); anything else, or no `Host`, gets 403. Without it, a web page that rebinds its own domain to 127.0.0.1 would count as same-origin in the user's browser and could set every header below.
+- **Same-origin POSTs.** POSTs require an `x-tern-mobile: 1` header; a cross-site page can't send it without a CORS preflight, which the server never approves. Key names are allowlisted.
+- **Bridge token.** `/bridge` refuses requests carrying a Tailscale login header (anything proxied from outside) and requires the bridge token (`<config dir>/bridge-token`, mode 600). Browsers can't set that header on a WebSocket, so no page can pose as an omp session.
+- **Optional Tailscale login allowlist.** With `TERN_AWUI_ALLOW` set, every request (the API, its stream and the app's own files) must carry an allowed `Tailscale-User-Login`, else 403; tagged devices get no login header, so they are refused. The header is trusted as-is: it means something only when Tailscale Serve (or a proxy that overwrites it) is the only way in. Without `TERN_AWUI_ALLOW` there is no login check and the startup log says so.
 - tern can report errors with exit status 0, so non-WARN stderr counts as failure and is returned to the phone. Typed text goes after `--`, so text like `--help` is typed, not read as tern's flags.
 - Agent markdown goes through DOMPurify. Only `http(s)` and `mailto` links are kept, and raw HTML is shown as text.
 - Responses carry a Content-Security-Policy (`default-src 'self'`, images also `data:`/`blob:`, inline styles allowed for mermaid): images agent markdown points to on other sites are never fetched, so a prompt injection can't leak data through an image URL.

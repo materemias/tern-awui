@@ -6,7 +6,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync
 import { tmpdir } from "node:os";
 import { Database } from "bun:sqlite";
 import { arr, obj } from "../lib/json";
-import { ConfigError, startServer } from "../server";
+import { startServer } from "../server";
 import { Events, Extension, Sandbox, item, until } from "./server-harness";
 import { Transcript } from "./fixtures";
 import type { PushSubscription, RequestOptions } from "web-push";
@@ -23,20 +23,24 @@ describe("startup and shutdown", () => {
   const s = new Sandbox();
   afterAll(() => s.close());
 
-  test("without allowed logins the server refuses to start, before writing keys, unless in dev mode", async () => {
-    const vapid = `${s.home}/.config/tern-mobile/vapid.json`;
-    expect(() => startServer({ env: s.env({ TERN_AWUI_ALLOW: " , ", TERN_AWUI_PORT: "0" }), home: s.home })).toThrow(ConfigError);
-    expect(existsSync(vapid)).toBe(false);
-    const dev = startServer({ env: s.env({ TERN_AWUI_ALLOW: "", TERN_AWUI_DEV: "1", TERN_AWUI_PORT: "0" }), home: s.home });
+  test("without allowed logins anyone reaching the port gets in, by a known Host name only", async () => {
+    const open = startServer({ env: s.env({ TERN_AWUI_ALLOW: " , ", TERN_AWUI_HOSTS: " Box.Tail.ts.net. , ", TERN_AWUI_PORT: "0" }), home: s.home });
     try {
-      expect(dev).toMatchObject({ dev: true, allow: [] });
-      const base = `http://127.0.0.1:${dev.port}`;
-      // Dev mode drops the login check, not the same-origin header on POSTs.
+      expect(open.allow).toEqual([]);
+      const base = `http://127.0.0.1:${open.port}`;
+      const as = (host: string) => fetch(`${base}/api/state`, { headers: { host } });
       expect((await fetch(`${base}/api/state`)).status).toBe(200);
+      expect((await as(`localhost:${open.port}`)).status).toBe(200);
+      expect((await as("box.tail.ts.net:443")).status).toBe(200);
+      expect((await as("BOX.tail.ts.net.")).status).toBe(200);
+      // A page that rebound its own name to 127.0.0.1 keeps that name in Host.
+      expect((await as(`evil.example:${open.port}`)).status).toBe(403);
+      expect((await as(`evil.example@127.0.0.1:${open.port}`)).status).toBe(403);
+      expect((await fetch(`${base}/bridge`, { headers: { host: "evil.example" } })).status).toBe(403);
+      // No login check is not no same-origin header on POSTs.
       expect((await fetch(`${base}/api/blocks/2/focus`, { method: "POST", body: "{}" })).status).toBe(403);
-      expect(existsSync(vapid)).toBe(true);
     } finally {
-      await dev.stop();
+      await open.stop();
     }
   });
 
@@ -120,7 +124,9 @@ ${readFileSync(command, "utf8")}
       serving.mockRestore();
     }
     try {
-      const response = Promise.resolve(server.fetch(new Request(`${late.base}/api/stream?block=2`, { headers: late.headers })));
+      // A Request built here has no Host header until a real fetch sends it.
+      const headers = { ...late.headers, host: new URL(late.base).host };
+      const response = Promise.resolve(server.fetch(new Request(`${late.base}/api/stream?block=2`, { headers })));
       await until(() => existsSync(`${late.home}/lookup-started`), "pending stream block lookup");
       await late.stop();
       writeFileSync(`${late.home}/release-lookup`, "");
@@ -136,11 +142,8 @@ ${readFileSync(command, "utf8")}
     }
   });
 
-  test("`bun server.ts` serves with a startup banner, and exits 2 without allowed logins", async () => {
-    const refused = Bun.spawn([process.execPath, SERVER], { env: s.env({ TERN_AWUI_ALLOW: "", TERN_AWUI_PORT: "0" }), stdout: "pipe", stderr: "pipe" });
-    expect(await refused.exited).toBe(2);
-    expect(await new Response(refused.stderr).text()).toContain("TERN_AWUI_ALLOW must list");
-    const dev = Bun.spawn([process.execPath, SERVER], { env: s.env({ TERN_AWUI_DEV: "1", TERN_AWUI_PORT: "0" }), stdout: "pipe", stderr: "inherit" });
+  test("`bun server.ts` serves with a startup banner that says when there is no login check", async () => {
+    const dev = Bun.spawn([process.execPath, SERVER], { env: s.env({ TERN_AWUI_ALLOW: "", TERN_AWUI_PORT: "0" }), stdout: "pipe", stderr: "inherit" });
     try {
       const reader = dev.stdout.getReader();
       let banner = "";
@@ -149,7 +152,7 @@ ${readFileSync(command, "utf8")}
         if (done) break;
         banner += new TextDecoder().decode(value);
       }
-      const url = /tern-mobile on (http:\/\/127\.0\.0\.1:\d+) \(dev: no auth\)/.exec(banner)?.[1];
+      const url = /tern-mobile on (http:\/\/127\.0\.0\.1:\d+) \(no login check/.exec(banner)?.[1];
       expect(url).toBeString();
       expect((await fetch(`${url}/api/state`)).status).toBe(200);
     } finally {
