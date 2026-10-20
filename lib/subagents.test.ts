@@ -204,6 +204,16 @@ describe("scanSubagent", () => {
     writeFileSync(path, finished().lines().slice(2).join("\n") + "\n");
     expect(await scanSubagent(path, undefined)).toMatchObject({ started: T0 + 23001, messages: 5 });
   });
+
+  test("a transcript past the decoded tail still counts every message and keeps its start", async () => {
+    const path = `${root}/big.jsonl`;
+    const t = new Transcript("sub-big");
+    for (let i = 0; i < 1200; i++) t.say(`${i} ${"x".repeat(5000)}`, i);
+    t.say("the end", 5000);
+    writeFileSync(path, t.text());
+    expect(Bun.file(path).size).toBeGreaterThan(5 * 1024 * 1024);
+    expect(await scanSubagent(path, undefined)).toMatchObject({ started: T0, messages: 1201, summary: "the end", lastActivity: T0 + 5000 });
+  });
 });
 
 describe("listSubagents", () => {

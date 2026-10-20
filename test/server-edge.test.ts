@@ -803,7 +803,7 @@ test("terminal edits erase all changed characters in bounded key batches before 
     expect((await s.action(2, "type", { back: 1201, text: "replacement" })).status).toBe(200);
     const calls = s.calls();
     expect(calls.filter((call) => call[2] === "keys").map((call) => call.length - 3)).toEqual([500, 500, 201]);
-    expect(calls.at(-1)).toEqual(["send", "2", "text", "replacement"]);
+    expect(calls.at(-1)).toEqual(["send", "2", "text", "--", "replacement"]);
     s.clearCalls();
     writeFileSync(`${s.home}/fail`, "terminal failed");
     expect((await s.action(2, "type", { back: 600, text: "do not type" })).status).toBe(502);

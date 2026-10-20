@@ -43,9 +43,9 @@ export type BridgeState = {
  */
 export type StretchState = { off: boolean; open: Record<string, string[]> };
 export type Context = { tokens: number; window: number; percent: number };
-export type Queued = { text: string; followUp: boolean };
+type Queued = { text: string; followUp: boolean };
 export type Job = { id: string; type: string; label: string; agent: string; since: number };
-export const CAPS = ["models", "tiers", "jobs", "queue", "rewind", "btw", "complete", "levels"] as const;
+const CAPS = ["models", "tiers", "jobs", "queue", "rewind", "btw", "complete", "levels"] as const;
 export type Caps = Record<(typeof CAPS)[number], boolean>;
 
 /** A connection that hasn't reported yet. */

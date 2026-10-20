@@ -75,7 +75,8 @@ test("history draft clears cannot erase a replacement session's prompt", async (
     await extension.connect();
     await until(async () => item(await local.state(), 1).agent, "original session");
     expect((await local.action(1, "draft", { text: "", expectedSessionId: local.session, expectedText: "/btw " })).status).toBe(200);
-    expect(await extension.take("set")).toMatchObject({ text: "" });
+    // `expected` lets omp refuse if its editor changed after the server's last report.
+    expect(await extension.take("set")).toMatchObject({ text: "", expected: "/btw " });
     extension.report({ sessionId: "replacement-session", text: "Keep this new prompt" });
     await until(async () => obj(item(await local.state(), 1).agent).sessionId === "replacement-session", "replacement session");
     const stale = await local.action(1, "draft", { text: "", expectedSessionId: local.session });

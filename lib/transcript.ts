@@ -7,7 +7,7 @@ import { marked } from "marked";
 import { arr, num, obj, str, type Obj } from "./json";
 
 /** Only the tail of a transcript is read: older entries never reach the phone. */
-export const CHAT_TAIL_BYTES = 4 * 1024 * 1024;
+const CHAT_TAIL_BYTES = 4 * 1024 * 1024;
 
 export type ToolCall = { name: string; intent: string; error?: boolean };
 /** omp's todo list after a `todo` call: phases of tasks (pending, in_progress, completed, blocked…). */
@@ -42,7 +42,7 @@ export type ChatEntry =
 export type AskEntry = { role: "ask"; id: string; questions: AskQuestion[]; answer: string | null; ts: number };
 /** A note from omp's advisor model: `Key:`/`Evidence:`/`Impact:`/`Fix:` lines. */
 export type AdvisorNote = { advisor: string; severity: string; note: string };
-export type InjectedRule = { name: string; text: string };
+type InjectedRule = { name: string; text: string };
 
 /** omp's non-interrupting rule reminder (ttsr-tool-reminder.md, ttsr-warning.md): tag line, preamble, blank line, rule body. */
 const RULE_REMINDER = /<system-reminder reason="rule_violation" rule="([^"]+)"[^>]*>\n[^\n]*\n\n([\s\S]*?)\n*<\/system-reminder>/g;
@@ -85,7 +85,7 @@ export function textOf(content: unknown): string {
 
 export const IMAGE_MIMES: Record<string, true> = { "image/png": true, "image/jpeg": true, "image/webp": true, "image/gif": true };
 
-export function imagesOf(content: unknown): Img[] {
+function imagesOf(content: unknown): Img[] {
   return arr(content)
     .map(obj)
     .filter((p) => p.type === "image" && IMAGE_MIMES[str(p.mimeType)] === true)

@@ -4,7 +4,7 @@
 import { existsSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 
-export type Env = Record<string, string | undefined>;
+type Env = Record<string, string | undefined>;
 
 /** tern-mobile's own files (tokens, VAPID keys, push subscriptions): `$TERN_AWUI_CONFIG` or ~/.config/tern-mobile, on every OS. */
 export function configDir(env: Env, home: string): string {

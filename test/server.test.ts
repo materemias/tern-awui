@@ -148,14 +148,16 @@ test("inherited object names are not allowed keys or image MIME types", async ()
 
 test("terminal submit/type/keys route to tern and validate errors before sending", async () => {
   s.clearCalls();
-  expect((await s.action(2, "submit", { text: "hello" })).status).toBe(200);
-  expect(s.calls()).toEqual([["send", "2", "text", "hello"], ["send", "2", "keys", "Enter"]]);
+  expect((await s.action(2, "submit", { text: "--help" })).status).toBe(200);
+  // `--`: text starting with a dash is typed, not read as tern's flags.
+  expect(s.calls()).toEqual([["send", "2", "text", "--", "--help"], ["send", "2", "keys", "Enter"]]);
   s.clearCalls();
   await s.action(2, "submit", { text: "one\ntwo" });
-  expect(s.calls()[0]).toEqual(["send", "2", "paste", "one\ntwo"]);
+  expect(s.calls()[0]).toEqual(["send", "2", "paste", "--", "one\ntwo"]);
+  expect((await s.action(2, "submit", { text: "x".repeat(1_000_001) })).status).toBe(400);
   s.clearCalls();
   await s.action(2, "type", { back: 2.9, text: "x" });
-  expect(s.calls()).toEqual([["send", "2", "keys", "Backspace", "Backspace"], ["send", "2", "text", "x"]]);
+  expect(s.calls()).toEqual([["send", "2", "keys", "Backspace", "Backspace"], ["send", "2", "text", "--", "x"]]);
   s.clearCalls();
   await s.action(2, "type", { back: 900 });
   expect(s.calls()[0].slice(3)).toHaveLength(500);
@@ -353,13 +355,14 @@ test("submit/draft and image/follow-up submissions use the bridge protocol", asy
   expect((await s.action(1, "submit", { text: "send this" })).status).toBe(200);
   expect((await agent.take("set")).text).toBe("send this");
   expect(s.calls()).toEqual([["send", "1", "keys", "Enter"]]);
-  agent.inbox = [];
+  // Sent again even when the reported draft already matches: the report may be stale.
   await s.action(1, "submit", { text: "send this" });
-  expect(agent.inbox.filter((m) => m.t === "set")).toEqual([]);
+  expect((await agent.take("set")).text).toBe("send this");
+  expect(s.calls()).toEqual([["send", "1", "keys", "Enter"], ["send", "1", "keys", "Enter"]]);
   const images = [{ data: "AAAA", mimeType: "image/png" }];
   s.clearCalls();
   await s.action(1, "submit", { text: "picture", images });
-  expect(await agent.take("send")).toMatchObject({ text: "picture", images, followUp: false });
+  expect(await agent.take("send")).toMatchObject({ text: "picture", images, followUp: false, expected: expect.any(String) });
   await s.action(1, "submit", { text: "afterward", followUp: true });
   expect(await agent.take("send")).toMatchObject({ text: "afterward", images: [], followUp: true });
   expect(s.calls()).toEqual([]);

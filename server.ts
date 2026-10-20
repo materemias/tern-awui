@@ -47,6 +47,10 @@ const BRIDGE_REPLY_MS = 2000;
 const DONE_SETTLE_MS = 3000;
 /** `TERN_AWUI_PROJECTS` gets this long to print its folders. */
 const PROJECTS_TIMEOUT_MS = 5000;
+/** Longest prompt or draft the API takes (characters). */
+const MAX_TEXT = 1_000_000;
+/** Only this origin's scripts, styles and images (plus data:/blob:): agent markdown can't make the app fetch a URL that leaks data. */
+const CSP = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
 
 export type ServerOptions = {
   /** Configuration (TERN_AWUI_*, omp and Tern locations) and the environment of tern, omp and the projects command. */
@@ -733,7 +737,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   }
 
   async function sendText(block: string, text: string): Promise<string | null> {
-    return (await tern(["send", block, text.includes("\n") ? "paste" : "text", text])).error;
+    // `--` so text starting with `-` (`--help`, `-h`) is typed, not read as tern's own flags.
+    return (await tern(["send", block, text.includes("\n") ? "paste" : "text", "--", text])).error;
   }
 
   /**
@@ -744,13 +749,13 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     const b = bridges.get(block);
     if (images.length || followUp) {
       if (!b) return `${followUp ? "follow-ups" : "images"} need an omp session connected to tern-mobile (restart it)`;
-      return bridgeError(await bridgeRequest(b, { t: "send", text, images, followUp }), "omp did not take the message");
+      // `expected`: omp clears its editor only if it still holds the phone's draft, so desktop typing survives.
+      return bridgeError(await bridgeRequest(b, { t: "send", text, images, followUp, expected: b.state.text }), "omp did not take the message");
     }
     if (!b) return (text && (await sendText(block, text))) || sendKeys(block, ["Enter"]);
-    if (b.state.text !== text) {
-      const error = bridgeError(await bridgeRequest(b, { t: "set", text }), "omp did not take the draft");
-      if (error) return error;
-    }
+    // Always set: the reported draft may be stale, and Enter must submit exactly the phone's text.
+    const error = bridgeError(await bridgeRequest(b, { t: "set", text }), "omp did not take the draft");
+    if (error) return error;
     return sendKeys(block, ["Enter"]);
   }
 
@@ -771,7 +776,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   // ---------- http ----------
 
   function json(data: unknown, status = 200): Response {
-    return Response.json(data, { status, headers: { "cache-control": "no-store" } });
+    return Response.json(data, { status, headers: { "cache-control": "no-store", "content-security-policy": CSP } });
   }
 
   function draftPayload(b: Bridge | null) {
@@ -1004,11 +1009,11 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
       if (IMAGE_MIMES[type] !== true) return json({ error: "no such image" }, 404);
       const cached = await transcriptImages.get(blob[1]);
       if (cached?.type === type)
-        return new Response(cached.bytes, { headers: { "content-type": type, "cache-control": "private, max-age=31536000, immutable" } });
+        return new Response(cached.bytes, { headers: { "content-type": type, "cache-control": "private, max-age=31536000, immutable", "content-security-policy": CSP } });
       const file = Bun.file(join(BLOBS_DIR, blob[1]));
       if (!(await file.exists())) return json({ error: "no such image" }, 404);
       // Content-addressed: the bytes behind a hash never change.
-      return new Response(file, { headers: { "content-type": type, "cache-control": "private, max-age=31536000, immutable" } });
+      return new Response(file, { headers: { "content-type": type, "cache-control": "private, max-age=31536000, immutable", "content-security-policy": CSP } });
     }
     if (req.method === "GET" && path === "/api/projects") {
       // Folders for a new omp: the open blocks' and past omp sessions' cwds, or a configured command's list.
@@ -1060,6 +1065,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
       return json({ ok: true });
     }
     const done = (err: string | null) => (err ? json({ error: err }, 502) : json({ ok: true }));
+    // Bun drops WebSocket frames over 16 MB, and a draft that big would loop the bridge's reconnects.
+    if (typeof body.text === "string" && body.text.length > MAX_TEXT) return json({ error: "text too long" }, 400);
 
     if (m) {
       const [, block, action] = m;
@@ -1137,7 +1144,12 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
             return json({ error: "bad expected draft" }, 400);
           if (body.expectedText !== undefined && body.expectedText !== bridge.state.text)
             return json({ error: "draft changed" }, 409);
-          return done(bridgeError(await bridgeRequest(bridge, { t: "set", text: str(body.text) })));
+          // `expected`: omp sets the draft only if its editor still holds what the phone saw.
+          return done(bridgeError(await bridgeRequest(bridge, {
+            t: "set",
+            text: str(body.text),
+            ...(typeof body.expectedText === "string" && { expected: body.expectedText }),
+          })));
         case "model": {
           // A Ctrl+P role (its model and thinking), or any model omp lists: `provider/id`.
           const spec = body.role !== undefined ? (await ompSettings()).roles.find((r) => r.role === str(body.role))?.spec : str(body.spec);
@@ -1308,7 +1320,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
         if (!(await index.exists())) return new Response("not built: run `bun run build`", { status: 404 });
         return new Response((await file.exists()) ? file : index, {
           // The 1 MB symbols font changes only with the Nerd Font package.
-          headers: { "cache-control": rel === "symbols.woff2" ? "max-age=604800" : "no-cache" },
+          headers: { "cache-control": rel === "symbols.woff2" ? "max-age=604800" : "no-cache", "content-security-policy": CSP },
         });
       },
       websocket: {

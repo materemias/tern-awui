@@ -2,10 +2,10 @@
 
 import { basename } from "node:path";
 
-/** `git -C cwd ARGS` output; null outside a repo or without git. */
-export function gitOut(cwd: string, args: string[]): string | null {
+/** `git -C cwd ARGS` output; null outside a repo, without git, or after 2 s (a hung mount mustn't freeze the server). */
+function gitOut(cwd: string, args: string[]): string | null {
   try {
-    const r = Bun.spawnSync(["git", "-C", cwd, ...args], { stderr: "ignore" });
+    const r = Bun.spawnSync(["git", "-C", cwd, ...args], { stderr: "ignore", timeout: 2000 });
     return r.exitCode === 0 ? r.stdout.toString().trim() : null;
   } catch {
     return null;

@@ -51,7 +51,7 @@ describe.skipIf(!CHROMIUM)("multi-question ask", () => {
     expect(bodies(app, "/api/blocks/1/answer")).toEqual([{
       id: "checks", answers: [{ option: null, picks: [0, 2] }, { other: "After review", picks: [] }],
     }]);
-    expect(s.calls()).toContainEqual(["send", "1", "text", "After review"]);
+    expect(s.calls()).toContainEqual(["send", "1", "text", "--", "After review"]);
     expect(s.calls().at(-1)).toEqual(["send", "1", "keys", "Enter"]);
     await page.locator(".ask.sent").waitFor();
     expect(await checks.getByRole("button", { name: /^Lint/ }).isDisabled()).toBe(true);
