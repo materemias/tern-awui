@@ -547,9 +547,9 @@ describe("parseAdvisorNote", () => {
       { label: null, text: "plain remark" },
     ]);
   });
-  test("without Key: the first line is the headline and stays in the body", () => {
+  test("without Key: no headline; every line stays in the body", () => {
     const n = parseAdvisorNote("Evidence: x\nFix: y");
-    expect(n.key).toBe("Evidence: x");
+    expect(n.key).toBeNull();
     expect(n.lines.map((l) => l.label)).toEqual(["Evidence", "Fix"]);
   });
 });

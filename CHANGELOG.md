@@ -7,6 +7,7 @@
 - A session's chat has ↑ and ↓ buttons floating over its bottom right corner: ↑ glides to the previous prompt, ↓ to the next one, or to the end of the conversation after the last prompt. Quick repeated taps step one prompt each. With reduced motion on, they jump.
 - Open pages reload by themselves after `bun run build`: each build has an id (a hash of `dist/`'s files), the server sends the current one and a page from another build reloads. A page whose composer holds unsent text or images waits until it is empty. The service needs no restart for app-only changes.
 - Rules omp injects mid-turn (its time-traveling stream rules) show in the chat the way Tern prints them: quiet mono lines, `• inject: <name>` with the rule's first line, no card. Tap for the whole rule. Interrupting rules show their name only, because omp writes only the name to the transcript.
+- Advisor notes without a `Key:` line (free-form notes) show their own text, as markdown, two lines when folded and whole after a tap, instead of the first line cut off in mono and repeated in the body.
 
 ## 0.3.0 (2026-10-16)
 

@@ -364,13 +364,13 @@ export function todoSummary(phases: TodoPhase[]): { done: number; total: number;
   return { done, total: tasks.length, blocked, current: done === tasks.length ? "all done" : (active?.content ?? "") };
 }
 
-/** An advisor note's `Key:` value (else its whole first line) and the other lines, `Label:` split off. */
-export function parseAdvisorNote(note: string): { key: string; lines: { label: string | null; text: string }[] } {
+/** An advisor note's `Key:` value (null without one) and the other lines, `Label:` split off. */
+export function parseAdvisorNote(note: string): { key: string | null; lines: { label: string | null; text: string }[] } {
   const lines = note.split("\n").map((l) => {
     const f = /^(\w[\w ]{0,15}):\s*(.*)$/.exec(l);
     return f ? { label: f[1], text: f[2] } : { label: null, text: l };
   });
-  const key = lines.find((l) => l.label === "Key")?.text ?? note.split("\n")[0];
+  const key = lines.find((l) => l.label === "Key")?.text ?? null;
   return { key, lines: lines.filter((l) => l.label !== "Key") };
 }
 

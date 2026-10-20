@@ -134,11 +134,16 @@ function StretchReply({ entry, parts, all }: { entry: Extract<ChatEntry, { role:
   return <Markdown class="msg assistant md stretchy" text={text} imageSources={entry.imageSources} onClick={onClick} />;
 }
 
-/** omp's advisor notes: severity, then `Key:`, `Evidence:`, `Impact:`, `Fix:` lines; tap to expand. */
+/**
+ * omp's advisor notes, tap to expand. A note with a `Key:` line shows the key, then its labeled
+ * lines (`Evidence:`, `Impact:`, `Fix:`) when open; a free-form note shows its own text as
+ * markdown, two lines when folded.
+ */
 function AdvisorCard({ notes }: { notes: AdvisorNote[] }) {
   const [open, setOpen] = useState(false);
   return (
-    <div class="advisor" onClick={() => setOpen(!open)}>
+    // A link inside a note opens; it doesn't fold or unfold the notes.
+    <div class="advisor" onClick={(e) => (e.target as Element).closest("a[href]") || setOpen(!open)}>
       <div class="advisor-head">
         <span class="chev">{open ? "▾" : "▸"}</span>
         <span>Advisor</span>
@@ -152,9 +157,10 @@ function AdvisorCard({ notes }: { notes: AdvisorNote[] }) {
           <div key={i} class="advisor-note">
             <div class="advisor-line">
               <span class={`sev sev-${n.severity}`}>{n.severity}</span>
-              <span class="advisor-key">{key}</span>
+              {key !== null ? <span class="advisor-key">{key}</span> : <Markdown class={`md advisor-text${open ? "" : " clamp"}`} text={n.note} />}
             </div>
-            {open && (
+            {open && key === null && <div class="muted small advisor-by">{n.advisor}</div>}
+            {open && key !== null && (
               <div class="advisor-body">
                 {lines.map((l, j) =>
                   l.label ? (

@@ -174,27 +174,42 @@ describe("tool groups", () => {
 describe("advisor notes", () => {
   const notes = [
     { advisor: "security", severity: "high", note: "Key: Token in URL\nEvidence: server.ts:12 logs it\nFix: move it to a header" },
-    { advisor: "perf", severity: "low", note: "Slow loop\nplain detail" },
+    { advisor: "perf", severity: "low", note: "Slow loop in `poll()`\nplain detail" },
   ];
 
   test("one line per note with its severity; a tap shows labeled lines and who wrote it", async () => {
     await show([{ role: "advisor", notes, ts: TS }]);
     expect(root.querySelector(".advisor-head")!.textContent).toBe("▸Advisor2 notes");
-    expect(texts(".advisor-key")).toEqual(["Token in URL", "Slow loop"]);
+    expect(texts(".advisor-key")).toEqual(["Token in URL"]);
+    // Without a Key: line, the note's own text is the line, as markdown, folded.
+    expect(root.querySelector(".advisor-text.clamp code")!.textContent).toBe("poll()");
     expect([...root.querySelectorAll(".sev")].map((s) => s.className)).toEqual(["sev sev-high", "sev sev-low"]);
     expect(root.querySelector(".advisor-body")).toBeNull();
     await click(root.querySelector(".advisor"));
     const bodies = root.querySelectorAll(".advisor-body");
+    expect(bodies).toHaveLength(1);
     expect([...bodies[0].querySelectorAll("p")].map((p) => p.textContent)).toEqual(["Evidence: server.ts:12 logs it", "Fix: move it to a header"]);
     expect(bodies[0].querySelector("p b")!.textContent).toBe("Evidence:");
     expect(bodies[0].querySelector(".muted")!.textContent).toBe("security");
-    // Without a Key: line, the headline is the first line and it stays in the body.
-    expect([...bodies[1].querySelectorAll("p")].map((p) => p.textContent)).toEqual(["Slow loop", "plain detail"]);
+    expect(root.querySelector(".advisor-text.clamp")).toBeNull();
+    expect(root.querySelector(".advisor-text p")!.innerHTML).toBe("Slow loop in <code>poll()</code><br>plain detail");
+    expect(root.querySelector(".advisor-by")!.textContent).toBe("perf");
   });
 
   test("a single note is counted in the singular", async () => {
     await show([{ role: "advisor", notes: notes.slice(1), ts: TS }]);
     expect(root.querySelector(".advisor-head")!.textContent).toBe("▸Advisor1 note");
+  });
+
+  test("a link inside a note opens without folding or unfolding the notes", async () => {
+    await show([{ role: "advisor", notes: [{ advisor: "docs", severity: "low", note: "See [the spec](https://example.test/spec)" }], ts: TS }]);
+    // Keep happy-dom from navigating; the card's handler still sees the click.
+    root.addEventListener("click", (e) => e.preventDefault(), { capture: true });
+    await click(root.querySelector(".advisor-text a"));
+    expect(root.querySelector(".advisor-text.clamp")).not.toBeNull();
+    await click(root.querySelector(".advisor-head"));
+    await click(root.querySelector(".advisor-text a"));
+    expect(root.querySelector(".advisor-text.clamp")).toBeNull();
   });
 });
 

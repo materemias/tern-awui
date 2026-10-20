@@ -294,6 +294,12 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .advisor-line { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
 .advisor-key { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 12px; }
 .advisor-body p { margin: 4px 0; overflow-wrap: anywhere; }
+/* A note without Key: its own text, folded to two lines. */
+.advisor-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.advisor-text > * { margin: 0; }
+.advisor-text > * + * { margin-top: 4px; }
+.advisor-text.clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.advisor-by { margin-top: -2px; }
 /* Injected rules: quiet mono lines like Tern's, no card. */
 .rule { font: 12px/1.5 var(--mono); color: var(--muted); opacity: .85; }
 .rule-line, .rule-gist { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
