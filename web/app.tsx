@@ -4,6 +4,7 @@ import { routeHash } from "./lib";
 import { useRoute, useWide } from "./hooks";
 import { Home } from "./home";
 import { Session, SubagentScreen } from "./session";
+import { usePush } from "./push";
 
 /** The desktop sidebar minimized to a rail of session icons, remembered on this device. */
 const RAIL_KEY = "tern-mobile:sidebar-rail";
@@ -11,6 +12,8 @@ const RAIL_KEY = "tern-mobile:sidebar-rail";
 function App() {
   const route = useRoute();
   const wide = useWide();
+  // Here, not in the list: a phone showing a session must still retry and restore notifications.
+  const push = usePush();
   const [rail, setRail] = useState(() => localStorage.getItem(RAIL_KEY) === "on");
   function toggleRail() {
     setRail((was) => {
@@ -33,11 +36,11 @@ function App() {
   const key = routeHash(route);
   const open =
     route.view === "list" ? null : route.view === "session" ? <Session key={key} block={route.block} /> : <SubagentScreen key={key} route={route} />;
-  if (!wide) return open ?? <Home />;
+  if (!wide) return open ?? <Home push={push} />;
   return (
     <div class={`desk${rail ? " rail" : ""}`}>
       <aside class="desk-side">
-        <Home wide rail={rail} onRail={toggleRail} selected={route.view === "list" ? null : route.block} />
+        <Home push={push} wide rail={rail} onRail={toggleRail} selected={route.view === "list" ? null : route.block} />
       </aside>
       <main class="desk-main">{open ?? <div class="empty desk-empty">Pick a session on the left.</div>}</main>
     </div>

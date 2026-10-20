@@ -432,9 +432,11 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .group-head .chev { color: var(--muted); width: 1em; flex: none; }
 .group-hot { color: var(--working); font-weight: 500; font-size: 12px; }
 
-/* The bell: slashed off, pulsing while it subscribes or checks, a green dot once the server has it. */
+/* The bell: slashed off, pulsing while it subscribes or checks, a green dot once the server has it,
+   slashed red when Android took notifications away from the installed app. */
 .icon-btn.push-pending { animation: blink 1.2s ease-in-out infinite; }
 .icon-btn.push-pending:disabled { cursor: progress; }
+.icon-btn.push-stopped { color: var(--blocked); }
 
 .icon-btn { position: relative; }
 /* Hide-old toggle: an eye; while hiding, a lit pill with the hidden count beside the eye. */

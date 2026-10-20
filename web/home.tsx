@@ -5,7 +5,7 @@ import { age, folderLabel, isOld, jobsSummary, listProjects, matchesWords, parse
 import { Dot } from "./parts";
 import { ExtensionBanner } from "./extension";
 import { useExitGuard, useNow, useStream } from "./hooks";
-import { PUSH_LABEL, usePush } from "./push";
+import { PUSH_LABEL, permissionHelp, type PushState } from "./push";
 
 /** The row's icon: the title's Nerd Font glyph, else Tern's π fallback for an omp not yet titled. */
 function iconOf(item: Item): { glyph: string; pi: boolean } | null {
@@ -79,20 +79,19 @@ function RailItem({ item, now, selected }: { item: Item; now: number; selected: 
   );
 }
 
-function PushButton() {
-  const [push, togglePush] = usePush();
+function PushButton({ push: [push, togglePush] }: { push: [PushState, () => void] }) {
   if (push === "unsupported") return null;
   return (
     <button
       class={`icon-btn push-${push}${push === "on" ? " on" : ""}`}
       disabled={push === "pending"}
-      onClick={() => (push === "denied" ? alert("Notifications are blocked: allow them in the site settings.") : togglePush())}
+      onClick={() => (push === "denied" ? alert(permissionHelp("denied")) : togglePush())}
       aria-label={PUSH_LABEL[push]}
       title={PUSH_LABEL[push]}
     >
       <svg viewBox="0 0 20 20" aria-hidden="true">
         <path d="M5 13.5V9a5 5 0 0 1 10 0v4.5l1.5 1.5h-13L5 13.5ZM8.5 17a1.5 1.5 0 0 0 3 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
-        {(push === "off" || push === "denied") && <path d="M3.5 3.5 16.5 16.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />}
+        {(push === "off" || push === "denied" || push === "stopped") && <path d="M3.5 3.5 16.5 16.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />}
         {push === "on" && <circle cx="15" cy="5" r="2.6" fill="var(--working)" stroke="none" />}
       </svg>
     </button>
@@ -148,7 +147,20 @@ const HIDE_OLD_KEY = "tern-mobile:hide-old";
  * The session list. `wide`: shown beside the open session, which `selected` marks. `rail`: minimized
  * to a column of session icons; `onRail` toggles that (desktop only).
  */
-export function Home({ wide = false, selected = null, rail = false, onRail }: { wide?: boolean; selected?: string | null; rail?: boolean; onRail?: () => void }) {
+export function Home({
+  push,
+  wide = false,
+  selected = null,
+  rail = false,
+  onRail,
+}: {
+  /** The bell's state and toggle, owned by the app so recovery runs on every screen. */
+  push: [PushState, () => void];
+  wide?: boolean;
+  selected?: string | null;
+  rail?: boolean;
+  onRail?: () => void;
+}) {
   const { state, online } = useStream(null, "chat");
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -223,7 +235,7 @@ export function Home({ wide = false, selected = null, rail = false, onRail }: { 
           </button>
           <span class={`net ${online ? "on" : "off"}`} title={online ? "Connected" : "Offline"} />
           {blocked > 0 && <span class="c-blocked small" title={`${blocked} blocked`}>{blocked}</span>}
-          <PushButton />
+          <PushButton push={push} />
         </header>
         <nav class="list rail-list">
           {projects.map((p) => {
@@ -290,7 +302,7 @@ export function Home({ wide = false, selected = null, rail = false, onRail }: { 
               ))}
           </span>
         )}
-        <PushButton />
+        <PushButton push={push} />
         <button
           class={`icon-btn hide-old${hideOld ? " on" : ""}`}
           onClick={toggleOld}

@@ -9,6 +9,11 @@ afterAll(() => GlobalRegistrator.unregister());
 const { render } = await import("preact");
 const { act } = await import("preact/test-utils");
 const { Home, railGlyph } = await import("./home");
+const { usePush } = await import("./push");
+/** Home as the app renders it: the bell runs on the real push hook. */
+function HomeHost(props: Omit<Parameters<typeof Home>[0], "push">) {
+  return <Home push={usePush()} {...props} />;
+}
 
 const net = new Net();
 let root: HTMLElement;
@@ -42,7 +47,7 @@ afterEach(() => {
   for (const undo of restore.splice(0).reverse()) undo();
 });
 async function mount(items?: Item[], selected: string | null = null, wide = true) {
-  await act(() => render(<Home wide={wide} selected={selected} />, root));
+  await act(() => render(<HomeHost wide={wide} selected={selected} />, root));
   if (items) await act(() => { FakeEventSource.last.open(); FakeEventSource.last.emit("state", state(items)); });
   await act(() => settle());
 }
@@ -268,7 +273,7 @@ describe("Home", () => {
     pushBrowser("denied");
     await mount([]);
     await click(root.querySelector('[aria-label="Notifications blocked in site settings"]'));
-    expect(alerts).toEqual(["Notifications are blocked: allow them in the site settings."]);
+    expect(alerts).toEqual(["Notifications are blocked: allow them in the site settings, then tap the bell again."]);
     expect(net.calls).toEqual([]);
   });
 
@@ -282,7 +287,7 @@ describe("Home", () => {
 
 describe("sidebar rail", () => {
   async function mountRail(items: Item[], selected: string | null = null, onRail = () => {}) {
-    await act(() => render(<Home wide rail onRail={onRail} selected={selected} />, root));
+    await act(() => render(<HomeHost wide rail onRail={onRail} selected={selected} />, root));
     await act(() => { FakeEventSource.last.open(); FakeEventSource.last.emit("state", state(items)); });
     await act(() => settle());
   }
@@ -311,7 +316,7 @@ describe("sidebar rail", () => {
     await mount(items);
     await input(".search input", "login");
     expect(row("6")).toBeNull();
-    await act(() => render(<Home wide rail selected={null} />, root));
+    await act(() => render(<HomeHost wide rail selected={null} />, root));
     expect(railItem("6")).not.toBeNull();
   });
 
@@ -329,7 +334,7 @@ describe("sidebar rail", () => {
     let toggles = 0;
     await mountRail([item()], null, () => toggles++);
     await click(root.querySelector('[aria-label="Expand the session list"]'));
-    await act(() => render(<Home wide onRail={() => toggles++} selected={null} />, root));
+    await act(() => render(<HomeHost wide onRail={() => toggles++} selected={null} />, root));
     await click(root.querySelector('[aria-label="Minimize the session list"]'));
     expect(toggles).toBe(2);
   });

@@ -166,6 +166,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
             if (pushSubs.get(sub.endpoint) === sub) {
               pushSubs.delete(sub.endpoint);
               savePushSubs();
+              console.log(`push: ${sub.endpoint.split("/")[2]} reported a subscription gone (${err.statusCode}); removed`);
             }
           } else console.error("push failed", err.statusCode ?? err);
         }),
@@ -1051,7 +1052,10 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
         const keys = obj(body.keys);
         if (!str(keys.p256dh) || !str(keys.auth)) return json({ error: "bad subscription" }, 400);
         pushSubs.set(endpoint, { endpoint, keys: { p256dh: str(keys.p256dh), auth: str(keys.auth) } });
-      } else pushSubs.delete(endpoint);
+      }
+      // An unsubscribe is also how the service worker retires a subscription the browser replaced,
+      // so it doesn't mean notifications were turned off.
+      else if (pushSubs.delete(endpoint)) console.log(`push: a device on ${endpoint.split("/")[2]} removed a subscription`);
       savePushSubs();
       return json({ ok: true });
     }
