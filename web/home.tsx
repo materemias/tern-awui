@@ -1,7 +1,7 @@
 // The session list: projects with their rows, the filter, the bell, and the new-omp sheet.
 import { useEffect, useMemo, useState } from "preact/hooks";
-import type { Item } from "./api";
-import { age, folderLabel, isOld, jobsSummary, listProjects, matchesWords, parseCollapsed, rowText, toggled } from "./lib";
+import { postJson, type Item } from "./api";
+import { age, folderLabel, isOld, jobsSummary, listProjects, matchesWords, parseStoredList, rowText, toggled } from "./lib";
 import { Dot } from "./parts";
 import { ExtensionBanner } from "./extension";
 import { useExitGuard, useNow, useStream } from "./hooks";
@@ -184,7 +184,7 @@ export function Home({
 
   const [picker, setPicker] = useState(false);
   // Collapsed projects, remembered on this device.
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => parseCollapsed(localStorage.getItem(COLLAPSED_KEY)));
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(parseStoredList(localStorage.getItem(COLLAPSED_KEY))));
   function toggleProject(name: string) {
     setCollapsed((prev) => {
       const next = toggled(prev, name);
@@ -199,11 +199,7 @@ export function Home({
     if (ask && !confirm(`Start a new omp in ${project}?`)) return;
     setBusy(project);
     try {
-      const r = await fetch("/api/new", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-tern-mobile": "1" },
-        body: JSON.stringify({ cwd }),
-      });
+      const r = await postJson("/api/new", { cwd });
       const data: { block?: string; error?: string } = await r.json().catch(() => ({}));
       if (data.block) location.hash = `#/b/${data.block}`;
       else if (data.error) alert(data.error);

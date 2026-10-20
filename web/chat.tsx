@@ -12,18 +12,26 @@ import { buzz, Thumbs, Todo, UserMsg } from "./parts";
 import { isLinkable, lengthOf, linkedMarkdown, openText, parse, stretches, withOpen, writeOpen, type Segment, type Stretch } from "./stretch";
 
 let mermaidReady: Promise<Mermaid> | null = null;
+// Bounded: a long session renders many diagrams, and live edits of one make many sources.
 const mermaidSvgs = new Map<string, string | null>();
+const MERMAID_CACHE_MAX = 32;
 let mermaidSeq = 0;
 
 /** Draws the mermaid placeholders under `root`; the library (~1 MB) loads on first use. */
 async function drawMermaid(root: HTMLElement) {
   const slots = [...root.querySelectorAll<HTMLElement>(".mermaid-src")];
   if (!slots.length) return;
-  mermaidReady ??= import("mermaid").then(({ default: m }) => {
-    // strict: labels are sanitized and click handlers off; the source is agent text.
-    m.initialize({ startOnLoad: false, securityLevel: "strict", theme: "dark", fontFamily: "system-ui, sans-serif" });
-    return m;
-  });
+  mermaidReady ??= import("mermaid").then(
+    ({ default: m }) => {
+      // strict: labels are sanitized and click handlers off; the source is agent text.
+      m.initialize({ startOnLoad: false, securityLevel: "strict", theme: "dark", fontFamily: "system-ui, sans-serif" });
+      return m;
+    },
+    (err) => {
+      mermaidReady = null; // a failed load (offline) is retried next time
+      throw err;
+    },
+  );
   const mermaid = await mermaidReady;
   for (const slot of slots) {
     const src = slot.textContent ?? "";
@@ -32,6 +40,8 @@ async function drawMermaid(root: HTMLElement) {
       const svg = await mermaid.render(id, src).then((r) => r.svg, () => null);
       document.getElementById(`d${id}`)?.remove(); // a failed render leaves its scratch node
       mermaidSvgs.set(src, svg);
+      // Maps iterate in insertion order: the first key is the oldest.
+      if (mermaidSvgs.size > MERMAID_CACHE_MAX) mermaidSvgs.delete(mermaidSvgs.keys().next().value!);
     }
     if (!slot.isConnected || !slot.classList.contains("mermaid-src")) continue;
     const svg = mermaidSvgs.get(src);
@@ -46,6 +56,7 @@ export function Markdown({
   class: cls,
   imageSources,
   highlight,
+  mermaid = true,
   onClick,
 }: {
   text: string;
@@ -53,6 +64,8 @@ export function Markdown({
   imageSources?: Record<string, string>;
   /** Colors fenced code by its language (opened files; chat stays plain). */
   highlight?: boolean;
+  /** Draws mermaid diagrams; live text keeps the source as code until its final render. */
+  mermaid?: boolean;
   onClick?: (e: MouseEvent) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -61,8 +74,8 @@ export function Markdown({
   useEffect(() => {
     if (!ref.current) return;
     drawCharts(ref.current);
-    void drawMermaid(ref.current);
-    if (highlight) void highlightFences(ref.current);
+    if (mermaid) drawMermaid(ref.current).catch(() => {});
+    if (highlight) highlightFences(ref.current).catch(() => {});
   }, [html]);
   return <div ref={ref} class={cls} lang={lang} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />;
 }

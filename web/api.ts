@@ -119,14 +119,19 @@ export type Doc = { text: string; markdown: boolean; missing: boolean; clipped: 
 /** A model omp has credentials for, as the bridge lists it. */
 export type CatalogModel = { p: string; id: string; name: string; r: boolean; ctx: number; in: number; out: number; img: boolean };
 
+/** A JSON POST with the header the server requires of the app. */
+export function postJson(path: string, body: unknown): Promise<Response> {
+  return fetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-tern-mobile": "1" },
+    body: JSON.stringify(body),
+  });
+}
+
 /** POSTs an action; null on success, else the server's error (or the network failure). */
 export async function post(path: string, body: unknown): Promise<string | null> {
   try {
-    const r = await fetch(path, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-tern-mobile": "1" },
-      body: JSON.stringify(body),
-    });
+    const r = await postJson(path, body);
     if (r.ok) return null;
     const data: { error?: string } = await r.json().catch(() => ({}));
     return data.error ?? `HTTP ${r.status}`;

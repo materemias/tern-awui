@@ -25,7 +25,7 @@ import {
   matchesWords,
   needsReencode,
   parseAdvisorNote,
-  parseCollapsed,
+  parseStoredList,
   parseRecent,
   parseRoute,
   prettyModel,
@@ -277,6 +277,11 @@ describe("extension notices", () => {
     );
     expect(installNotice(install({ status: "stale", repo: "C:\\Users\\Ann\\tern-awui", windows: true }))?.command).toBe("cd C:\\Users\\Ann\\tern-awui; bun install.ts");
     expect(shellArg("C:\\Ann's", true)).toBe("'C:\\Ann''s'");
+    // A backslash escapes in POSIX shells; `,` and `@` are syntax in PowerShell.
+    expect(shellArg("/home/u/a\\b", false)).toBe("'/home/u/a\\b'");
+    expect(shellArg("/home/u/a,b@c", false)).toBe("/home/u/a,b@c");
+    expect(shellArg("C:\\a,b", true)).toBe("'C:\\a,b'");
+    expect(shellArg("C:\\@a", true)).toBe("'C:\\@a'");
   });
 
   test("matching sessions and sessions without a bridge get none", () => {
@@ -450,12 +455,12 @@ describe("rowText", () => {
 
 describe("collapsed projects", () => {
   test("stored list round-trips; missing or broken storage is none", () => {
-    expect([...parseCollapsed(JSON.stringify(["a", "b"]))]).toEqual(["a", "b"]);
-    expect(parseCollapsed(null).size).toBe(0);
-    expect(parseCollapsed("{not json").size).toBe(0);
-    expect(parseCollapsed("5").size).toBe(0);
-    expect([...parseCollapsed(JSON.stringify("abc"))]).toEqual([]);
-    expect([...parseCollapsed(JSON.stringify([null, 42, {}, "project"]))]).toEqual(["project"]);
+    expect(parseStoredList(JSON.stringify(["a", "b"]))).toEqual(["a", "b"]);
+    expect(parseStoredList(null)).toEqual([]);
+    expect(parseStoredList("{not json")).toEqual([]);
+    expect(parseStoredList("5")).toEqual([]);
+    expect(parseStoredList(JSON.stringify("abc"))).toEqual([]);
+    expect(parseStoredList(JSON.stringify([null, 42, {}, "project"]))).toEqual(["project"]);
   });
   test("toggling flips one name and leaves the old set alone", () => {
     const before = new Set(["a"]);

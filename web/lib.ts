@@ -92,7 +92,8 @@ export function can(live: Live | null | undefined, cap: keyof Caps): boolean {
 
 /** One argument of a POSIX shell or PowerShell command, quoted only when it needs it. */
 export function shellArg(value: string, windows: boolean): string {
-  if (/^[\w@%+=:,./\\~-]+$/.test(value)) return value;
+  // Separate sets: `\` escapes in POSIX shells; `,` builds arrays and `@` splats in PowerShell.
+  if (windows ? /^[\w%+=:./\\~-]+$/.test(value) : /^[\w@%+=:,./~-]+$/.test(value)) return value;
   return windows ? `'${value.replaceAll("'", "''")}'` : `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
@@ -155,8 +156,8 @@ export function sessionNotice(item: Item, install: Install): Notice | null {
 
 // ---------- routes ----------
 
-/** A subagent name as omp writes it (and the server accepts): no separators, no leading dot or underscore. */
-export const SUBAGENT_NAME = /^[A-Za-z0-9][\w.-]{0,127}$/;
+import { SUBAGENT_NAME } from "../lib/subagent-name";
+export { SUBAGENT_NAME };
 
 /** The screen a URL hash shows: the list, a session, its subagents, or one subagent's chat. */
 export type Route =
@@ -287,10 +288,14 @@ export function rowText(item: Item, now: number): { sub: string; recap: boolean;
   return { sub, recap: !!recap, stale: idle && now - item.since > 86_400_000 };
 }
 
+/** Tern's notes folder on any OS: …/tern/notes/ (Linux), …/Tern/notes/ (macOS), …\Tern\notes\ (Windows). */
+export function isNote(doc: string): boolean {
+  return /[\\/]tern[\\/]notes[\\/]/i.test(doc);
+}
+
 /** A file block's second line: "Note" for Tern's notes, else its folder, named from the block's cwd folder when inside it. */
 function docSub(doc: string, cwd: string): string {
-  // Tern's notes folder on any OS: …/tern/notes/ (Linux), …/Tern/notes/ (macOS), …\Tern\notes\ (Windows).
-  if (/[\\/]tern[\\/]notes[\\/]/i.test(doc)) return "Note";
+  if (isNote(doc)) return "Note";
   const cut = Math.max(doc.lastIndexOf("/"), doc.lastIndexOf("\\"));
   const dir = cut < 0 ? "" : doc.slice(0, cut);
   const base = cwd.replace(/[\\/]+$/, "");
@@ -299,13 +304,13 @@ function docSub(doc: string, cwd: string): string {
   return name + dir.slice(base.length);
 }
 
-/** The collapsed projects as stored on this device; anything unreadable counts as none. */
-export function parseCollapsed(raw: string | null): Set<string> {
+/** A list of strings as stored on this device; anything unreadable counts as none. */
+export function parseStoredList(raw: string | null): string[] {
   try {
     const value: unknown = JSON.parse(raw ?? "[]");
-    return new Set(Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : []);
+    return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
   } catch {
-    return new Set();
+    return [];
   }
 }
 
@@ -318,7 +323,7 @@ export function toggled(set: Set<string>, name: string): Set<string> {
 
 // ---------- the model picker ----------
 
-export const RECENT_MAX = 6;
+const RECENT_MAX = 6;
 
 /** Every whitespace-separated word of `query` appears in `text`, ignoring case. */
 export function matchesWords(query: string, text: string): boolean {
@@ -340,12 +345,7 @@ export function searchModels(models: CatalogModel[], query: string): CatalogMode
 
 /** The recent picks as stored on this device, newest first. */
 export function parseRecent(raw: string | null): string[] {
-  try {
-    const value: unknown = JSON.parse(raw ?? "[]");
-    return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string").slice(0, RECENT_MAX) : [];
-  } catch {
-    return [];
-  }
+  return parseStoredList(raw).slice(0, RECENT_MAX);
 }
 
 /** `recent` after picking `spec`: it moves to the front, the oldest falls off. */

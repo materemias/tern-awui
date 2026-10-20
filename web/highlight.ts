@@ -19,10 +19,21 @@ function pathLanguage(hljs: HLJSApi, path: string): string | undefined {
   return hljs.getLanguage(lang) ? lang : undefined;
 }
 
+/** highlight.js, loaded once; a failed load (offline) is retried on next use. */
+function loadHljs(): Promise<HLJSApi> {
+  return (ready ??= import("highlight.js/lib/common").then(
+    (m) => m.default,
+    (err) => {
+      ready = null;
+      throw err;
+    },
+  ));
+}
+
 /** `text` as highlighted HTML when `path` names a known language; null leaves it plain. */
 export async function highlightFile(text: string, path: string): Promise<string | null> {
   if (!text || text.length > HIGHLIGHT_MAX_CHARS) return null;
-  const hljs = await (ready ??= import("highlight.js/lib/common").then((m) => m.default));
+  const hljs = await loadHljs();
   const lang = pathLanguage(hljs, path);
   return lang ? hljs.highlight(text, { language: lang, ignoreIllegals: true }).value : null;
 }
@@ -31,7 +42,7 @@ export async function highlightFile(text: string, path: string): Promise<string 
 export async function highlightFences(root: HTMLElement) {
   const blocks = [...root.querySelectorAll<HTMLElement>("pre[data-lang] > code:not(.hljs)")];
   if (!blocks.length) return;
-  const hljs = await (ready ??= import("highlight.js/lib/common").then((m) => m.default));
+  const hljs = await loadHljs();
   for (const code of blocks) {
     const lang = code.parentElement!.dataset.lang!;
     const text = code.textContent ?? "";

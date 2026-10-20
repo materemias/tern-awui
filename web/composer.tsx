@@ -1,7 +1,7 @@
 // The prompt: draft mirroring, sends and follow-ups, side questions, pasted images, completions,
 // terminal typing and the key bar.
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { post, type Btw, type BtwHistoryRecord, type Item, type Role } from "./api";
+import { post, postJson, type Btw, type BtwHistoryRecord, type Item, type Role } from "./api";
 import { btwCommand, can, composerKey, currentRole, fitEdge, lineEdit, needsReencode, prettyModel, tokensShort } from "./lib";
 import { Markdown } from "./chat";
 import { openText } from "./stretch";
@@ -116,11 +116,7 @@ export function Composer({
     const seq = ++hintSeq.current;
     if (!live || !completable || !COMPLETABLE.test(text) || Date.now() - lastEdit.current > 1000) return setHints(null);
     const timer = window.setTimeout(async () => {
-      const r = await fetch(`/api/blocks/${block}/complete`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-tern-mobile": "1" },
-        body: JSON.stringify({ text }),
-      }).catch(() => null);
+      const r = await postJson(`/api/blocks/${block}/complete`, { text }).catch(() => null);
       const data: Hints | null = r?.ok ? await r.json().catch(() => null) : null;
       if (seq === hintSeq.current) setHints(data?.items.length ? data : null);
     }, 120);
@@ -138,11 +134,7 @@ export function Composer({
     const box = outbox.current;
     const sent = textRef.current;
     box.busy = true;
-    const r = await fetch(`/api/blocks/${block}/completion`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-tern-mobile": "1" },
-      body: JSON.stringify({ text: sent, value: item.value, label: item.label, prefix }),
-    }).catch(() => null);
+    const r = await postJson(`/api/blocks/${block}/completion`, { text: sent, value: item.value, label: item.label, prefix }).catch(() => null);
     const data: { text?: string; error?: string } = r ? await r.json().catch(() => ({})) : { error: "offline" };
     box.busy = false;
     box.next = null;
@@ -306,11 +298,7 @@ export function Composer({
       const question = command.question;
       // A side question answered on the phone; the desktop draft is cleared like a sent prompt.
       setSending(true);
-      const r = await fetch(`/api/blocks/${block}/btw`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-tern-mobile": "1" },
-        body: JSON.stringify({ text: question }),
-      }).catch(() => null);
+      const r = await postJson(`/api/blocks/${block}/btw`, { text: question }).catch(() => null);
       const data: { id?: string; error?: string } = r ? await r.json().catch(() => ({})) : { error: "offline" };
       setSending(false);
       if (!data.id) return setError(data.error ?? "btw failed");

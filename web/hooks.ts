@@ -143,6 +143,9 @@ export function useStream(block: string | null, view: View, sub: string | null =
     let es: EventSource | null = null;
     let liveEnded = false;
     let liveTimer: number | undefined;
+    // A failed HTTP response (502 while the server restarts) closes EventSource for good.
+    let retryTimer: number | undefined;
+    let retryMs = 1000;
     const open = () => {
       // Live text and the queue may have moved on while hidden; the stream resends what's current.
       setLive(null);
@@ -152,12 +155,19 @@ export function useStream(block: string | null, view: View, sub: string | null =
       src.onopen = () => {
         // Native reconnects also need a fresh snapshot: empty live text and queues aren't resent.
         clearTimeout(liveTimer);
+        retryMs = 1000;
         liveEnded = false;
         setLive(null);
         setQueued([]);
         setOnline(true);
       };
-      src.onerror = () => setOnline(false);
+      src.onerror = () => {
+        setOnline(false);
+        if (src.readyState !== EventSource.CLOSED || es !== src || document.visibilityState !== "visible") return;
+        clearTimeout(retryTimer);
+        retryTimer = window.setTimeout(open, retryMs);
+        retryMs = Math.min(retryMs * 2, 30_000);
+      };
       src.addEventListener("state", (e) => {
         const s: State = JSON.parse(e.data);
         setState(s);
@@ -189,6 +199,7 @@ export function useStream(block: string | null, view: View, sub: string | null =
       src.addEventListener("subagents", (e) => setSubagents(JSON.parse(e.data)));
     };
     const close = () => {
+      clearTimeout(retryTimer);
       es?.close();
       es = null;
       setOnline(false);
@@ -200,13 +211,17 @@ export function useStream(block: string | null, view: View, sub: string | null =
     const onVisibility = () => {
       clearTimeout(hideTimer);
       if (document.visibilityState === "hidden") hideTimer = window.setTimeout(close, HIDDEN_GRACE_MS);
-      else if (!es || es.readyState === EventSource.CLOSED) open();
+      else if (!es || es.readyState === EventSource.CLOSED) {
+        clearTimeout(retryTimer);
+        open();
+      }
     };
     if (document.visibilityState === "visible") open();
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       es?.close();
       clearTimeout(liveTimer);
+      clearTimeout(retryTimer);
       clearTimeout(hideTimer);
       document.removeEventListener("visibilitychange", onVisibility);
     };

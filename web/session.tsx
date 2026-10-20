@@ -2,7 +2,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { highlightFile } from "./highlight";
 import { post } from "./api";
-import { age, backStep, can, type Route } from "./lib";
+import { age, backStep, can, isNote, type Route } from "./lib";
 import { Chat, Markdown, StretchContext, type StretchSync } from "./chat";
 import { liveText, withOpen } from "./stretch";
 import { screenHtml } from "./markdown";
@@ -74,7 +74,7 @@ export function Session({ block }: { block: string }) {
           {item ? <Title item={item} /> : <div class="row-title">{block}</div>}
           <div class="row-meta">
             {!(item?.doc && !shownState) && <Dot state={shownState} />}
-            <span>{shownState ?? (item?.doc ? (/[\\/]tern[\\/]notes[\\/]/i.test(item.doc) ? "note" : "file") : "shell")}</span>
+            <span>{shownState ?? (item?.doc ? (isNote(item.doc) ? "note" : "file") : "shell")}</span>
             {item?.status && <span class="muted">{age(item.since, now)}</span>}
             {item && <span class="muted">{item.project}</span>}
             {item?.branch && (
@@ -142,7 +142,7 @@ export function Session({ block }: { block: string }) {
               <StretchContext.Provider value={stretchSync}>
                 <Chat entries={chat} block={block} rewind={can(item?.live, "rewind")} />
               </StretchContext.Provider>
-              {live && <Markdown class="msg assistant md live" text={liveText(live)} />}
+              {live && <Markdown class="msg assistant md live" mermaid={false} text={liveText(live)} />}
               {queued.map((q, i) => (
                 <div key={i} class="queued" title={q.followUp ? "Sent once the running turn ends" : "Steers the running turn"}>
                   <span class="queued-mark">{q.followUp ? "→" : "↳"}</span>
@@ -228,7 +228,9 @@ function FileText({ text, path }: { text: string; path: string }) {
   const [colored, setColored] = useState<{ text: string; path: string; html: string } | null>(null);
   useEffect(() => {
     let current = true;
-    void highlightFile(text, path).then((html) => current && setColored(html === null ? null : { text, path, html }));
+    highlightFile(text, path)
+      .then((html) => current && setColored(html === null ? null : { text, path, html }))
+      .catch(() => {});
     return () => void (current = false);
   }, [text, path]);
   if (colored?.text === text && colored.path === path) return <pre class="term hljs" dangerouslySetInnerHTML={{ __html: colored.html }} />;

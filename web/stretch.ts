@@ -17,9 +17,9 @@ export type Stretch = {
 
 type Frame = { stretch: Stretch; siblings: Map<string, number> };
 
-export const KEY_SEPARATOR = " › ";
+const KEY_SEPARATOR = " › ";
 
-export function isOpenable(stretch: Stretch): boolean {
+function isOpenable(stretch: Stretch): boolean {
   return stretch.isClosed && stretch.long !== undefined;
 }
 
@@ -29,7 +29,7 @@ export function isLinkable(stretch: Stretch): boolean {
 }
 
 /** Where the code span opening at `i` ends: past the next run of as many backticks, or at the text's end. */
-export function codeSpanEnd(text: string, i: number): number {
+function codeSpanEnd(text: string, i: number): number {
   const run = /^`+/.exec(text.slice(i))?.[0] ?? "`";
   const end = text.indexOf(run, i + run.length);
   return end === -1 ? text.length : end + run.length;
@@ -138,7 +138,7 @@ export function writeOpen(parts: Segment[]): string {
  * A reply still streaming: every stretch as its short form, so neither raw markup nor a half-written
  * long form shows. Links appear once the reply is final.
  */
-export function streamingView(parts: Segment[]): string {
+function streamingView(parts: Segment[]): string {
   return parts.map(part => (typeof part === "string" ? part : part.short)).join("");
 }
 
@@ -260,9 +260,9 @@ function bare(word: string): string {
 // ---------------------------------------------------------------------------
 // In-chat view: each closed stretch is a markdown link, each open one its long form then a « link.
 
-export type LinkOp = "open" | "close";
+type LinkOp = "open" | "close";
 
-export type LinkView = {
+type LinkView = {
   href: (op: LinkOp, index: number) => string;
   isOpen: (key: string) => boolean;
   /** A stretch drawn part-way open, `index` into the block's `stretches()`. */

@@ -240,6 +240,27 @@ describe("useStream", () => {
     expect(FakeEventSource.all).toHaveLength(3);
   });
 
+  test("an HTTP error that closes the stream reopens it with a growing delay", async () => {
+    await act(() => render(<StreamHost block="5" />, root));
+    const first = FakeEventSource.last;
+    // A 502 while the server restarts: EventSource gives up and won't retry by itself.
+    first.close();
+    await act(() => first.fail());
+    expect(snapshot()).toMatchObject({ online: false });
+    await advance(999);
+    expect(FakeEventSource.all).toHaveLength(1);
+    await advance(1);
+    expect(FakeEventSource.all).toHaveLength(2);
+    FakeEventSource.last.close();
+    await act(() => FakeEventSource.last.fail());
+    await advance(1999);
+    expect(FakeEventSource.all).toHaveLength(2);
+    await advance(1);
+    expect(FakeEventSource.all).toHaveLength(3);
+    await act(() => FakeEventSource.last.open());
+    expect(snapshot()).toMatchObject({ online: true });
+  });
+
   test("initially hidden mounting waits for visibility and unmount clears timers and listeners", async () => {
     await visibility("hidden");
     await act(() => render(<StreamHost block="5" />, root));

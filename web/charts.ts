@@ -4,7 +4,7 @@
 // deterministic "X is best on N of M measures" is shown.
 
 type Dim = "bytes" | "time" | "percent" | "money" | "count";
-export type Cell = { value: number; text: string; dim: Dim };
+type Cell = { value: number; text: string; dim: Dim };
 export type Series = { name: string; points: (Cell | null)[]; best: number | null };
 
 const UNITS: Record<string, [Dim, number]> = {
