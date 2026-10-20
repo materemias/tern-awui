@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-10-20)
 
 - **Breaking:** the security model is stated as it is: tern-awui has no authentication, and who reaches its loopback port is up to you (loopback only, Tailscale Serve, another authenticating proxy). Tailscale is optional: without `TERN_AWUI_ALLOW` the server now starts with no login check (and says so in its startup log) instead of refusing to start. `TERN_AWUI_DEV` is gone; leaving `TERN_AWUI_ALLOW` unset does the same. README and `docs/architecture.md` describe what is in and out of scope, including that the machine must be single-user.
 - **Breaking:** requests must name a known host (`localhost`, `127.0.0.1`, `[::1]` or a `TERN_AWUI_HOSTS` entry), so a web page that rebinds its own domain to 127.0.0.1 can't reach the server through your browser. The installer writes the tailnet name into `TERN_AWUI_HOSTS`: run `bun install.ts` again after updating, or the tailnet address gets 403. Behind another proxy, add the name it serves under to `TERN_AWUI_HOSTS`.
