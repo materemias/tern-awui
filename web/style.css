@@ -293,6 +293,13 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .advisor-line { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
 .advisor-key { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 12px; }
 .advisor-body p { margin: 4px 0; overflow-wrap: anywhere; }
+/* Injected rules: quiet mono lines like Tern's, no card. */
+.rule { font: 12px/1.5 var(--mono); color: var(--muted); opacity: .85; }
+.rule-line, .rule-gist { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rule-tag { color: color-mix(in srgb, #b5d16a 70%, var(--muted)); }
+.rule-name { color: var(--fg); opacity: .8; }
+.rule-body { margin: 2px 0 6px; overflow-wrap: anywhere; white-space: normal; }
+.rule-body > :first-child { margin-top: 0; }
 .sev { flex: none; font: 10.5px/1.6 var(--mono); text-transform: uppercase; padding: 0 5px; border-radius: 4px; background: var(--raise); color: var(--muted); }
 .sev-blocker { background: color-mix(in srgb, var(--blocked) 22%, transparent); color: var(--blocked); }
 .sev-concern { background: color-mix(in srgb, #e0a43a 22%, transparent); color: #e0a43a; }
@@ -350,7 +357,7 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .pasted-item button { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line); background: var(--raise); color: var(--fg); font-size: 13px; line-height: 1; padding: 0; }
 
 /* Everything that reacts to a click shows the hand (desktop browsers); images zoom. */
-a[href], button, label, summary, select, input[type="checkbox"], input[type="radio"], .advisor, .tools, .error, .raw-note { cursor: pointer; }
+a[href], button, label, summary, select, input[type="checkbox"], input[type="radio"], .advisor, .rule, .tools, .error, .raw-note { cursor: pointer; }
 button:disabled { cursor: default; }
 .thumb { cursor: zoom-in; }
 .lightbox { cursor: zoom-out; }

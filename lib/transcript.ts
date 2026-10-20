@@ -35,11 +35,29 @@ export type ChatEntry =
   | AskEntry
   | { role: "turn"; ms: number; model: string; ts: number }
   | { role: "advisor"; notes: AdvisorNote[]; ts: number }
+  /** omp rules injected mid-turn (TTSR); `text` is the rule body when omp wrote it to the transcript, else "". */
+  | { role: "rule"; rules: InjectedRule[]; ts: number }
   /** omp's idle recap of the session (history.db), merged in by time; see lib/recaps.ts. */
   | { role: "recap"; text: string; ts: number };
 export type AskEntry = { role: "ask"; id: string; questions: AskQuestion[]; answer: string | null; ts: number };
 /** A note from omp's advisor model: `Key:`/`Evidence:`/`Impact:`/`Fix:` lines. */
 export type AdvisorNote = { advisor: string; severity: string; note: string };
+export type InjectedRule = { name: string; text: string };
+
+/** omp's non-interrupting rule reminder (ttsr-tool-reminder.md, ttsr-warning.md): tag line, preamble, blank line, rule body. */
+const RULE_REMINDER = /<system-reminder reason="rule_violation" rule="([^"]+)"[^>]*>\n[^\n]*\n\n([\s\S]*?)\n*<\/system-reminder>/g;
+
+/** Adds rules to the newest rule entry while nothing else was shown after it, else starts one. */
+function noteRules(entries: ChatEntry[], rules: InjectedRule[], ts: number): void {
+  const last = entries[entries.length - 1];
+  const entry = last?.role === "rule" ? last : { role: "rule" as const, rules: [], ts };
+  if (entry !== last) entries.push(entry);
+  for (const rule of rules) {
+    const known = entry.rules.find((r) => r.name === rule.name);
+    if (!known) entry.rules.push(rule);
+    else if (!known.text) known.text = rule.text;
+  }
+}
 
 // `title` is eval's intent; `code` (its first line) only when a call carries nothing better.
 const INTENT_KEYS = ["i", "title", "command", "path", "pattern", "query", "url", "description", "code"];
@@ -271,7 +289,8 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
   let turnStart: number | null = null;
   for (const row of rows) {
     const advisor = row.type === "custom_message" && row.customType === "advisor";
-    if ((!advisor && row.type !== "message") || !active.has(str(row.id))) continue;
+    const injection = row.type === "ttsr_injection";
+    if ((!advisor && !injection && row.type !== "message") || !active.has(str(row.id))) continue;
     const msg = obj(row.message);
     const ts = Date.parse(str(row.timestamp)) || num(msg.timestamp);
     if (advisor) {
@@ -280,6 +299,22 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
         .map((n) => ({ advisor: str(n.advisor), severity: str(n.severity, "note"), note: str(n.note).trim() }))
         .filter((n) => n.note);
       if (notes.length) entries.push({ role: "advisor", notes, ts });
+      continue;
+    }
+    if (injection) {
+      const rules = arr(row.injectedRules).map((name) => ({ name: str(name), text: "" })).filter((r) => r.name);
+      if (rules.length) noteRules(entries, rules, ts);
+      continue;
+    }
+    if (msg.role === "developer") {
+      // The rule body arrives after the tool result it rode on; fill the name its injection row showed.
+      const rules = [...textOf(msg.content).matchAll(RULE_REMINDER)].map((m) => ({ name: m[1], text: m[2].trim() }));
+      for (const rule of rules) {
+        const shown = entries.findLast((e): e is Extract<ChatEntry, { role: "rule" }> => e.role === "rule" && e.rules.some((r) => r.name === rule.name && !r.text));
+        const target = shown?.rules.find((r) => r.name === rule.name && !r.text);
+        if (target) target.text = rule.text;
+        else noteRules(entries, [rule], ts);
+      }
       continue;
     }
     if (msg.role === "user") {

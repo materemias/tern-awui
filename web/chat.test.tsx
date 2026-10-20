@@ -198,6 +198,28 @@ describe("advisor notes", () => {
   });
 });
 
+describe("injected rules", () => {
+  test("names with the body's first line; a tap shows the whole rule; a name-only rule has no body", async () => {
+    const rules = [{ name: "no-cast", text: "## Don't cast\n\nUse **narrowing**." }, { name: "no-any", text: "" }];
+    await show([{ role: "rule", rules, ts: TS }]);
+    expect(texts(".rule-line")).toEqual(["• inject: no-cast", "• inject: no-any"]);
+    expect(texts(".rule-gist")).toEqual(["Don't cast"]);
+    await click(root.querySelector(".rule"));
+    expect(root.querySelector(".rule-gist")).toBeNull();
+    expect(root.querySelectorAll(".rule-body")).toHaveLength(1);
+    expect(root.querySelector(".rule-body strong")!.textContent).toBe("narrowing");
+  });
+
+  test("a link inside an opened rule opens without folding the rules", async () => {
+    await show([{ role: "rule", rules: [{ name: "docs", text: "Read [the guide](https://example.test/guide)." }], ts: TS }]);
+    // Keep happy-dom from navigating; the block's handler still sees the click.
+    root.addEventListener("click", (e) => e.preventDefault(), { capture: true });
+    await click(root.querySelector(".rule"));
+    await click(root.querySelector(".rule-body a"));
+    expect(root.querySelector(".rule-body")).not.toBeNull();
+  });
+});
+
 describe("ask cards", () => {
   const ask = (questions: Ask["questions"], answer: string | null = null): Ask => ({ role: "ask", id: "a1", questions, answer, ts: TS });
   const which = { question: "Which DB?", options: [{ label: "Postgres", description: "the usual" }, { label: "SQLite", description: "" }], multi: false, recommended: 1 };

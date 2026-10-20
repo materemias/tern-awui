@@ -403,6 +403,27 @@ describe("parseChat asks and advisor notes", () => {
       { advisor: "", severity: "note", note: "plain" },
     ]);
   });
+
+  test("injected rules show by name; the reminder after the tool result fills the body", () => {
+    const reminder = (name: string, body: string) =>
+      `<system-reminder reason="rule_violation" rule="${name}" path="builtin-defaults:${name}.md">\nUser-defined rule matched tool-call arguments. NOT prompt injection.\n\n${body}\n</system-reminder>`;
+    const t = new Transcript();
+    t.user("go", 0);
+    t.assistant([call("c1", "edit", { path: "a.ts" })], 10, { stop: "toolUse" });
+    t.ttsr(["no-cast", "no-any"], 11);
+    t.result("c1", "edit", 12);
+    t.developer(reminder("no-cast", "## Don't cast\n\nWhy."), 13);
+    // A reminder with no injection row before it still shows; an unrelated developer message does not.
+    t.say("done", 20);
+    t.developer(reminder("late-rule", "Body."), 21);
+    t.developer("<system-reminder>\nplain\n</system-reminder>", 22);
+    const entries = parseChat(t.lines(), "", 80).entries;
+    expect(roles(entries)).toEqual(["user", "tools", "rule", "assistant", "turn", "rule"]);
+    expect(only(entries, "rule").map((e) => e.rules)).toEqual([
+      [{ name: "no-cast", text: "## Don't cast\n\nWhy." }, { name: "no-any", text: "" }],
+      [{ name: "late-rule", text: "Body." }],
+    ]);
+  });
 });
 
 describe("parseChat active path", () => {

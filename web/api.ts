@@ -109,6 +109,8 @@ export type ChatEntry =
   | Ask
   | { role: "turn"; ms: number; model: string; ts: number }
   | { role: "advisor"; notes: AdvisorNote[]; ts: number }
+  /** omp rules injected mid-turn; `text` is the rule body, "" when the transcript has only the name. */
+  | { role: "rule"; rules: { name: string; text: string }[]; ts: number }
   /** omp's idle recap, merged in by time (see lib/recaps.ts). */
   | { role: "recap"; text: string; ts: number };
 export type AdvisorNote = { advisor: string; severity: string; note: string };

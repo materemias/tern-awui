@@ -175,6 +175,24 @@ function AdvisorCard({ notes }: { notes: AdvisorNote[] }) {
   );
 }
 
+/** omp rules injected mid-turn, as quiet mono lines like Tern's (`• inject: name`, then the body's first line); tap for the whole rule. */
+function RuleCard({ rules }: { rules: { name: string; text: string }[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    // A link inside a rule opens; it doesn't fold the rules.
+    <div class="rule" onClick={(e) => (e.target as Element).closest("a[href]") || setOpen(!open)}>
+      {rules.map((r) => (
+        <div key={r.name}>
+          <div class="rule-line">
+            • <span class="rule-tag">inject</span>: <span class="rule-name">{r.name}</span>
+          </div>
+          {r.text && (open ? <Markdown class="md rule-body" text={r.text} /> : <div class="rule-gist">{r.text.split("\n")[0].replace(/^#+\s*/, "")}</div>)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Tools({ calls, images, todo, latestTodo }: { calls: ToolCall[]; images: Img[]; todo: TodoPhase[] | null; latestTodo: boolean }) {
   const [open, setOpen] = useState(false);
   const errors = calls.filter((c) => c.error).length;
@@ -359,6 +377,7 @@ export function Chat({ entries, block, rewind, readOnly = false }: { entries: Ch
           );
         if (e.role === "assistant") return <Reply key={n} entry={e} />;
         if (e.role === "advisor") return <AdvisorCard key={n} notes={e.notes} />;
+        if (e.role === "rule") return <RuleCard key={n} rules={e.rules} />;
         if (e.role === "recap")
           return (
             <div key={n} class="chat-recap" title={`omp's recap · ${clock(e.ts)}`}>

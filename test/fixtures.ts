@@ -53,6 +53,14 @@ export class Transcript {
     return this.entry({ type: "custom_message", customType: "advisor", content: "<advisory/>", display: true, details: { notes } }, at);
   }
 
+  ttsr(rules: string[], at: number): string {
+    return this.entry({ type: "ttsr_injection", injectedRules: rules }, at);
+  }
+
+  developer(content: string, at: number): string {
+    return this.entry({ type: "message", message: { role: "developer", content: [{ type: "text", text: content }], timestamp: T0 + at } }, at);
+  }
+
   custom(at: number): string {
     return this.entry({ type: "custom", customType: "plannotator", data: { phase: "idle" } }, at);
   }
