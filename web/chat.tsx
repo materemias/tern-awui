@@ -9,7 +9,8 @@ import { askAnswers, askReady, clock, duration, langOf, parseAdvisorNote, pretty
 import { renderMarkdown } from "./markdown";
 import { highlightFences } from "./highlight";
 import { buzz, Thumbs, Todo, UserMsg } from "./parts";
-import { isLinkable, lengthOf, linkedMarkdown, openText, parse, stretches, withOpen, writeOpen, type Segment, type Stretch } from "./stretch";
+import { isLinkable, lengthOf, linkedMarkdown, parse, stretches, writeOpen, type Segment, type Stretch } from "./stretch-core";
+import { openText, withOpen } from "./stretch";
 
 let mermaidReady: Promise<Mermaid> | null = null;
 // Bounded: a long session renders many diagrams, and live edits of one make many sources.

@@ -16,7 +16,8 @@ The screenshots show invented sessions; `bun docs/screenshots.ts` regenerates th
 
 - **Every omp session at a glance.** Working, waiting for you, or idle, with the time in that status, the session's title, icon and tag, and the last prompt or omp's own recap.
 - **Grouped by project.** Sessions are grouped by git repository (or folder), the most recently active first. Projects fold away, and sessions untouched for a day can be hidden with one tap.
-- **The conversation, not the terminal.** omp sessions show as a chat: prompts, Markdown answers, collapsed tool runs, todo lists, tables with bar charts, SVG and Mermaid figures, images and screenshots, advisor notes, injected omp rules, omp's idle recaps under the turns they sum up, and the reply streaming in as omp writes it. Replies written as stretchtext (`{{short|long}}`, by an omp stretchtext extension) open phrase by phrase with a tap, in step with the Tern pane.
+- **The conversation, not the terminal.** omp sessions show as a chat: prompts, Markdown answers, collapsed tool runs, todo lists, tables with bar charts, SVG and Mermaid figures, images and screenshots, advisor notes, injected omp rules, omp's idle recaps under the turns they sum up, and the reply streaming in as omp writes it.
+- **Stretchtext replies.** With [omp-stretch](https://github.com/materemias/omp-stretch), replies arrive as their gist and a tap on a linked phrase grows its detail in place. What you open on the phone opens in the Tern pane too, and the reverse, and the model learns which parts you read on either side.
 - **Two-way control.** Send prompts, steer a running turn or queue a follow-up, stop the agent, answer `ask` questions by tapping an option, attach images from the camera or gallery (or paste them), and use omp's own `/command`, `/skill:` and `@file` completions.
 - **The draft is shared.** Text typed on the phone appears in the Tern pane's prompt, and text typed on the desktop appears on the phone, so you can start on one and finish on the other.
 - **Model and effort.** Switch the model, thinking effort and service tier, or pick one of your Ctrl+P roles. A gauge shows how full the context window is and where compaction will start.
@@ -124,6 +125,10 @@ omp loads extensions only when it starts, so **sessions that were already runnin
 git pull && bun install.ts      # rebuild, update and restart the service
 bun install.ts --uninstall      # remove the service, the extension and the tailnet entry
 ```
+
+### Stretchtext parser
+
+`web/stretch-core.ts` is an unchanged copy of `stretch-core.ts` from [omp-stretch](https://github.com/materemias/omp-stretch) 0.1.0, so tern-awui needs neither omp-stretch nor any package to show stretches. Phone and Tern pane sync only while both name stretches alike; the key tests in `web/stretch.test.ts` pin that format. After a parser change in omp-stretch, copy the file over again.
 
 ## Security
 

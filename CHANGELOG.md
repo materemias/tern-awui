@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Stretchtext parser updated from omp-stretch 0.1.0, now kept as an unchanged copy in `web/stretch-core.ts` instead of a trimmed hand-made one: literal `{{name}}` keeps its braces, a lone backtick no longer hides the stretches after it, a long form may end on its code fence's line, and stretch keys can't collide.
+- README lists [omp-stretch](https://github.com/materemias/omp-stretch) under Features, as the omp extension behind stretchtext replies. `LICENSE` carries cc-stretch's copyright notice for the copied parser.
+
 ## 0.4.0 (2026-10-20)
 
 - **Breaking:** the security model is stated as it is: tern-awui has no authentication, and who reaches its loopback port is up to you (loopback only, Tailscale Serve, another authenticating proxy). Tailscale is optional: without `TERN_AWUI_ALLOW` the server now starts with no login check (and says so in its startup log) instead of refusing to start. `TERN_AWUI_DEV` is gone; leaving `TERN_AWUI_ALLOW` unset does the same. README and `docs/architecture.md` describe what is in and out of scope, including that the machine must be single-user.
