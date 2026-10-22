@@ -76,13 +76,14 @@ test("state groups by project, parses title/icon/tag and exposes configured role
   expect(state.roles).toEqual([{ role: "smart", spec: "test/smart:high" }, { role: "fast", spec: "test/fast:low" }]);
 });
 
-test("projects default to open block cwds, then omp session cwds newest first, existing folders only", async () => {
+test("projects default to open block and omp session cwds, most recently used first, existing folders only", async () => {
   mkdirSync(`${s.home}/gamma`);
   mkdirSync(`${s.home}/.omp/agent/sessions/other`);
   writeFileSync(`${s.home}/.omp/agent/sessions/other/date_gamma.jsonl`, new Transcript("gamma", `${s.home}/gamma`).text());
   writeFileSync(`${s.home}/.omp/agent/sessions/other/date_gone.jsonl`, new Transcript("gone", `${s.home}/gone`).text());
-  // The note block (3) has no folder of its own; the session in alpha adds nothing new.
-  expect(await (await s.get("/api/projects")).json()).toEqual({ projects: [`${s.home}/beta`, `${s.home}/alpha`, `${s.home}/gamma`], home: s.home });
+  // gamma's transcript was just written; alpha has an omp session; beta's blocks carry no activity.
+  // The note block (3) has no folder of its own.
+  expect(await (await s.get("/api/projects")).json()).toEqual({ projects: [`${s.home}/gamma`, `${s.home}/alpha`, `${s.home}/beta`], home: s.home });
 });
 
 test("push subscriptions persist, replace by endpoint and unsubscribe without sending push", async () => {

@@ -4,6 +4,7 @@
 
 - Stretchtext parser updated from omp-stretch 0.1.0, now kept as an unchanged copy in `web/stretch-core.ts` instead of a trimmed hand-made one: literal `{{name}}` keeps its braces, a lone backtick no longer hides the stretches after it, a long form may end on its code fence's line, and stretch keys can't collide.
 - README lists [omp-stretch](https://github.com/materemias/omp-stretch) under Features, as the omp extension behind stretchtext replies. `LICENSE` carries cc-stretch's copyright notice for the copied parser.
+- **+ omp** lists folders by last use: an open block counts at its omp session's last activity, a past session at its transcript's last write, so a folder you just worked in is on top whether or not its tab is still open (open blocks used to come first, in Tern's order). Open blocks without omp activity follow the dated folders. A folder no longer shows twice when one session recorded it with a trailing separator (`~/work/` and `~/work`), in another case on a case-insensitive file system, or through a symlink: entries are told apart by the folder they are, not by their spelling.
 
 ## 0.4.0 (2026-10-20)
 

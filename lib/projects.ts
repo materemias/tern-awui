@@ -1,9 +1,9 @@
 // The folders `+ omp` offers by default: where omp sessions ran (each transcript's header names
-// its cwd) and where Tern blocks are open now, newest first.
+// its cwd) and where Tern blocks are open now, most recently used first.
 
 import { statSync } from "node:fs";
 import { stat } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { obj, str } from "./json";
 
 /** omp writes the `session` row first, after an optional `title` row; this covers both. */
@@ -30,17 +30,18 @@ export async function transcriptCwd(path: string): Promise<string> {
 const cwdCache = new Map<string, string>();
 
 /**
- * `open` (the cwds of open Tern blocks, already newest first) ahead of the cwds of omp sessions
- * under `sessionsDir`, newest transcript first; each folder once, existing folders only.
+ * The cwds of `open` blocks (with their last activity, 0 when unknown) and of omp sessions under
+ * `sessionsDir` (their transcript's last write), most recently used first; each folder once, at
+ * its latest use, existing folders only.
  */
-export async function recentProjects(sessionsDir: string, open: string[]): Promise<string[]> {
+export async function recentProjects(sessionsDir: string, open: { cwd: string; at: number }[]): Promise<string[]> {
   let files: string[] = [];
   try {
     files = [...new Bun.Glob("*/*.jsonl").scanSync(sessionsDir)].map((rel) => join(sessionsDir, rel));
   } catch {
     // No sessions folder yet: only the open blocks.
   }
-  const sessions: { cwd: string; at: number }[] = [];
+  const uses = [...open];
   for (let i = 0; i < files.length; i += BATCH)
     await Promise.all(
       files.slice(i, i + BATCH).map(async (file) => {
@@ -49,21 +50,35 @@ export async function recentProjects(sessionsDir: string, open: string[]): Promi
           const cwd = cwdCache.get(file) ?? await transcriptCwd(file);
           if (cwd) {
             cwdCache.set(file, cwd);
-            sessions.push({ cwd, at });
+            uses.push({ cwd, at });
           }
         } catch {
           // Deleted while listing.
         }
       }),
     );
-  sessions.sort((a, b) => b.at - a.at);
-  const seen = new Set<string>();
+  // Stable sort: among undated open blocks, Tern's order stands.
+  uses.sort((a, b) => b.at - a.at);
+  // Each spelling is checked once; folders are told apart by device and inode, so `C:\Code` and
+  // `c:\code` are one folder where the file system ignores case, and `App` and `app` two where not.
+  const spellings = new Set<string>();
+  const folders = new Set<string>();
   const out: string[] = [];
-  for (const dir of [...open, ...sessions.map((s) => s.cwd)]) {
-    if (!dir || seen.has(dir)) continue;
-    seen.add(dir);
+  for (const use of uses) {
+    if (!use.cwd) continue;
+    // `resolve` drops a trailing separator: `~/work/` and `~/work` are one folder.
+    const dir = resolve(use.cwd);
+    if (spellings.has(dir)) continue;
+    spellings.add(dir);
     try {
-      if (statSync(dir).isDirectory()) out.push(dir);
+      // bigint: Windows file ids exceed a double's exact range.
+      const st = statSync(dir, { bigint: true });
+      if (!st.isDirectory()) continue;
+      // A file system without inode numbers reports 0: fall back to the spelling.
+      const id = st.ino ? `${st.dev}:${st.ino}` : dir;
+      if (folders.has(id)) continue;
+      folders.add(id);
+      out.push(dir);
     } catch {}
   }
   return out;

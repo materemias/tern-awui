@@ -1038,7 +1038,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
             }
           });
       } else {
-        const open = (await getState()).projects.flatMap((p) => p.items).filter((i) => !i.doc).map((i) => i.cwd);
+        const open = (await getState()).projects.flatMap((p) => p.items).filter((i) => !i.doc).map((i) => ({ cwd: i.cwd, at: i.since }));
         projects = await recentProjects(SESSIONS_DIR, open);
       }
       // `home` lets the phone show paths under it as ~, whatever the separators.
