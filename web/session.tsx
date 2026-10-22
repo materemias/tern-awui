@@ -40,6 +40,10 @@ export function Session({ block }: { block: string }) {
         // The pane opens it too; its next report confirms. A failure leaves it open here only.
         if (stretch) void post(`/api/blocks/${block}/stretch`, { block: reply, key, open });
       },
+      answers: stretch?.answers,
+      running: stretch?.running,
+      // ✦ runs in the pane: its reports bring the twinkle, the streaming answer and the answer.
+      press: stretch?.deepen ? (reply, key) => void post(`/api/blocks/${block}/stretch`, { block: reply, key, deepen: true }) : undefined,
     }),
     [opened, stretch, block],
   );

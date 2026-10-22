@@ -177,7 +177,16 @@ describe("omp extension bridge contract", () => {
 		try {
 			const reply = await f.bridge.request({ t: "stretch", block: "1.0", key: "a", open: true });
 			expect(calls).toEqual([["1.0", "a", true]]);
-			expect(reply.stretch).toEqual({ off: false, open: { "1.0": ["a"] } });
+			// A stretch.ts without ✦ (no `deepen` method) never offers it, and a press is refused.
+			expect(reply.stretch).toEqual({ off: false, open: { "1.0": ["a"] }, deepen: false });
+			expect(await f.bridge.request({ t: "deepen", block: "1.0", key: "a" })).toMatchObject({ error: "this stretch.ts can't ask for more" });
+			// With ✦, a phone press reaches the pane's stretch.ts, and the reply carries the running press.
+			const running: Record<string, unknown[]> = {};
+			const presses: unknown[][] = [];
+			g[key] = { bridge: { version: 1, state: () => ({ off: false, open: {}, deepen: true, running: structuredClone(running) }), setOpen() {}, deepen: (...args: unknown[]) => { presses.push(args); running["1.0"] = [{ key: "a", seconds: 0, partial: "" }]; } } };
+			const pressed = await f.bridge.request({ t: "deepen", block: "1.0", key: "a" });
+			expect(presses).toEqual([["1.0", "a"]]);
+			expect(pressed.stretch).toEqual({ off: false, open: {}, deepen: true, running: { "1.0": [{ key: "a", seconds: 0, partial: "" }] } });
 			// A newer bridge shape is not guessed at.
 			g[key] = { bridge: { version: 2, state: () => ({ off: true, open: {} }), setOpen: () => {} } };
 			expect((await f.bridge.request({ t: "sync" })).stretch).toBeNull();

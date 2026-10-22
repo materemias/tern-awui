@@ -18,10 +18,16 @@ const snapshot = {
   queued: [{ text: "steer", followUp: false }, { text: "later", followUp: true }],
   jobs: [{ id: "bg_1", type: "task", label: "Scout", agent: "scout", since: 5 }],
   leaf: "e012",
-  protocol: 2,
+  protocol: 3,
   build: "0123456789abcdef",
   caps: { models: true, tiers: false, jobs: true, queue: true, rewind: true, btw: true, complete: true, levels: true },
-  stretch: { off: false, open: { "1792161451904.1": ["cache", "cache › key"] } },
+  stretch: {
+    off: false,
+    open: { "1792161451904.1": ["cache", "cache › key"] },
+    deepen: true,
+    answers: { "1792161451904.1": [{ key: "cache › key", text: "More {{why|why it matters}}." }] },
+    running: { "1792161451904.1": [{ key: "cache", seconds: 3, partial: "Stale" }] },
+  },
 };
 
 describe("parseBridgeState", () => {
@@ -40,7 +46,7 @@ describe("parseBridgeState", () => {
       queued: snapshot.queued,
       jobs: snapshot.jobs,
       leaf: "e012",
-      protocol: 2,
+      protocol: 3,
       build: "0123456789abcdef",
       caps: snapshot.caps,
       stretch: snapshot.stretch,
@@ -77,7 +83,14 @@ describe("parseBridgeState", () => {
   test("stretch state: null without stretch.ts; malformed blocks, keys and empty blocks dropped", () => {
     expect(parseBridgeState({ ...snapshot, stretch: undefined }, fresh, 1).stretch).toBeNull();
     const s = parseBridgeState({ ...snapshot, stretch: { off: true, open: { "12.0": ["a", 3, ""], "x.1": ["b"], "13.2": [] } } }, fresh, 1);
-    expect(s.stretch).toEqual({ off: true, open: { "12.0": ["a"] } });
+    // A stretch.ts from before ✦ sends no ✦ fields: nothing to press, splice or twinkle.
+    expect(s.stretch).toEqual({ off: true, open: { "12.0": ["a"] }, deepen: false, answers: {}, running: {} });
+    const answers = { "12.0": [{ key: "a", text: "more" }, { text: "keyless" }], "x.1": [{ key: "b", text: "x" }], "13.2": [] };
+    const running = { "12.0": [{ key: "a", seconds: "x", partial: 4 }, { seconds: 1 }] };
+    const t = parseBridgeState({ ...snapshot, stretch: { off: false, open: {}, deepen: "yes", answers, running } }, fresh, 1).stretch;
+    expect(t).toEqual({ off: false, open: {}, deepen: false, answers: { "12.0": [{ key: "a", text: "more" }] }, running: { "12.0": [{ key: "a", seconds: 0, partial: "" }] } });
+    // A protocol 2 extension passes a newer stretch.ts's `deepen` through but can't forward a press.
+    expect(parseBridgeState({ ...snapshot, protocol: 2 }, fresh, 1).stretch?.deepen).toBe(false);
   });
 
   test("drops jobs without an id and empty thinking levels; keeps the standard tier ''", () => {
@@ -117,7 +130,7 @@ describe("listChanged", () => {
     expect(changed({ context: null })).toBe(true);
     expect(changed({ sessionId: "other" })).toBe(true);
     expect(changed({ jobs: [] })).toBe(true);
-    expect(changed({ protocol: 3 })).toBe(true);
+    expect(changed({ protocol: 4 })).toBe(true);
     expect(changed({ build: "fedcba9876543210" })).toBe(true);
     expect(changed({ caps: { ...base.caps!, rewind: false } })).toBe(true);
     expect(changed({ caps: null })).toBe(true);

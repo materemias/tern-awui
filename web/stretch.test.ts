@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { parse, stretches } from "./stretch-core";
+import { marked } from "marked";
+import { linkedMarkdown, parse, stretches, withAnswers } from "./stretch-core";
 import { liveText, openText, withOpen } from "./stretch";
 
 // Keys are the bridge contract with omp-stretch's stretch.ts: the phone and the pane must name each
@@ -18,6 +19,32 @@ describe("stretch keys", () => {
   test("closing a stretch closes the ones nested in it, not a sibling sharing its prefix", () => {
     expect(withOpen(["a", "a › b", "ab"], "a", false)).toEqual(["ab"]);
     expect(withOpen(["a"], "a", true)).toEqual(["a"]);
+  });
+});
+
+// A ✦ answer after a table inside the stretch it continues: on the last row, it would render as an
+// extra cell, which GFM drops. GFM tables may omit their leading pipes.
+describe("✦ answers after a table", () => {
+  /** The answer's words as GFM renders them: outside the table, or not at all. */
+  const afterTable = (md: string) => (marked.parse(md, { async: false }) as string).split("</table>")[1] ?? "";
+  const tables = {
+    "leading pipes": "{{summary|Results:\n\n| Name |\n| --- |\n| value |\n}} Done.",
+    "no leading pipes": "{{summary|Name | Value\n--- | ---\na | b |}} Done.",
+  };
+  test.each(Object.entries(tables))("with %s, a saved answer renders after the table", (_, table) => {
+    const md = linkedMarkdown(parse(withAnswers(table, [{ key: "summary", text: "More detail." }])), {
+      href: (op, i) => `#${op}/${i}`,
+      isOpen: () => true,
+    });
+    expect(afterTable(md)).toContain("More detail.");
+  });
+  test.each(Object.entries(tables))("with %s, a streaming answer renders after the table", (_, table) => {
+    const md = linkedMarkdown(parse(table), {
+      href: (op, i) => `#${op}/${i}`,
+      isOpen: () => true,
+      deepen: { progress: () => ({ elapsedMs: 0, partial: "More detail." }) },
+    });
+    expect(afterTable(md)).toContain("More detail.");
   });
 });
 

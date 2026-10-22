@@ -1135,6 +1135,11 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           const key = str(body.key);
           if (!STRETCH_BLOCK.test(reply) || !key || key.length > 4000) return json({ error: "bad stretch" }, 400);
           if (!bridge?.state.stretch) return json({ error: "this omp doesn't run stretch.ts" }, 409);
+          // `deepen`: press ✦ on that (fully open) stretch, so the pane asks its model for more.
+          if (body.deepen === true) {
+            if (!bridge.state.stretch.deepen) return json({ error: "this omp can't ask for more here" }, 409);
+            return done(bridgeError(await bridgeRequest(bridge, { t: "deepen", block: reply, key })));
+          }
           return done(bridgeError(await bridgeRequest(bridge, { t: "stretch", block: reply, key, open: body.open === true })));
         }
         case "answer":

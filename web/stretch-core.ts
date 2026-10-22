@@ -46,6 +46,8 @@ export type Stretch = {
   long: Segment[] | undefined;
   /** False when the closing braces never arrived (aborted reply). */
   isClosed: boolean;
+  /** Offset of the closing `}}` in the parsed text, when closed: where a deepen answer goes in. */
+  end?: number;
 };
 
 type Frame = { stretch: Stretch; siblings: Set<string> };
@@ -122,6 +124,7 @@ export function parse(text: string): Segment[] {
     }
     if (frame && text.startsWith("}}", i)) {
       frame.stretch.isClosed = true;
+      frame.stretch.end = i;
       stack.pop();
       i += 2;
       continue;
@@ -316,18 +319,22 @@ function bare(word: string): string {
 // ---------------------------------------------------------------------------
 // In-chat view: each closed stretch is a markdown link, each open one its long form then a « link.
 
-export type LinkOp = "open" | "close";
+export type LinkOp = "open" | "close" | "deepen";
 
 export type LinkView = {
   href: (op: LinkOp, index: number) => string;
   isOpen: (key: string) => boolean;
-  /** A stretch drawn part-way open, `index` into the block's `stretches()`. */
-  growing?: { index: number; progress: number };
+  /** A stretch drawn part-way open, by key: an index would move when a ✦ answer is spliced in before it. */
+  growing?: { key: string; progress: number };
+  /** Draws the deepen control (✦) after each open innermost stretch; absent when deepening is unavailable. */
+  deepen?: { progress: (key: string) => DeepenProgress | undefined };
 };
 
 /** Markdown for one text block. Link indexes point into `stretches(parts)`. */
 export function linkedMarkdown(parts: Segment[], view: LinkView): string {
   const all = stretches(parts);
+  /** Every « drawn so far: a stretch whose text already ends in one shares it instead of adding its own. */
+  const closers: string[] = [];
   const draw = (segments: Segment[]): string => segments.map(drawOne).join("");
   const drawOne = (part: Segment): string => {
     if (typeof part === "string") return part;
@@ -338,16 +345,65 @@ export function linkedMarkdown(parts: Segment[], view: LinkView): string {
     }
     const index = all.indexOf(part);
     if (!view.isOpen(part.key)) return `[${labelOf(part.short)}](${view.href("open", index)})`;
-    const body =
-      view.growing?.index === index ? grow(part.short, part.long, view.growing.progress, drawOne) : draw(part.long);
+    const isGrowing = view.growing?.key === part.key;
+    const body = isGrowing ? grow(part.short, part.long, view.growing!.progress, drawOne) : draw(part.long);
     const trailing = /\s*$/.exec(body)?.[0] ?? "";
-    const text = body.slice(0, body.length - trailing.length);
+    // ✦ waits until the stretch has grown open, and until everything inside it is open: a press quotes
+    // the whole long form. A stretch ending where an inner one does shares that one's ✦ « below.
+    const isGrown = (key: string) => view.isOpen(key) && view.growing?.key !== key;
+    const isLeaf = view.deepen !== undefined && !isGrowing && canDeepen(part, isGrown);
+    const press = isLeaf ? view.deepen!.progress(part.key) : undefined;
+    const streamed = press === undefined ? "" : press.partial.trim().replace(LEADING_DEEPEN, "");
+    const text = arriving(body.slice(0, body.length - trailing.length), streamed);
+    // Stretches ending on the same word share the innermost «: each click closes one level and the
+    // next « takes its place, instead of a row of closers stacking up.
+    if (closers.some(c => text.endsWith(c))) return `${text}${trailing}`;
     // After a closing code fence or a table row, an inline « would break the block: give it a paragraph.
-    const lastLine = text.slice(text.lastIndexOf("\n") + 1);
-    const gap = /^\s*(`{3,}|~{3,}|\|)/.test(lastLine) ? "\n\n" : " ";
-    return `${text}${gap}[«](${view.href("close", index)})${trailing}`;
+    const gap = endsInBlock(text) ? "\n\n" : " ";
+    const close = `[«](${view.href("close", index)})`;
+    closers.push(close);
+    // ✦ stands before the «: "more here", then the way back.
+    const control = !isLeaf ? "" : press ? `${waiting(press.elapsedMs, streamed)} ` : `[${DEEPEN}](${view.href("deepen", index)}) `;
+    return `${text}${gap}${control}${close}${trailing}`;
   };
   return draw(parts);
+}
+
+/** A ✦ press still running: how long it has run and the answer streamed so far. */
+export type DeepenProgress = { elapsedMs: number; partial: string };
+
+const TWINKLE = ["✧", "✦", "✶", "✷", "✸", "✷", "✶", "✦"];
+/**
+ * How often a running press redraws: once a second, with the seconds count. Each redraw replaces
+ * the reply's links, and a click whose press and release straddle one is lost.
+ */
+export const TWINKLE_MS = 1000;
+
+/** The running control: a twinkling star, with the seconds waited until the first words arrive. */
+function waiting(elapsedMs: number, streamed: string): string {
+  const glyph = TWINKLE[Math.floor(elapsedMs / TWINKLE_MS) % TWINKLE.length]!;
+  return streamed === "" ? `${glyph} ${Math.floor(elapsedMs / 1000)}s` : glyph;
+}
+
+/** `section` with the answer streamed so far after it, where the finished answer will stand. */
+function arriving(section: string, streamed: string): string {
+  const shown = streamed === "" ? "" : streamingView(parse(streamed)).trimEnd();
+  if (shown === "") return section;
+  return `${section}${endsInBlock(section) ? "\n\n" : " "}${DEEPEN} ${shown}`;
+}
+
+/** A GFM table's delimiter row, such as `--- | :---:` or `| --- |`: leading and trailing pipes optional. */
+const TABLE_DELIMITER = /^[ \t]*(?=[^\n]*\|)\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/;
+
+/**
+ * Whether `text` ends in a code fence or a table, which inline text after it would join or break.
+ * A table runs to the next blank line, so it is its last paragraph holding a delimiter row.
+ */
+function endsInBlock(text: string): boolean {
+  const trimmed = text.trimEnd();
+  if (/^[ \t]*(`{3,}|~{3,}|\|)/.test(trimmed.slice(trimmed.lastIndexOf("\n") + 1))) return true;
+  const paragraph = trimmed.split(/\n[ \t]*\n/).pop() ?? "";
+  return paragraph.split("\n").some(line => TABLE_DELIMITER.test(line));
 }
 
 /**
@@ -377,6 +433,96 @@ export function readNote(written: { id: string; short: string }[], opened: Reado
     return "Stretchtext: the reader opened no stretch of your last reply; they read only its short forms.";
   }
   return `Stretchtext: since your last reply the reader opened ${quote(yes)}${no.length > 0 ? `; they did not open ${quote(no)}` : ""}`;
+}
+
+// ---------------------------------------------------------------------------
+// Deepen: a press on ✦ asks the model, outside the transcript, for more on one fully open stretch.
+// Its answer is kept apart from the reply and spliced in as one more stretch, `{{✦|✦ answer}}`, at
+// the end of that stretch's long form, so the keys of everything written before it never change.
+
+export const DEEPEN = "✦";
+/** A ✦ the model put before its answer: the splice adds its own. */
+const LEADING_DEEPEN = new RegExp(`^${DEEPEN}\\s*`);
+
+/** An open stretch can be deepened once every stretch inside it is open too, so a press quotes what the reader sees. */
+export function canDeepen(stretch: Stretch & { long: Segment[] }, isOpen: (key: string) => boolean): boolean {
+  return stretches(stretch.long).every(s => !isLinkable(s) || isOpen(s.key));
+}
+
+/** Longest answer kept; a longer one is refused rather than cut mid-markup. */
+const DEEPEN_MAX_CHARS = 2000;
+
+export type DeepenAnswer = { key: string; text: string };
+
+/** `text` with each answer spliced into the stretch it deepens; answers to answers go in after their parent. */
+export function withAnswers(text: string, answers: readonly DeepenAnswer[]): string {
+  let out = text;
+  let left = [...answers];
+  while (left.length > 0) {
+    const all = stretches(parse(out));
+    const ready = left.flatMap(answer => {
+      const at = all.find(s => s.key === answer.key && isLinkable(s))?.end;
+      return at === undefined ? [] : [{ answer, at }];
+    });
+    if (ready.length === 0) break;
+    // Last offset first, so splicing one never moves the next one's offset.
+    for (const { answer, at } of ready.sort((a, b) => b.at - a.at)) {
+      const before = out.slice(0, at);
+      // After a fence or table row the answer needs its own paragraph, or it joins the block.
+      const head = endsInBlock(before) ? `${before.trimEnd()}\n\n` : /\s$/.test(before) ? before : `${before} `;
+      out = `${head}{{${DEEPEN}|${DEEPEN} ${answer.text}}}${out.slice(at)}`;
+    }
+    left = left.filter(answer => !ready.some(r => r.answer === answer));
+  }
+  return out;
+}
+
+/** The side question a ✦ press asks: `section` as the reader sees it, under its parents' short forms. */
+export function deepenPrompt(section: string, parents: string[]): string {
+  const under = parents.length === 0 ? "" : `\n\nIt sits under: ${parents.map(p => `"${p.trim()}"`).join(" › ")}.`;
+  return `The reader pressed ✦ to ask for more depth on one part of your last reply. The part, as they see it:
+
+<section>
+${section.trim()}
+</section>${under}
+
+Write only the text that comes next inside that part: it must read on directly after the part's last word. One to three sentences in the stretchtext format of your replies, with stretches for further depth. Do not repeat the part, and add no preamble.`;
+}
+
+/** A checked ✦ answer: its text, the key of the stretch it became, and the stretches written inside it. */
+export type Spliced = { text: string; key: string; nested: Stretch[] };
+
+/**
+ * The model's `reply` as an answer to the stretch `key` of `block` (which already holds `answers`),
+ * or undefined when it is empty, too long, or would not stay inside its own stretch once spliced in:
+ * a stray `}}`, an unclosed fence or a lone backtick pairing with later code would otherwise close
+ * or swallow the stretches around it, and the answer is saved with the session.
+ */
+export function spliceAnswer(block: string, answers: readonly DeepenAnswer[], key: string, reply: string): Spliced | undefined {
+  const text = reply.trim().replace(LEADING_DEEPEN, "");
+  if (text === "" || text.length > DEEPEN_MAX_CHARS) return undefined;
+  const before = new Map(stretches(parse(withAnswers(block, answers))).map(s => [s.key, s.isClosed]));
+  const after = stretches(parse(withAnswers(block, [...answers, { key, text }])));
+  if ([...before].some(([k, isClosed]) => after.find(s => s.key === k)?.isClosed !== isClosed)) return undefined;
+  const prefix = key + KEY_SEPARATOR;
+  const added = after.filter(s => !before.has(s.key));
+  const own = added.find(s => s.short === DEEPEN && s.key.startsWith(prefix) && !s.key.slice(prefix.length).includes(KEY_SEPARATOR));
+  const alone = parse(`${DEEPEN} ${text}`);
+  if (own?.long === undefined || !own.isClosed || writeOpen(own.long) !== writeOpen(alone)) return undefined;
+  if (added.length !== 1 + stretches(alone).length || added.some(s => !s.isClosed)) return undefined;
+  return { text, key: own.key, nested: added.filter(s => s !== own) };
+}
+
+/** Marks a read note that reported ✦ answers: a rebuilt session counts only those as told. */
+export const DEEPEN_REPORTED = "Stretchtext: the reader pressed ✦ for more depth";
+
+/** The note that tells the model, on the next prompt, what it added outside the transcript. */
+export function deepenNote(added: { section: string; text: string }[]): string | undefined {
+  if (added.length === 0) return undefined;
+  const tail = (section: string) => `…${section.trim().split(/\s+/).slice(-8).join(" ")}`;
+  // Whole answers (spliceAnswer caps them): the note is the model's only copy.
+  const each = added.map(a => `after "${tail(a.section)}" you added "${a.text}"`).join("; ");
+  return `${DEEPEN_REPORTED}, and you answered outside the transcript: ${each}.`;
 }
 
 const ALL_GUIDES = [guideFor("light"), guideFor("dense")];

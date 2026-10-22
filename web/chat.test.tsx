@@ -34,6 +34,7 @@ mock.module("mermaid", () => ({
 const { render } = await import("preact");
 const { act } = await import("preact/test-utils");
 const { Chat, Markdown, StretchContext } = await import("./chat");
+type StretchSync = import("./chat").StretchSync;
 
 const net = new Net();
 const buzzes: number[] = [];
@@ -395,6 +396,38 @@ describe("stretchtext replies", () => {
     await draw({}, true);
     expect(prose()).toBe("A monad wraps values in a context. Done.");
     expect(links()).toEqual([]);
+  });
+
+  test("✦ on a fully open stretch asks the pane; its press twinkles with the answer streaming in, then the answer stays", async () => {
+    const BLOCK = "1792161451904.1";
+    const press = mock((_block: string, _key: string) => {});
+    const draw = (sync: Partial<StretchSync>) =>
+      act(() =>
+        render(
+          <StretchContext.Provider value={{ open: { [BLOCK]: ["wraps values"] }, off: false, set: () => {}, press, ...sync }}>
+            <Chat entries={[reply(TEXT)]} block="5" rewind />
+          </StretchContext.Provider>,
+          root,
+        ),
+      );
+    await draw({});
+    await click(root.querySelector("a[href='#stretch/deepen/0']"));
+    expect(press.mock.calls).toEqual([[BLOCK, "wraps values"]]);
+    // Running: no ✦ link, the seconds until words arrive, then the words where the answer will stand.
+    await draw({ running: { [BLOCK]: [{ key: "wraps values", seconds: 3, partial: "" }] } });
+    expect(root.querySelector("a[href^='#stretch/deepen/']")).toBeNull();
+    expect(prose()).toMatch(/^A monad wraps values in a context . 3s «\. Done\.$/);
+    await draw({ running: { [BLOCK]: [{ key: "wraps values", seconds: 4, partial: "Such as {{IO|IO actions" }] } });
+    expect(prose()).toMatch(/^A monad wraps values in a context ✦ Such as IO . «\. Done\.$/);
+    // The answer arrived: spliced in as an open ✦ stretch whose own stretch is a link (so neither has ✦ yet).
+    const answers = { [BLOCK]: [{ key: "wraps values", text: "Such as {{IO|IO actions}}." }] };
+    await draw({ open: { [BLOCK]: ["wraps values", "wraps values › ✦"] }, answers });
+    // The answer ends where its parent does, so the two share one «.
+    expect(prose()).toBe("A monad wraps values in a context ✦ Such as IO. «. Done.");
+    expect(links()).toEqual(["IO", "«"]);
+    // Without `press` (an omp that can't ask from here) there is no ✦.
+    await draw({ press: undefined });
+    expect(root.querySelector("a[href^='#stretch/deepen/']")).toBeNull();
   });
 
   test("braces in code and replies without stretches render as written", async () => {

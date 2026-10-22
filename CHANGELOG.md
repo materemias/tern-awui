@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 (2026-10-22)
 
+- Parser copy synced with omp-stretch: stretches ending on the same word share one `«` (each tap closes the innermost), ✦ stands before its `«`, a waiting ✦ steps once a second, and ✦ shows on any open stretch whose inner stretches are all open.
+- Support for omp-stretch's deepen action: tap ✦ on a fully open stretch to ask the pane's model for more. The waiting star twinkles with elapsed seconds, then the answer streams into the section. Saved answers and open stretches stay in sync with Tern. A new model request uses the pane's conversation and provider; existing detail still opens without inference.
+- The tern-mobile bridge forwards ✦ presses and reports saved answers and running requests (bridge protocol 3; omp sessions running an older tern-mobile show as older and get no ✦, since that version would accept a press and drop it). Older omp-stretch versions keep working without ✦. The app keeps its own parser source copy and adds no package dependency. A ✦ answer after a table or code fence starts its own paragraph instead of joining the last row.
 - Stretchtext parser updated from omp-stretch 0.1.0, now kept as an unchanged copy in `web/stretch-core.ts` instead of a trimmed hand-made one: literal `{{name}}` keeps its braces, a lone backtick no longer hides the stretches after it, a long form may end on its code fence's line, and stretch keys can't collide.
 - README lists [omp-stretch](https://github.com/materemias/omp-stretch) under Features, as the omp extension behind stretchtext replies. `LICENSE` carries cc-stretch's copyright notice for the copied parser.
 - **+ omp** lists folders by last use: an open block counts at its omp session's last activity, a past session at its transcript's last write, so a folder you just worked in is on top whether or not its tab is still open (open blocks used to come first, in Tern's order). Open blocks without omp activity follow the dated folders. A folder no longer shows twice when one session recorded it with a trailing separator (`~/work/` and `~/work`), in another case on a case-insensitive file system, or through a symlink: entries are told apart by the folder they are, not by their spelling.

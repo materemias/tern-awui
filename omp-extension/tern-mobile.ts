@@ -9,8 +9,8 @@ import { fileURLToPath } from "node:url";
 
 const POLL_MS = 100;
 const RETRY_MS = 5000;
-/** The bridge protocol this extension speaks; the server flags whichever side is older. 2: `build`. */
-export const PROTOCOL = 2;
+/** The bridge protocol this extension speaks; the server flags whichever side is older. 2: `build`. 3: ✦ presses. */
+export const PROTOCOL = 3;
 /**
  * This file's identity, read once when omp loads it, so a later `git pull` doesn't change what a
  * running session reports: the first 16 hex digits of its sha256, as the server computes for its
@@ -175,18 +175,22 @@ type ServerMessage =
 	| { t: "watch"; on: boolean }
 	/** Open or close a reply's stretch (omp's stretch.ts): `block` is `<message timestamp>.<content index>`. */
 	| { t: "stretch"; block: string; key: string; open: boolean; seq: number }
+	/** Press ✦ (ask for more) on a reply's fully open stretch, as a click in the pane does. */
+	| { t: "deepen"; block: string; key: string; seq: number }
 	/** Report the current state now (the server lost track of this pane). */
 	| { t: "sync"; seq?: undefined };
 const MAX_COMPLETIONS = 40;
 
 /**
  * What omp's stretch.ts extension (stretchtext replies) shares with this one, when it runs in the
- * same omp process: which stretches are open, and opening one in the pane. Version 1 only.
+ * same omp process: which stretches are open, and opening one in the pane. Version 1 only; its ✦
+ * additions (answers, running presses, `deepen`) are optional, as an older stretch.ts lacks them.
  */
 type StretchBridge = {
 	version: 1;
-	state(): { off: boolean; open: Record<string, string[]> };
+	state(): { off: boolean; open: Record<string, string[]>; deepen?: boolean };
 	setOpen(block: string, key: string, open: boolean): void;
+	deepen?(block: string, key: string): void;
 };
 function stretchBridge(): StretchBridge | null {
 	const shared = (globalThis as Record<symbol, { bridge?: Partial<StretchBridge> } | undefined>)[Symbol.for("omp-stretch")];
@@ -195,7 +199,10 @@ function stretchBridge(): StretchBridge | null {
 }
 function stretchState(): ReturnType<StretchBridge["state"]> | null {
 	try {
-		return stretchBridge()?.state() ?? null;
+		const bridge = stretchBridge();
+		const state = bridge?.state();
+		// ✦ only when this stretch.ts can take a press from here.
+		return state ? { ...state, deepen: state.deepen === true && typeof bridge?.deepen === "function" } : null;
 	} catch {
 		return null;
 	}
@@ -406,6 +413,12 @@ export default function ternMobile(pi: Pi): void {
 			const bridge = stretchBridge();
 			if (!bridge) return reply(msg.seq, { error: "stretch.ts is not loaded in this omp" });
 			bridge.setOpen(msg.block, msg.key, msg.open);
+			return flush(true, msg.seq);
+		}
+		if (msg.t === "deepen") {
+			const bridge = stretchBridge();
+			if (typeof bridge?.deepen !== "function") return reply(msg.seq, { error: "this stretch.ts can't ask for more" });
+			bridge.deepen(msg.block, msg.key);
 			return flush(true, msg.seq);
 		}
 		if (msg.t === "send") {

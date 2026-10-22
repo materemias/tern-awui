@@ -4,9 +4,9 @@ import { arr, num, obj, str, type Obj } from "./json";
 
 /**
  * The bridge protocol this server speaks; omp-extension/tern-mobile.ts declares the same (a test
- * keeps them equal). 2: the extension reports its `build`.
+ * keeps them equal). 2: the extension reports its `build`. 3: it forwards ✦ presses (`deepen`).
  */
-export const PROTOCOL = 2;
+export const PROTOCOL = 3;
 
 /** `status`: blocked while an ask dialog or tool approval waits on the user; `since` when it last changed. */
 export type BridgeState = {
@@ -39,9 +39,16 @@ export type BridgeState = {
 };
 /**
  * `open`: stretch keys drawn open, per reply block (`<message timestamp>.<content index>`); `off`:
- * the session turned stretches off (`/stretch off`), so replies show every long form.
+ * the session turned stretches off (`/stretch off`), so replies show every long form. `deepen`: a ✦
+ * press can run in the pane; `answers`: its ✦ answers per block, `running`: presses still waiting.
  */
-export type StretchState = { off: boolean; open: Record<string, string[]> };
+export type StretchState = {
+  off: boolean;
+  open: Record<string, string[]>;
+  deepen: boolean;
+  answers: Record<string, { key: string; text: string }[]>;
+  running: Record<string, { key: string; seconds: number; partial: string }[]>;
+};
 export type Context = { tokens: number; window: number; percent: number };
 type Queued = { text: string; followUp: boolean };
 export type Job = { id: string; type: string; label: string; agent: string; since: number };
@@ -63,15 +70,34 @@ function parseCaps(value: unknown): Caps | null {
 /** A reply block id as stretch.ts names one. */
 export const STRETCH_BLOCK = /^\d+\.\d+$/;
 
-/** The reported stretch state; malformed blocks and keys are dropped. */
-function parseStretch(value: unknown): StretchState | null {
+/** Per-block lists of a reported field: blocks with malformed ids, rows without a key, and empty blocks dropped. */
+function perBlock<T extends { key: string }>(value: unknown, row: (o: Obj) => T): Record<string, T[]> {
+  const blocks = Object.entries(obj(value))
+    .filter(([block]) => STRETCH_BLOCK.test(block))
+    .map(([block, rows]) => [block, arr(rows).map((r) => row(obj(r))).filter((r) => r.key)] as const)
+    .filter(([, rows]) => rows.length);
+  return Object.fromEntries(blocks);
+}
+
+/**
+ * The reported stretch state; malformed blocks and keys are dropped. Older stretch.ts sends no ✦
+ * fields. `deepen` also needs an extension that forwards presses (protocol 3): an older one passes
+ * a newer stretch.ts's `deepen` through but drops the press.
+ */
+function parseStretch(value: unknown, protocol: number): StretchState | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const s = obj(value);
   const open = Object.entries(obj(s.open))
     .filter(([block]) => STRETCH_BLOCK.test(block))
     .map(([block, keys]) => [block, arr(keys).map((k) => str(k)).filter(Boolean)] as const)
     .filter(([, keys]) => keys.length);
-  return { off: s.off === true, open: Object.fromEntries(open) };
+  return {
+    off: s.off === true,
+    open: Object.fromEntries(open),
+    deepen: s.deepen === true && protocol >= 3,
+    answers: perBlock(s.answers, (a) => ({ key: str(a.key), text: str(a.text) })),
+    running: perBlock(s.running, (r) => ({ key: str(r.key), seconds: num(r.seconds), partial: str(r.partial) })),
+  };
 }
 
 /** A `state` message as the pane's new state; `since` carries over within one session and status. */
@@ -103,7 +129,7 @@ export function parseBridgeState(msg: Obj, before: BridgeState, now: number): Br
     protocol: num(msg.protocol),
     build: str(msg.build),
     caps: parseCaps(msg.caps),
-    stretch: parseStretch(msg.stretch),
+    stretch: parseStretch(msg.stretch, num(msg.protocol)),
   };
 }
 

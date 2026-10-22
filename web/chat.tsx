@@ -9,7 +9,20 @@ import { askAnswers, askReady, clock, duration, langOf, parseAdvisorNote, pretty
 import { renderMarkdown } from "./markdown";
 import { highlightFences } from "./highlight";
 import { buzz, Thumbs, Todo, UserMsg } from "./parts";
-import { isLinkable, lengthOf, linkedMarkdown, parse, stretches, writeOpen, type Segment, type Stretch } from "./stretch-core";
+import {
+  DEEPEN,
+  isLinkable,
+  lengthOf,
+  linkedMarkdown,
+  parse,
+  stretches,
+  TWINKLE_MS,
+  withAnswers,
+  writeOpen,
+  type DeepenAnswer,
+  type Segment,
+  type Stretch,
+} from "./stretch-core";
 import { openText, withOpen } from "./stretch";
 
 let mermaidReady: Promise<Mermaid> | null = null;
@@ -85,18 +98,33 @@ export function Markdown({
  * Stretchtext state of the session on screen: open keys per reply block, and `off` when the omp
  * session turned stretches off (`/stretch off`). `set` opens or closes one, in the Tern pane too
  * when its omp runs stretch.ts. Without a provider (subagents) each reply keeps its own state.
+ * ✦ (stretch.ts asking its model for more): `answers` are spliced into their replies, `running`
+ * presses twinkle with the answer streaming in, and `press`, when the pane can take one, asks.
  */
-export type StretchSync = { open: Record<string, string[]>; off: boolean; set(block: string, key: string, open: boolean): void };
+export type StretchSync = {
+  open: Record<string, string[]>;
+  off: boolean;
+  set(block: string, key: string, open: boolean): void;
+  answers?: Record<string, DeepenAnswer[]>;
+  running?: Record<string, { key: string; seconds: number; partial: string }[]>;
+  press?(block: string, key: string): void;
+};
 export const StretchContext = createContext<StretchSync | null>(null);
 
 /** A growth's pace: about 45 ms per added word, at most 700 ms, as in the Tern pane. */
 const GROW_MS_PER_WORD = 45;
 const GROW_MAX_MS = 700;
-const STRETCH_HREF = /^#stretch\/(open|close)\/(\d+)$/;
+const STRETCH_HREF = /^#stretch\/(open|close|deepen)\/(\d+)$/;
+const NO_ANSWERS: DeepenAnswer[] = [];
+const NO_PRESSES: { key: string; seconds: number; partial: string }[] = [];
 
 /** An assistant reply; with stretches, short forms are links that grow their long form in place. */
 function Reply({ entry }: { entry: Extract<ChatEntry, { role: "assistant" }> }) {
-  const parts = useMemo(() => (entry.text.includes("{{") ? parse(entry.text) : null), [entry.text]);
+  const sync = useContext(StretchContext);
+  const answers = (entry.block && sync?.answers?.[entry.block]) || NO_ANSWERS;
+  // ✦ answers the pane's model gave, each spliced in at the end of the stretch it continues.
+  const source = useMemo(() => (answers.length ? withAnswers(entry.text, answers) : entry.text), [entry.text, answers]);
+  const parts = useMemo(() => (source.includes("{{") ? parse(source) : null), [source]);
   const all = useMemo(() => (parts ? stretches(parts) : []), [parts]);
   if (!parts || !all.some(isLinkable)) return <Markdown class="msg assistant md" text={entry.text} imageSources={entry.imageSources} />;
   return <StretchReply entry={entry} parts={parts} all={all} />;
@@ -108,32 +136,53 @@ function StretchReply({ entry, parts, all }: { entry: Extract<ChatEntry, { role:
   const [local, setLocal] = useState<string[]>([]);
   const keys = shared ? (shared.sync.open[shared.block] ?? []) : local;
   const open = useMemo(() => new Set(keys), [keys.join("\0")]);
-  const [growing, setGrowing] = useState<{ index: number; progress: number } | undefined>(undefined);
+  const [growing, setGrowing] = useState<{ key: string; progress: number } | undefined>(undefined);
 
-  // A stretch opened here or in the Tern pane grows in; one open on arrival is simply there.
+  // A stretch opened here or in the Tern pane grows in; one open on arrival is simply there. A ✦
+  // answer opens without growing: its text already streamed in.
   const before = useRef(open);
   useLayoutEffect(() => {
-    const index = all.findIndex((s) => open.has(s.key) && !before.current.has(s.key) && isLinkable(s));
+    const opened = all.find((s) => open.has(s.key) && !before.current.has(s.key) && isLinkable(s) && s.short !== DEEPEN);
     before.current = open;
-    const duration = index === -1 ? 0 : Math.min(GROW_MAX_MS, GROW_MS_PER_WORD * lengthOf(all[index]?.long ?? []));
-    if (duration <= 0 || matchMedia?.("(prefers-reduced-motion: reduce)").matches) return setGrowing(undefined);
+    const duration = opened === undefined ? 0 : Math.min(GROW_MAX_MS, GROW_MS_PER_WORD * lengthOf(opened.long ?? []));
+    if (!opened || duration <= 0 || matchMedia?.("(prefers-reduced-motion: reduce)").matches) return setGrowing(undefined);
     const start = performance.now();
     let frame = 0;
     const tick = (now: number) => {
       const progress = Math.min(1, (now - start) / duration);
-      setGrowing(progress < 1 ? { index, progress } : undefined);
+      setGrowing(progress < 1 ? { key: opened.key, progress } : undefined);
       if (progress < 1) frame = requestAnimationFrame(tick);
     };
-    setGrowing({ index, progress: 0 });
+    setGrowing({ key: opened.key, progress: 0 });
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
   }, [open]);
 
+  // Presses the pane is running for this reply: the ✦ twinkles locally, with seconds counted from
+  // when this page first saw the press (the pane reports whole seconds).
+  const presses = (shared && shared.sync.running?.[shared.block]) || NO_PRESSES;
+  const started = useRef(new Map<string, number>());
+  const [frame, setFrame] = useState(0);
+  useEffect(() => {
+    for (const key of started.current.keys()) if (!presses.some((p) => p.key === key)) started.current.delete(key);
+    for (const p of presses) if (!started.current.has(p.key)) started.current.set(p.key, Date.now() - p.seconds * 1000);
+    if (presses.length === 0) return;
+    const timer = setInterval(() => setFrame((f) => f + 1), TWINKLE_MS);
+    return () => clearInterval(timer);
+  }, [presses]);
+  const press = shared?.sync.press;
   const off = sync?.off === true;
-  const text = useMemo(
-    () => (off ? writeOpen(parts) : linkedMarkdown(parts, { href: (op, i) => `#stretch/${op}/${i}`, isOpen: (k) => open.has(k), growing })),
-    [parts, open, growing, off],
-  );
+  const text = useMemo(() => {
+    if (off) return writeOpen(parts);
+    const deepen = press && {
+      progress: (key: string) => {
+        const p = presses.find((r) => r.key === key);
+        if (!p) return undefined;
+        return { elapsedMs: Date.now() - (started.current.get(key) ?? Date.now() - p.seconds * 1000), partial: p.partial };
+      },
+    };
+    return linkedMarkdown(parts, { href: (op, i) => `#stretch/${op}/${i}`, isOpen: (k) => open.has(k), growing, deepen });
+  }, [parts, open, growing, off, press, presses, frame]);
   const onClick = (e: MouseEvent) => {
     const link = (e.target as Element | null)?.closest?.("a[href^='#stretch/']");
     if (!link) return;
@@ -142,7 +191,9 @@ function StretchReply({ entry, parts, all }: { entry: Extract<ChatEntry, { role:
     const [, op, i] = STRETCH_HREF.exec(link.getAttribute("href") ?? "") ?? [];
     const stretch = all[Number(i)];
     if (!op || !stretch) return;
-    if (shared) shared.sync.set(shared.block, stretch.key, op === "open");
+    if (op === "deepen") {
+      if (shared && press) press(shared.block, stretch.key);
+    } else if (shared) shared.sync.set(shared.block, stretch.key, op === "open");
     else setLocal((keys) => withOpen(keys, stretch.key, op === "open"));
   };
   return <Markdown class="msg assistant md stretchy" text={text} imageSources={entry.imageSources} onClick={onClick} />;

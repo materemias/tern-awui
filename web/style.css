@@ -153,6 +153,8 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .md a[href^="#stretch/open/"] { text-decoration: none; }
 .md a[href^="#stretch/open/"]:hover { text-decoration: underline dotted; text-decoration-thickness: 1.5px; }
 .md a[href^="#stretch/close/"] { text-decoration: none; padding: 0 3px; opacity: .75; }
+/* ✦ asks the pane's model for more on a fully open stretch: bold, not underlined, a wide tap target. */
+.md a[href^="#stretch/deepen/"] { text-decoration: none; font-weight: bold; padding: 0 4px; }
 .md h1, .md h2, .md h3 { color: var(--fg); font-size: 15.5px; letter-spacing: .01em; margin: 1.1em 0 .35em; }
 
 /* Faded text only: opacity on .tools itself would also fade its thumbnails and their full-screen view. */
