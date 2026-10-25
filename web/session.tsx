@@ -115,12 +115,16 @@ export function Session({ block }: { block: string }) {
             {!online && <span class="c-blocked">offline</span>}
           </div>
         </div>
-        <button class="ghost" title="Show this pane on the desktop" onClick={() => post(`/api/blocks/${block}/focus`, {})}>
-          ⌖
+        <button class="icon-btn" title="Show this pane on the desktop" aria-label="Show this pane on the desktop" onClick={() => post(`/api/blocks/${block}/focus`, {})}>
+          {/* A monitor with an arrow out of its corner, like an "open elsewhere" link: show this pane at the desk. */}
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M10.5 3.5H4.3a1.8 1.8 0 0 0-1.8 1.8v6.4a1.8 1.8 0 0 0 1.8 1.8h11.4a1.8 1.8 0 0 0 1.8-1.8V9.5M7 17h6M10 13.5V17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M8 10.5 15.5 3M11.5 3h4v4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
         </button>
         {item && (
           <button
-            class="ghost danger"
+            class="icon-btn danger"
             title="Close this block"
             aria-label="Close this block"
             onClick={async () => {
@@ -132,7 +136,9 @@ export function Session({ block }: { block: string }) {
               else if (location.hash === `#/b/${block}`) goBack({ view: "session", block });
             }}
           >
-            ✕
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M5.5 5.5l9 9M14.5 5.5l-9 9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+            </svg>
           </button>
         )}
       </header>

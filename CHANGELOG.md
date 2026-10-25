@@ -7,6 +7,7 @@
 - The context gauge has omp's details card: hovering the gauge for 600 ms fades in "Context 27% used", "160K of 600K tokens" and "Auto-compact at 80%" above the mouse, following it along the gauge; on a phone a tap opens it at once above the finger and it closes after 3 s. Token counts on the gauge now read `600K` like omp's. The gauge's browser tooltips, which never showed because the gauge took no pointer, are gone.
 - The context gauge looks like omp's: the used part is grey, brightening toward its end, with a grey percent (red past the window); hovering the gauge (or tapping it on a phone) lightens the whole bar, used and remaining part, and the percent over a quarter second; while the agent works, a soft glint runs along it from the gauge's 0 point every 2.8 s (none under reduced motion); and the auto-compaction tick is a fine, faint 1 px mark instead of a bold accent bar.
 - A chat scrolled to the bottom stays there whenever anything below grows, not only when the transcript, live text or queue change: the working row appearing, subagent jobs, images finishing loading, a btw card, or the window resizing. Before, these left the newest lines hidden until scrolled by hand.
+- The session header's two buttons are drawn icons in the style of the composer's instead of `⌖` and `✕` glyphs in boxed outlines: a monitor with an arrow out of its corner for "Show this pane on the desktop", and a thin cross for Close, grey until hovered or pressed, when it turns red on a faint red disc.
 
 ## 0.6.0 (2026-10-25)
 

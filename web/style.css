@@ -287,7 +287,8 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .btw-history-turn { padding: 10px; overflow-wrap: anywhere; }
 .btw-history-turn + .btw-history-turn { border-top: 1px solid var(--line); }
 .age-blocked { color: var(--blocked); font-weight: 600; }
-.ghost.danger { color: var(--blocked); }
+.icon-btn.danger:hover, .icon-btn.danger:active { color: var(--blocked); background: color-mix(in srgb, var(--blocked) 14%, transparent); }
+.session-bar .icon-btn:not(.danger):active { background: var(--raise); }
 .row-sub.recap { font-style: italic; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 30; padding: 9px 16px; border-radius: 999px; background: var(--raise); border: 1px solid var(--line); color: var(--fg); font-size: 14px; box-shadow: 0 4px 18px rgb(0 0 0 / .4); white-space: nowrap; }
 /* The gauge lies on the straight part of the top border: the border itself is the unused part,
