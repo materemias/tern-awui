@@ -10,6 +10,7 @@ import { obj } from "../lib/json";
 import { buildId } from "../lib/extension-check";
 import { Extension } from "../test/server-harness";
 import { CHROMIUM, closeBrowser, openApp, startSandbox, until } from "../test/e2e/helpers";
+import { parse, stretches } from "../web/stretch-core";
 
 if (!CHROMIUM) throw new Error("no headless Chromium: install Playwright's chromium_headless_shell or set TERN_AWUI_CHROMIUM");
 
@@ -17,6 +18,16 @@ const OUT = resolve(import.meta.dir);
 const EXT = resolve(import.meta.dir, "../omp-extension/tern-mobile.ts");
 const NOW = Date.now();
 const min = 60_000;
+/**
+ * The checkout session's findings, written as omp-stretch writes replies: the first stretch is drawn
+ * open with a closed stretch inside it, the last one open with its ✦ (see `stretch` below).
+ */
+const REPLY_AT = NOW - 30 * min;
+const REPLY =
+  "{{The test fails when the price refresh lands after the order is submitted.|The test fails when the price refresh lands after the order is submitted: " +
+  "the order goes out with the old total, and {{the confirmation page shows the new one.|the confirmation page, which reloads the cart, shows the new one, so the two totals disagree.}}}} In 20 runs:\n\n" +
+  "| Run order | Failures | Cause |\n|---|---|---|\n| refresh first | 0 / 14 | none |\n| submit first | 4 / 6 | stale total |\n\n" +
+  "{{I'm making the submit button wait for the pending refresh.|I'm making the submit button wait for the pending refresh, so an order always carries the total the customer saw.}}";
 
 type Part = Record<string, unknown>;
 /** A transcript with timestamps relative to now, shaped like omp's session JSONL. */
@@ -64,11 +75,8 @@ const s = await startSandbox((s) => {
     { content: "Await the price refresh before submitting", status: "in_progress" },
     { content: "Add a regression test", status: "pending" },
   ] }] });
-  checkout.assistant([say(
-    "The test fails when the price refresh finishes after the order is submitted. In 20 runs:\n\n" +
-    "| Run order | Failures | Cause |\n|---|---|---|\n| refresh first | 0 / 14 | none |\n| submit first | 4 / 6 | stale total |\n\n" +
-    "I'm making the submit button wait for the pending refresh.",
-  )], NOW - 30 * min);
+  // An omp-stretch reply: the first paragraph's stretch drawn open (see `stretch` below), the last one closed.
+  checkout.assistant([say(REPLY)], REPLY_AT);
   checkout.user("Sounds right, go ahead.", NOW - 3 * min);
   checkout.assistant([tool("t4", "edit", { i: "Awaiting price refresh before submit", path: "src/checkout.tsx" })], NOW - 2 * min, "toolUse");
 
@@ -115,6 +123,11 @@ const agents: [string, Log, string, Part][] = [
 for (const [pane, log, status, extra] of agents) {
   const ext = new Extension(s, pane, "anthropic/claude-opus-5-5");
   Object.assign(ext.snapshot, { sessionId: log.id, leaf: log.leaf, status, protocol: PROTOCOL, build, ...extra });
+  if (log === checkout) {
+    // Outermost first: [first, the one inside it, last]; the inner one stays closed.
+    const [first, , last] = stretches(parse(REPLY)).map((s) => s.key);
+    ext.snapshot.stretch = { off: false, deepen: true, open: { [`${REPLY_AT}.0`]: [first, last] }, answers: {}, running: {} };
+  }
   await ext.connect();
 }
 s.signal();
