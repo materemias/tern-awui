@@ -8,7 +8,7 @@
 - Context gauge details card on hover or tap: percent used, tokens, auto-compact threshold.
 - Context gauge styled like omp's: grey fill, faint compaction tick, a glint while the agent works.
 - The full-screen image view pages through all of a turn's images (swipe, ‹ ›, arrow keys); Back closes it.
-- Session header uses drawn monitor and close icons instead of `⌖` and `✕`.
+- Session header has drawn icons for focus on the desktop (a monitor) and close.
 - **+ omp** is omp's blocky π with a plus; hovered, π stomps and wiggles.
 - An empty omp session shows omp's welcome mark.
 - Sidebar minimize/expand: "tern" folds into « and » unfolds back into "tern".
@@ -19,7 +19,12 @@
 
 ### Docs
 
-- README opens with a film of one task handed from Tern to a browser to the phone and back (`film/` re-shoots it); screenshots regenerated with a stretchtext reply.
+- README opens with a film of one task handed from Tern to a browser to the phone and back.
+- Shorter README: screenshots folded under the film, technical detail moved to `docs/architecture.md`.
+
+### Internal
+
+- Editing a released section of this changelog updates its GitHub release notes on push to main.
 
 ## 0.6.0 (2026-10-25)
 

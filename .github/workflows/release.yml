@@ -1,16 +1,21 @@
 name: Release
 
 # Pushing a `vX.Y.Z` tag publishes a GitHub release whose notes are the `## X.Y.Z (date)`
-# section of CHANGELOG.md. A missing or empty section fails the run instead of publishing.
+# section of CHANGELOG.md. A missing or empty section fails the run instead of publishing. A push
+# to main that changes CHANGELOG.md rewrites the notes of every release whose section changed.
 on:
   push:
     tags: ["v*"]
+    # GitHub skips path filters for tag pushes, so this limits only branch pushes.
+    branches: [main]
+    paths: [CHANGELOG.md]
 
 permissions:
   contents: write
 
 jobs:
   release:
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -30,3 +35,26 @@ jobs:
           awk -v v="$v" '$0 ~ "^## "v" " {f=1; next} /^## /{f=0} f' CHANGELOG.md > notes.md
           grep -q '[^[:space:]]' notes.md || { echo "CHANGELOG.md has no notes under '## $v'"; exit 1; }
           gh release create "$GITHUB_REF_NAME" --title "tern-awui $v" --notes-file notes.md --verify-tag
+
+  sync:
+    if: github.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Match release notes to CHANGELOG.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # Explicit bash adds pipefail: a failed `gh release list` fails the job instead of syncing nothing.
+        shell: bash
+        run: |
+          gh release list --limit 200 --json tagName -q '.[].tagName' | while read -r tag; do
+            v="${tag#v}"
+            awk -v v="$v" '$0 ~ "^## "v" " {f=1; next} /^## /{f=0} f' CHANGELOG.md > notes.md
+            grep -q '[^[:space:]]' notes.md || continue
+            # An assignment, so a failed lookup stops the job instead of counting as changed notes.
+            current=$(gh release view "$tag" --json body -q .body)
+            if [ "$current" != "$(cat notes.md)" ]; then
+              gh release edit "$tag" --notes-file notes.md
+              echo "updated $tag"
+            fi
+          done
