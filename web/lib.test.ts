@@ -60,6 +60,7 @@ function item(over: Partial<Item> = {}): Item {
     live: null,
     status: "idle",
     since: NOW - 60_000,
+    starting: false,
     doc: null,
     unseen: null,
     ...over,

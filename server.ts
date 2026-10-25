@@ -417,6 +417,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     } | null;
     /** working / blocked / idle, from the session's bridge; null without one. */
     status: string | null;
+    /** An omp pane whose omp hasn't connected to /bridge yet: it is still starting. */
+    starting: boolean;
     /** When `status` last changed (ms). */
     since: number;
     /** File blocks (Tern notes and opened files): the path shown read-only instead of a terminal. */
@@ -570,6 +572,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
                 }
               : null,
             status,
+            starting: !bridge && b.exited == null && /^omp(\s|$)/.test(str(b.command)),
             since,
             doc,
             unseen: unseen.get(id) ?? null,

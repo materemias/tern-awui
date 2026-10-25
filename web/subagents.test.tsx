@@ -36,6 +36,7 @@ function item(jobs: Job[]): Item {
     live: { model: "m", thinking: "", levels: [], tiers: [], tier: "", context: null, jobs, protocol: 2, caps: null, build: "", mismatch: null, restart: false },
     status: "working",
     since: NOW,
+    starting: false,
     doc: null,
     unseen: null,
   };

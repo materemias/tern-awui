@@ -4,6 +4,7 @@
 
 - Parser copy synced with omp-stretch: a gist written both before its stretch and as its short form shows once, the guide tells the model to write each short form only once and ends with a short example reply, and the experimental `section` level is known.
 - **+ omp** starts the new session at once, without the "Start a new omp in …?" confirmation.
+- While a new omp session starts, its composer hides the key bar and takes a prompt that can't be sent yet: Send is disabled and Enter does nothing until omp connects, and the text then becomes omp's draft instead of being replaced by its empty editor. The same holds in the moment before a freshly opened session's state arrives. The server marks such panes with a new `starting` flag (an omp command, not exited, no bridge yet).
 
 ## 0.5.0 (2026-10-22)
 

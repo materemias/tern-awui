@@ -169,6 +169,7 @@ export function item(over: Partial<Item> = {}): Item {
     live: live(),
     status: "idle",
     since: 0,
+    starting: false,
     doc: null,
     unseen: null,
     ...over,

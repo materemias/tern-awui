@@ -63,6 +63,7 @@ function item(live: Partial<Live> | null, status = "idle"): Item {
     live: live && { model: "m", thinking: "", levels: [], tiers: [], tier: "", context: null, jobs: [], protocol: 2, caps: null, build: "b", mismatch: null, restart: false, ...live },
     status,
     since: 0,
+    starting: false,
     doc: null,
     unseen: null,
   };

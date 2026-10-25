@@ -64,6 +64,8 @@ export type Item = {
   live: Live | null;
   /** working / blocked / idle; null for shells and files. */
   status: string | null;
+  /** An omp pane whose omp hasn't connected yet: it is still starting. */
+  starting: boolean;
   since: number;
   doc: string | null;
   /** A finished turn or a wait on you that the phone hasn't opened yet. */

@@ -896,6 +896,33 @@ describe("terminal typing and key bar", () => {
     expect(root.querySelector(".keys")).toBeNull();
   });
 
+  test("a starting omp hides the key bar and holds its prompt until it connects, then hands it over as the draft", async () => {
+    await show({ item: item({ agent: null, live: null, status: null, starting: true }), draft: { live: false, text: "" } });
+    expect(root.querySelector(".keys")).toBeNull();
+    await input("fix the login");
+    expect(button("Send").disabled).toBe(true);
+    await press("Enter");
+    expect(calls("type")).toEqual([]);
+    expect(calls("submit")).toEqual([]);
+    expect(calls("draft")).toEqual([]);
+    await show({ item: item(), draft: { live: true, text: "" } });
+    await advance(1000);
+    expect(calls("draft")).toEqual([{ text: "fix the login" }]);
+    expect(area().value).toBe("fix the login");
+  });
+
+  test("a prompt typed before the pane is known can't be sent and survives an omp that connects straight away", async () => {
+    await show({ item: undefined, draft: null });
+    await input("fix the login");
+    expect(button("Send").disabled).toBe(true);
+    await press("Enter");
+    expect(calls("submit")).toEqual([]);
+    await show({ item: item(), draft: { live: true, text: "" } });
+    await advance(1000);
+    expect(calls("draft")).toEqual([{ text: "fix the login" }]);
+    expect(area().value).toBe("fix the login");
+  });
+
   test("a failed terminal write is shown but does not break subsequent queued input", async () => {
     await shell();
     net.reply = () => Response.json({ error: "pane closed" }, { status: 404 });

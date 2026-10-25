@@ -163,8 +163,19 @@ export function Composer({
     remote.current = null;
     setText((t) => (t === wanted ? t : wanted));
   }
+  // A prompt typed before omp's editor connected (still loading or starting) becomes its draft,
+  // rather than giving way to the editor's empty one.
+  const typedOffline = useRef(false);
   useEffect(() => {
     if (!draft?.live) return;
+    if (typedOffline.current) {
+      typedOffline.current = false;
+      if (textRef.current !== "") {
+        lastEdit.current = Date.now();
+        void pushDraft(textRef.current);
+        return;
+      }
+    }
     remote.current = draft.text;
     reconcile();
   }, [draft]);
@@ -218,7 +229,11 @@ export function Composer({
   }
 
   const a = item?.agent;
-  const terminal = !!item && !a && !item.live;
+  // omp still starting: its prompt can be written but not sent, and it is no shell to type into.
+  const starting = !!item?.starting;
+  const terminal = !!item && !a && !item.live && !starting;
+  // Nothing to send to until the pane is known and its omp is up.
+  const unready = !item || starting;
 
   /** Runs terminal writes in order, so keystrokes never overtake each other. */
   function queue(path: string, body: unknown): Promise<string | null> {
@@ -245,6 +260,7 @@ export function Composer({
   /** `followUp`: omp holds the prompt until the running turn ends (its Ctrl+Q), rather than steering. */
   async function submit(e: Event, followUp = false) {
     e.preventDefault();
+    if (unready) return;
     if (terminal) {
       buzz();
       await terminalKeys(["Enter"]);
@@ -480,7 +496,7 @@ export function Composer({
           ref={area}
           rows={1}
           placeholder={
-            terminal ? "Type into the terminal" : working ? "Steer the agent…" : "Ask for changes or send a follow-up"
+            starting ? "omp is starting… write your prompt" : terminal ? "Type into the terminal" : working ? "Steer the agent…" : "Ask for changes or send a follow-up"
           }
           autoCapitalize={terminal ? "off" : undefined}
           autoCorrect={terminal ? "off" : undefined}
@@ -501,6 +517,7 @@ export function Composer({
             textRef.current = value;
             setText(value);
             if (live) void pushDraft(value);
+            else typedOffline.current = true;
           }}
           onPaste={terminal || !a ? undefined : onPaste}
           onKeyDown={(e) => {
@@ -563,7 +580,7 @@ export function Composer({
               </svg>
             </button>
           ) : (
-            <button class={`send${empty && !terminal ? " idle" : ""}`} type="submit" disabled={sending} aria-label="Send">
+            <button class={`send${empty && !terminal ? " idle" : ""}`} type="submit" disabled={sending || unready} aria-label="Send">
               <svg viewBox="0 0 20 20" aria-hidden="true">
                 <path d="M10 15.5v-11M5.5 9 10 4.5 14.5 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
