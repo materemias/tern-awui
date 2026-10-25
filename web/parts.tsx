@@ -1,5 +1,5 @@
 // Chat pieces with their own behavior: image thumbnails, todo lists, and prompts with actions.
-import { useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { post, type ChatEntry, type Img, type TodoPhase } from "./api";
 import { clock, todoSummary } from "./lib";
 
@@ -28,17 +28,123 @@ export function Dot({ state }: { state: string | undefined }) {
   return <span class={`dot dot-${state ?? "shell"}`} />;
 }
 
-export function Thumbs({ images }: { images: Img[] }) {
-  const [open, setOpen] = useState<Img | null>(null);
+/**
+ * Image thumbnails. A tap opens the full-screen view on `gallery`, every image of the turn, so
+ * the others are a swipe (touch) or ‹ › and the arrow keys (desktop) away. The view is a history
+ * entry holding the image's src: back closes it and stays in the session, forward reopens it.
+ */
+export function Thumbs({ images, gallery = images }: { images: Img[]; gallery?: Img[] }) {
+  // The open image by src: the chat is rebuilt on every update, so objects and positions change.
+  const [open, setOpen] = useState<string | null>(null);
+  const start = open === null ? -1 : gallery.findIndex((g) => g.src === open);
+  const shown = useRef(false);
+  shown.current = open !== null;
+  const close = () => {
+    setOpen(null);
+    if (typeof history.state?.lightbox === "string") history.back();
+  };
+  useEffect(() => {
+    const onPop = () => {
+      const src = history.state?.lightbox;
+      setOpen(typeof src === "string" && images.some((i) => i.src === src) ? src : null);
+    };
+    addEventListener("popstate", onPop);
+    return () => removeEventListener("popstate", onPop);
+  }, [images]);
+  // The open image left the turn (the transcript was rewound or rewritten): close, not show another.
+  useEffect(() => {
+    if (open !== null && start < 0) close();
+  }, [open, start]);
+  // Gone while open: take the view's history entry back off, or the next back would do nothing.
+  useEffect(
+    () => () => {
+      if (shown.current && typeof history.state?.lightbox === "string") history.back();
+    },
+    [],
+  );
+  const show = (i: Img) => {
+    history.pushState({ lightbox: i.src }, "");
+    setOpen(i.src);
+  };
   return (
     <div class="thumbs" onClick={(e) => e.stopPropagation()}>
       {images.map((i, n) => (
-        <img key={n} class="thumb" src={i.src} loading="lazy" alt="" onClick={() => setOpen(i)} />
+        <img key={n} class="thumb" src={i.src} loading="lazy" alt="" onClick={() => show(i)} />
       ))}
-      {open && (
-        <div class="lightbox" onClick={() => setOpen(null)}>
-          <img src={open.src} alt="" />
-        </div>
+      {start >= 0 && <Lightbox images={gallery} start={start} close={close} />}
+    </div>
+  );
+}
+
+/** The full-screen view: one image per page in a snapping strip; a tap on it closes. */
+function Lightbox({ images, start, close }: { images: Img[]; start: number; close: () => void }) {
+  const strip = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState(start);
+  // The page shown or being scrolled to, ahead of the render: a quick second key press reads it.
+  const page = useRef(start);
+  // Where a ‹ › or arrow-key scroll is heading: the pages it passes on the way don't count.
+  const target = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const el = strip.current;
+    if (el) el.scrollLeft = start * el.clientWidth;
+  }, []);
+  const move = (by: number) => {
+    const n = Math.min(images.length - 1, Math.max(0, page.current + by));
+    page.current = target.current = n;
+    setAt(n);
+    const el = strip.current;
+    // `?.`: happy-dom, the test DOM, has no scrollTo.
+    el?.scrollTo?.({ left: n * el.clientWidth, behavior: "smooth" });
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+      else if (e.key === "ArrowLeft") move(-1);
+      else if (e.key === "ArrowRight") move(1);
+      else return;
+      e.preventDefault();
+    };
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  }, [images.length]);
+  const onScroll = () => {
+    const el = strip.current;
+    if (!el?.clientWidth) return;
+    const p = Math.round(el.scrollLeft / el.clientWidth);
+    if (target.current !== null) {
+      if (p !== target.current) return;
+      target.current = null;
+    }
+    page.current = p;
+    setAt(p);
+  };
+  // A swipe or a trackpad scroll takes over from a scroll still heading somewhere.
+  const takeOver = () => void (target.current = null);
+  const step = (by: number) => (e: MouseEvent) => {
+    e.stopPropagation();
+    move(by);
+  };
+  return (
+    <div class="lightbox" onClick={close}>
+      <div class="lightbox-strip" ref={strip} onScroll={onScroll} onPointerDown={takeOver} onWheel={takeOver}>
+        {images.map((i, n) => (
+          <div key={n} class="lightbox-page">
+            <img src={i.src} alt="" />
+          </div>
+        ))}
+      </div>
+      {images.length > 1 && (
+        <>
+          <button type="button" class="lightbox-nav prev" aria-label="Previous image" disabled={at === 0} onClick={step(-1)}>
+            ‹
+          </button>
+          <button type="button" class="lightbox-nav next" aria-label="Next image" disabled={at === images.length - 1} onClick={step(1)}>
+            ›
+          </button>
+          <div class="lightbox-count">
+            {at + 1} / {images.length}
+          </div>
+        </>
       )}
     </div>
   );
@@ -98,10 +204,12 @@ export function UserMsg({
   entry,
   block,
   rewind: canRewind,
+  gallery,
 }: {
   entry: Extract<ChatEntry, { role: "user" }>;
   block: string;
   rewind: boolean;
+  gallery?: Img[];
 }) {
   const [open, setOpen] = useState(false);
   async function rewind() {
@@ -114,7 +222,7 @@ export function UserMsg({
     <div class={`msg user${open ? " acts-open" : ""}`} onClick={() => setOpen(!open)}>
       <span class="user-mark">›</span>
       <span class="user-text">
-        {entry.images.length > 0 && <Thumbs images={entry.images} />}
+        {entry.images.length > 0 && <Thumbs images={entry.images} gallery={gallery} />}
         {entry.text}
       </span>
       <div class="user-acts" onClick={(ev) => ev.stopPropagation()}>

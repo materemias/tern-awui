@@ -296,7 +296,19 @@ function RuleCard({ rules }: { rules: { name: string; text: string }[] }) {
   );
 }
 
-function Tools({ calls, images, todo, latestTodo }: { calls: ToolCall[]; images: Img[]; todo: TodoPhase[] | null; latestTodo: boolean }) {
+function Tools({
+  calls,
+  images,
+  gallery,
+  todo,
+  latestTodo,
+}: {
+  calls: ToolCall[];
+  images: Img[];
+  gallery: Img[];
+  todo: TodoPhase[] | null;
+  latestTodo: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const errors = calls.filter((c) => c.error).length;
   const last = calls[calls.length - 1];
@@ -319,7 +331,7 @@ function Tools({ calls, images, todo, latestTodo }: { calls: ToolCall[]; images:
           ))}
         </ul>
       )}
-      {images.length > 0 && <Thumbs images={images} />}
+      {images.length > 0 && <Thumbs images={images} gallery={gallery} />}
       {todo && <Todo phases={todo} full={latestTodo} />}
     </div>
   );
@@ -453,6 +465,16 @@ export function Chat({ entries, block, rewind, readOnly = false }: { entries: Ch
   // An ask is open only while nothing was said after it.
   const lastTalk = entries.findLastIndex((e) => e.role === "user" || e.role === "assistant");
   const latestTodo = entries.findLastIndex((e) => e.role === "tools" && e.todo !== null);
+  // Every image of a turn (a prompt and the screenshots after it), so the full-screen view pages
+  // through them all. A turn's entries share one array, still filling as the walk goes on.
+  const galleries = useMemo(() => {
+    let turn: Img[] = [];
+    return entries.map((e) => {
+      if (e.role === "user") turn = [];
+      if (e.role === "user" || e.role === "tools") turn.push(...e.images);
+      return turn;
+    });
+  }, [entries]);
   return (
     <>
       {entries.map((e, n) => {
@@ -463,12 +485,12 @@ export function Chat({ entries, block, rewind, readOnly = false }: { entries: Ch
             <div key={n} class="msg user sub-prompt">
               <span class="user-mark">›</span>
               <div class="user-text">
-                {e.images.length > 0 && <Thumbs images={e.images} />}
+                {e.images.length > 0 && <Thumbs images={e.images} gallery={galleries[n]} />}
                 <Markdown class="md" text={openText(e.text)} />
               </div>
             </div>
           ) : (
-            <UserMsg key={n} entry={e} block={block} rewind={rewind} />
+            <UserMsg key={n} entry={e} block={block} rewind={rewind} gallery={galleries[n]} />
           );
         if (e.role === "turn")
           return (
@@ -489,7 +511,7 @@ export function Chat({ entries, block, rewind, readOnly = false }: { entries: Ch
             </div>
           );
         if (e.role === "tools")
-          return <Tools key={n} calls={e.calls} images={e.images} todo={e.todo} latestTodo={n === latestTodo} />;
+          return <Tools key={n} calls={e.calls} images={e.images} gallery={galleries[n]} todo={e.todo} latestTodo={n === latestTodo} />;
         return <AskCard key={e.id} ask={e} block={block} pending={!readOnly && n > lastTalk} />;
       })}
     </>

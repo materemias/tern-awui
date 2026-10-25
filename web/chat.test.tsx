@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, mock, spyOn, test, type Mock } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import type { Ask, ChatEntry } from "./api";
 import { Net, settle, sleep, specDom } from "./fakes";
@@ -39,16 +39,21 @@ type StretchSync = import("./chat").StretchSync;
 const net = new Net();
 const buzzes: number[] = [];
 let root: HTMLElement;
+// The lightbox pops its history entry; a real back would land in a later test as a stray popstate.
+let back: Mock<History["back"]>;
 beforeEach(() => {
   root = document.createElement("div");
   document.body.append(root);
   net.install();
   buzzes.length = 0;
   Object.defineProperty(navigator, "vibrate", { configurable: true, value: (ms: number) => buzzes.push(ms) });
+  history.replaceState(null, "");
+  back = spyOn(history, "back").mockImplementation(() => {});
 });
 afterEach(() => {
   render(null, root);
   root.remove();
+  back.mockRestore();
 });
 afterAll(() => net.restore());
 
@@ -155,10 +160,65 @@ describe("tool groups", () => {
     const thumbs = root.querySelectorAll(".thumb");
     expect(thumbs.length).toBe(2);
     await click(thumbs[1]);
-    expect(root.querySelector(".lightbox img")!.getAttribute("src")).toBe("/img/2.png");
+    expect(root.querySelector(".lightbox-count")!.textContent).toBe("2 / 2");
     expect(root.querySelector(".tools li")).toBeNull();
     await click(root.querySelector(".lightbox"));
     expect(root.querySelector(".lightbox")).toBeNull();
+  });
+
+  test("the lightbox pages through every image of the turn, and only that turn", async () => {
+    await show([
+      { role: "user", id: "u1", text: "old", images: [{ src: "/img/old.png" }], ts: TS },
+      { role: "user", id: "u2", text: "look", images: [{ src: "/img/prompt.png" }], ts: TS },
+      tools({ images: [{ src: "/img/a.png" }] }),
+      said("checking"),
+      tools({ images: [{ src: "/img/b.png" }] }),
+    ]);
+    await click(root.querySelectorAll(".thumb")[2]);
+    expect([...root.querySelectorAll(".lightbox img")].map((i) => i.getAttribute("src"))).toEqual(["/img/prompt.png", "/img/a.png", "/img/b.png"]);
+    expect(root.querySelector(".lightbox-count")!.textContent).toBe("2 / 3");
+    await click(root.querySelector("[aria-label='Next image']"));
+    expect(root.querySelector(".lightbox-count")!.textContent).toBe("3 / 3");
+    expect(root.querySelector<HTMLButtonElement>("[aria-label='Next image']")!.disabled).toBe(true);
+    await act(() => { dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft" })); });
+    expect(root.querySelector(".lightbox-count")!.textContent).toBe("2 / 3");
+  });
+
+  test("a screenshot arriving while the lightbox is open is one arrow key away", async () => {
+    const prompt: ChatEntry = { role: "user", id: "u1", text: "look", images: [{ src: "/img/1.png" }], ts: TS };
+    await show([prompt]);
+    await click(root.querySelector(".thumb"));
+    await show([prompt, tools({ images: [{ src: "/img/2.png" }] })]);
+    await act(() => { dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" })); });
+    expect(root.querySelector(".lightbox-count")!.textContent).toBe("2 / 2");
+  });
+
+  test("back closes the lightbox, forward reopens it, and closing it by tap pops its history entry", async () => {
+    await show([tools({ images: [{ src: "/img/1.png" }] })]);
+    await click(root.querySelector(".thumb"));
+    expect(history.state).toEqual({ lightbox: "/img/1.png" });
+    history.replaceState(null, "");
+    await act(() => { dispatchEvent(new PopStateEvent("popstate")); });
+    expect(root.querySelector(".lightbox")).toBeNull();
+    history.replaceState({ lightbox: "/img/1.png" }, "");
+    await act(() => { dispatchEvent(new PopStateEvent("popstate")); });
+    expect(root.querySelector(".lightbox img")!.getAttribute("src")).toBe("/img/1.png");
+    expect(back).toHaveBeenCalledTimes(0);
+    await click(root.querySelector(".lightbox"));
+    expect(back).toHaveBeenCalledTimes(1);
+  });
+
+  test("an open image rewound out of the transcript closes and pops its history entry", async () => {
+    const entries: ChatEntry[] = [
+      { role: "user", id: "u1", text: "one", images: [{ src: "/img/1.png" }], ts: TS },
+      { role: "user", id: "u2", text: "two", images: [{ src: "/img/2.png" }], ts: TS },
+    ];
+    await show(entries);
+    await click(root.querySelectorAll(".thumb")[1]);
+    // The second prompt is gone; the first one's thumbnails must not inherit the open view.
+    await show([entries[0]!, tools({ images: [{ src: "/img/3.png" }] })]);
+    expect(root.querySelector(".lightbox")).toBeNull();
+    expect(back).toHaveBeenCalledTimes(1);
   });
 
   test("only the newest todo list is open; older ones show their progress line", async () => {
