@@ -8,6 +8,21 @@ export function buzz(ms = 12) {
   navigator.vibrate?.(ms);
 }
 
+/** Copy: puts `text` on the clipboard and says so for a moment. */
+export function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  }
+  return (
+    <button type="button" onClick={copy}>
+      {copied ? "Copied" : "Copy"}
+    </button>
+  );
+}
+
 /** A status dot: working, blocked, idle; a shell without one. */
 export function Dot({ state }: { state: string | undefined }) {
   return <span class={`dot dot-${state ?? "shell"}`} />;
@@ -89,12 +104,6 @@ export function UserMsg({
   rewind: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    await navigator.clipboard.writeText(entry.text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1200);
-  }
   async function rewind() {
     if (!confirm("Rewind to before this prompt? Later turns leave the conversation (omp keeps them as a branch) and the prompt returns to the composer."))
       return;
@@ -110,11 +119,7 @@ export function UserMsg({
       </span>
       <div class="user-acts" onClick={(ev) => ev.stopPropagation()}>
         <span class="muted">{clock(entry.ts)}</span>
-        {entry.text && (
-          <button type="button" onClick={copy}>
-            {copied ? "Copied" : "Copy"}
-          </button>
-        )}
+        {entry.text && <CopyButton text={entry.text} />}
         {entry.id && canRewind && (
           <button type="button" onClick={rewind}>
             Rewind

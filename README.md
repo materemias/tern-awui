@@ -22,7 +22,7 @@ The screenshots show invented sessions; `bun docs/screenshots.ts` regenerates th
 - **The draft is shared.** Text typed on the phone appears in the Tern pane's prompt, and text typed on the desktop appears on the phone, so you can start on one and finish on the other.
 - **Model and effort.** Switch the model, thinking effort and service tier, or pick one of your Ctrl+P roles. A gauge shows how full the context window is and where compaction will start.
 - **Notifications.** Optional push notifications when a session finishes or needs you, and an unread count on the app icon.
-- **Rewind and side questions.** Copy or rewind to an earlier prompt, ask a quick `/btw` question without touching the session, and browse the session's saved btw history with bare `/btw`.
+- **Rewind, copy and side questions.** Copy or rewind to an earlier prompt, copy a reply as markdown with its stretches expanded, ask a quick `/btw` question without touching the session, and browse the session's saved btw history with bare `/btw`.
 - **Subagents.** See running subagents and background jobs, and read any subagent's conversation.
 - **Shells and files too.** Plain terminals show their screen with a key bar (Esc, ^C, arrows, Tab), and Tern notes and opened files are readable.
 - **Phone and desktop.** On a phone it is one column; in a desktop browser the session list stays in a sidebar next to the open session, or shrinks to a rail of status-colored session icons (Ctrl+\).

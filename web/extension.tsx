@@ -1,23 +1,15 @@
 // What the app says when omp's tern-mobile extension isn't the one this server ships: a banner on
 // the list for the installed file, a notice under a session's header for what its omp loaded.
-import { useState } from "preact/hooks";
 import { post, type Install, type Item } from "./api";
 import { installNotice, sessionNotice, type Notice } from "./lib";
+import { CopyButton } from "./parts";
 
 /** A command to run in a terminal, with Copy (it is also selectable as one block). */
 function Command({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1200);
-  }
   return (
     <div class="ext-cmd">
       <code>{text}</code>
-      <button type="button" onClick={copy}>
-        {copied ? "Copied" : "Copy"}
-      </button>
+      <CopyButton text={text} />
     </div>
   );
 }

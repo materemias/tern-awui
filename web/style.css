@@ -116,11 +116,17 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .user-text { min-width: 0; }
 /* omp's per-prompt actions, over the prompt's right end: on hover, or after a tap on touch screens. */
 .msg.user { position: relative; }
-.user-acts { position: absolute; top: 4px; right: 6px; display: none; gap: 2px; align-items: center; padding: 2px 4px 2px 8px; border-radius: 7px; background: var(--raise); border: 1px solid var(--line); font: 12px var(--mono); white-space: nowrap; }
-.user-acts button { border: 0; background: none; color: var(--muted); font: inherit; padding: 3px 7px; border-radius: 5px; }
-.user-acts button:hover { color: var(--fg); background: var(--panel); }
+.user-acts, .reply-acts { position: absolute; display: none; gap: 2px; align-items: center; padding: 2px 4px 2px 8px; border-radius: 7px; background: var(--raise); border: 1px solid var(--line); font: 12px var(--mono); white-space: nowrap; }
+.user-acts { top: 4px; right: 6px; }
+.user-acts button, .reply-acts button { border: 0; background: none; color: var(--muted); font: inherit; padding: 3px 7px; border-radius: 5px; }
+.user-acts button:hover, .reply-acts button:hover { color: var(--fg); background: var(--panel); }
 .msg.user.acts-open .user-acts { display: flex; }
 @media (hover: hover) { .msg.user:hover .user-acts { display: flex; } }
+/* A reply's Copy, the same way, over its bottom right end. */
+.reply { position: relative; }
+.reply-acts { bottom: -6px; right: 0; padding-left: 4px; }
+.reply.acts-open .reply-acts { display: flex; }
+@media (hover: hover) { .reply:hover .reply-acts { display: flex; } }
 .turn { font: 11px var(--mono); color: var(--muted); opacity: .55; text-align: right; padding-bottom: 10px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
 /* omp's idle recap, as the terminal prints it: ※ and italic, under the turn it sums up. */
 .chat-recap { display: flex; gap: 8px; align-items: baseline; margin: -2px 0 12px; color: var(--muted); font-style: italic; font-size: 14px; }

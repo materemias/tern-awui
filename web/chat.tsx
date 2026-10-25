@@ -1,6 +1,6 @@
 // The chat renderer, shared by sessions and their subagents: markdown (charts, mermaid), advisor
 // notes, tool lines, ask cards and prompts.
-import { createContext } from "preact";
+import { createContext, type ComponentChildren } from "preact";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Mermaid } from "mermaid";
 import { drawCharts } from "./charts";
@@ -8,7 +8,7 @@ import { post, type AdvisorNote, type Ask, type ChatEntry, type Img, type TodoPh
 import { askAnswers, askReady, clock, duration, langOf, parseAdvisorNote, prettyModel, type AskPick } from "./lib";
 import { renderMarkdown } from "./markdown";
 import { highlightFences } from "./highlight";
-import { buzz, Thumbs, Todo, UserMsg } from "./parts";
+import { buzz, CopyButton, Thumbs, Todo, UserMsg } from "./parts";
 import {
   DEEPEN,
   isLinkable,
@@ -126,8 +126,40 @@ function Reply({ entry }: { entry: Extract<ChatEntry, { role: "assistant" }> }) 
   const source = useMemo(() => (answers.length ? withAnswers(entry.text, answers) : entry.text), [entry.text, answers]);
   const parts = useMemo(() => (source.includes("{{") ? parse(source) : null), [source]);
   const all = useMemo(() => (parts ? stretches(parts) : []), [parts]);
-  if (!parts || !all.some(isLinkable)) return <Markdown class="msg assistant md" text={entry.text} imageSources={entry.imageSources} />;
-  return <StretchReply entry={entry} parts={parts} all={all} />;
+  // Copy takes the whole reply: every stretch drawn open, without its markup.
+  const copyText = useMemo(() => (parts ? writeOpen(parts) : source), [parts, source]);
+  return (
+    <ReplyActs text={copyText}>
+      {!parts || !all.some(isLinkable) ? (
+        <Markdown class="msg assistant md" text={entry.text} imageSources={entry.imageSources} />
+      ) : (
+        <StretchReply entry={entry} parts={parts} all={all} />
+      )}
+    </ReplyActs>
+  );
+}
+
+/**
+ * A reply with its Copy action, over its bottom right end: on hover, or after a tap on touch
+ * screens. Taps on links (stretches open there) and ones ending a text selection don't toggle it.
+ */
+function ReplyActs({ text, children }: { text: string; children: ComponentChildren }) {
+  const [open, setOpen] = useState(false);
+  const onClick = (e: MouseEvent) => {
+    if ((e.target as Element | null)?.closest?.("a, button, img")) return;
+    if (getSelection()?.toString()) return;
+    setOpen(!open);
+  };
+  return (
+    <div class={`reply${open ? " acts-open" : ""}`} onClick={onClick}>
+      {children}
+      {text && (
+        <div class="reply-acts" onClick={(ev) => ev.stopPropagation()}>
+          <CopyButton text={text} />
+        </div>
+      )}
+    </div>
+  );
 }
 
 function StretchReply({ entry, parts, all }: { entry: Extract<ChatEntry, { role: "assistant" }>; parts: Segment[]; all: Stretch[] }) {

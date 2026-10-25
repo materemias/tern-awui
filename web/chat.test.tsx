@@ -373,6 +373,21 @@ describe("stretchtext replies", () => {
     expect(prose()).toBe("A monad wraps values. Done.");
   });
 
+  test("Copy takes the whole reply as plain text, every stretch open, whatever is open on screen; a stretch tap doesn't show it", async () => {
+    const copied: string[] = [];
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t: string) => void copied.push(t) } });
+    await show([reply("A monad {{wraps values|wraps values {{in a context|in a context, like `Maybe`}}}}. Done."), said("**Plain.**")]);
+    const [stretchy, plain] = [...root.querySelectorAll(".reply")];
+    await click(stretchy.querySelector("a[href^='#stretch/']"));
+    expect(stretchy.classList.contains("acts-open")).toBe(false);
+    await click(stretchy.querySelector(".msg"));
+    expect(stretchy.classList.contains("acts-open")).toBe(true);
+    await click(stretchy.querySelector(".reply-acts button"));
+    await click(plain.querySelector(".reply-acts button"));
+    expect(copied).toEqual(["A monad wraps values in a context, like `Maybe`. Done.", "**Plain.**"]);
+    expect(stretchy.querySelector(".reply-acts button")!.textContent).toBe("Copied");
+  });
+
   test("in a session, the shared state decides what is open and a tap goes to it", async () => {
     const set = mock((_block: string, _key: string, _open: boolean) => {});
     const draw = (open: Record<string, string[]>, off = false) =>
