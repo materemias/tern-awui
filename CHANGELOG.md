@@ -9,6 +9,7 @@
 - A chat scrolled to the bottom stays there whenever anything below grows, not only when the transcript, live text or queue change: the working row appearing, subagent jobs, images finishing loading, a btw card, or the window resizing. Before, these left the newest lines hidden until scrolled by hand.
 - The session header's two buttons are drawn icons in the style of the composer's instead of `⌖` and `✕` glyphs in boxed outlines: a monitor with an arrow out of its corner for "Show this pane on the desktop", and a thin cross for Close, grey until hovered or pressed, when it turns red on a faint red disc.
 - **+ omp**, in the list header and on each project heading, is now a mark instead of words: a plus and the blocky π from omp's welcome screen, borderless instead of in a boxed outline. Hovered with a mouse, π fills in its shaded foot, stomps it down a cell and wiggles; not under reduced motion. A project heading's button is named "New omp in <project>" for screen readers and on hover.
+- An omp session with nothing in it yet shows omp's welcome mark at the top of the chat, as a new omp pane does in Tern: the blocky π and "omp" in the monospace face, nothing else. Hovering the π plays the same foot stomp and wiggle as **+ omp**. The first prompt, or a turn already running, replaces it.
 
 ## 0.6.0 (2026-10-25)
 

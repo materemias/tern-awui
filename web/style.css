@@ -302,6 +302,11 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 }
 @keyframes omp-kick { 0% { opacity: .4; } 45% { opacity: 1; transform: none; } 70% { opacity: 1; transform: translateY(60%); } 100% { opacity: 1; transform: none; } }
 @keyframes omp-wiggle { 0%, 100% { transform: none; } 25% { transform: rotate(-6deg); } 50% { transform: rotate(5deg); } 75% { transform: rotate(-2deg); } }
+/* An omp session with nothing in it yet: omp's welcome mark, as its pane shows it in Tern. */
+.welcome { display: flex; align-items: center; justify-content: center; gap: 18px; padding: 40px 0 24px; color: var(--fg); user-select: none; }
+.welcome .omp-play { display: grid; }
+.welcome .omp-logo { width: 54px; height: 45px; }
+.welcome-name { font: 400 44px/1 var(--mono); letter-spacing: .01em; }
 .row-sub.recap { font-style: italic; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 30; padding: 9px 16px; border-radius: 999px; background: var(--raise); border: 1px solid var(--line); color: var(--fg); font-size: 14px; box-shadow: 0 4px 18px rgb(0 0 0 / .4); white-space: nowrap; }
 /* The gauge lies on the straight part of the top border: the border itself is the unused part,

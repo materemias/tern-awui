@@ -221,6 +221,20 @@ test("scrolling away preserves position when a transcript update arrives", async
   expect(scroll.scrollTop).toBe(1000);
 });
 
+test("an empty omp session shows omp's welcome mark until its first entry", async () => {
+  await open(item({ status: "idle" }));
+  await emit("chat", { entries: [] });
+  expect(root.querySelector(".welcome")!.textContent).toBe("omp");
+  expect(root.querySelector(".welcome .omp-foot")).not.toBeNull();
+  // A turn already running (or streaming) isn't an empty session.
+  await emit("live", { text: "Starting", done: false });
+  expect(root.querySelector(".welcome")).toBeNull();
+  await emit("live", { text: "", done: true });
+  await emit("chat", { entries: [{ role: "user", id: "u1", text: "hi", images: [], ts: 1 }] });
+  expect(root.querySelector(".welcome")).toBeNull();
+  expect(root.querySelector(".msg.user")!.textContent).toContain("hi");
+});
+
 test("subagent list and read-only transcript subscribe to their distinct streams", async () => {
   await act(() => render(<SubagentScreen route={{ view: "subagents", block: "5" }} />, root));
   expect(FakeEventSource.last.url).toBe("/api/stream?block=5&view=subagents");

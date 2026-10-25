@@ -6,7 +6,7 @@ import { age, backStep, can, elapsed, isNote, type Route } from "./lib";
 import { Chat, Markdown, StretchContext, type StretchSync } from "./chat";
 import { liveText, withOpen } from "./stretch";
 import { screenHtml } from "./markdown";
-import { Dot } from "./parts";
+import { Dot, PiMark } from "./parts";
 import { ExtensionNotice } from "./extension";
 import { JobsStrip, SubagentChat, SubagentList } from "./subagents";
 import { Title } from "./home";
@@ -176,7 +176,16 @@ export function Session({ block }: { block: string }) {
           ) : chat && view === "chat" ? (
             <>
               <StretchContext.Provider value={stretchSync}>
-                <Chat entries={chat} block={block} rewind={can(item?.live, "rewind")} />
+                {chat.length || live || queued.length || working ? (
+                  <Chat entries={chat} block={block} rewind={can(item?.live, "rewind")} />
+                ) : (
+                  <div class="welcome">
+                    <span class="omp-play">
+                      <PiMark />
+                    </span>
+                    <span class="welcome-name">omp</span>
+                  </div>
+                )}
               </StretchContext.Provider>
               {live && <Markdown class="msg assistant md live" mermaid={false} text={liveText(live)} />}
               {queued.map((q, i) => (
