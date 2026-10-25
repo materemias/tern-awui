@@ -195,8 +195,7 @@ export function Home({
   // Only the phone's single-pane list guards against leaving on back.
   const exitHint = useExitGuard(!wide);
 
-  async function newAgent(cwd: string, project: string, ask = true) {
-    if (ask && !confirm(`Start a new omp in ${project}?`)) return;
+  async function newAgent(cwd: string, project: string) {
     setBusy(project);
     try {
       const r = await postJson("/api/new", { cwd });
@@ -216,7 +215,7 @@ export function Home({
       onClose={() => setPicker(false)}
       onPick={(dir) => {
         setPicker(false);
-        void newAgent(dir, dir, false);
+        void newAgent(dir, dir);
       }}
     />
   );

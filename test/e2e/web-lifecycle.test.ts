@@ -72,7 +72,7 @@ describe.skipIf(!CHROMIUM)("browser connection lifecycle", () => {
     await button.click();
     await failed;
     await until(async () => !(await button.isDisabled()), "new-session button re-enabled");
-    expect(dialogs).toEqual(["Start a new omp in app?", "TypeError: Failed to fetch"]);
+    expect(dialogs).toEqual(["TypeError: Failed to fetch"]);
     expect(errors).toEqual([]);
   });
 });

@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Parser copy synced with omp-stretch: a gist written both before its stretch and as its short form shows once, the guide tells the model to write each short form only once and ends with a short example reply, and the experimental `section` level is known.
+- **+ omp** starts the new session at once, without the "Start a new omp in …?" confirmation.
 
 ## 0.5.0 (2026-10-22)
 

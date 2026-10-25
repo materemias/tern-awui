@@ -177,18 +177,13 @@ describe("Home", () => {
     expect(root.querySelector(".ext-chip")?.getAttribute("title")).toStartWith("1 session runs");
   });
 
-  test("project creation confirms, disables while pending, navigates on success and reports server errors", async () => {
+  test("project creation starts without asking, disables while pending, navigates on success and reports server errors", async () => {
     await mount([item()]);
     const add = root.querySelector("h2 button")!;
-    confirmed = false;
-    await click(add);
-    expect(prompts).toEqual(["Start a new omp in app?"]);
-    expect(net.to("/api/new")).toEqual([]);
-    expect(root.querySelector("section.shut")).toBeNull();
-    confirmed = true;
     const pending = Promise.withResolvers<Response>();
     net.reply = () => pending.promise;
     await click(add);
+    expect(prompts).toEqual([]);
     expect((add as HTMLButtonElement).disabled).toBe(true);
     expect(net.calls.at(-1)).toEqual({ url: "/api/new", method: "POST", body: { cwd: "/w/app" }, headers: { "content-type": "application/json", "x-tern-mobile": "1" } });
     await act(async () => { pending.resolve(Response.json({ block: "new" })); await settle(); });
