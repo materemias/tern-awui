@@ -79,6 +79,38 @@ function RailItem({ item, now, selected }: { item: Item; now: number; selected: 
   );
 }
 
+/**
+ * The desktop sidebar's minimize/expand button. Minimize is the word "tern" that folds into « on
+ * hover; Expand, on the rail, is » that unfolds into "tern": the same animation played backwards.
+ */
+function BrandToggle({ expand = false, onClick }: { expand?: boolean; onClick?: () => void }) {
+  const label = expand ? "Expand the session list" : "Minimize the session list";
+  return (
+    <button class={`brand brand-toggle${expand ? " expand" : ""}`} onClick={onClick} aria-label={label} title={`${label} (Ctrl+\\)`}>
+      <span class="brand-text" aria-hidden="true">
+        {[..."tern"].map((c, i) => (
+          <span key={i} style={`--i:${i}`}>
+            {c}
+          </span>
+        ))}
+      </span>
+      <svg class="brand-arrow" viewBox="0 0 20 20" aria-hidden="true">
+        {expand ? (
+          <>
+            <path d="M4.5 5.5 9 10l-4.5 4.5" />
+            <path d="M9.5 5.5 14 10l-4.5 4.5" />
+          </>
+        ) : (
+          <>
+            <path d="M10.5 5.5 6 10l4.5 4.5" />
+            <path d="M15.5 5.5 11 10l4.5 4.5" />
+          </>
+        )}
+      </svg>
+    </button>
+  );
+}
+
 function PushButton({ push: [push, togglePush] }: { push: [PushState, () => void] }) {
   if (push === "unsupported") return null;
   return (
@@ -225,9 +257,7 @@ export function Home({
     return (
       <div class="screen side-rail">
         <header class="rail-head">
-          <button class="icon-btn rail-toggle" onClick={onRail} aria-label="Expand the session list" title="Expand the session list (Ctrl+\)">
-            »
-          </button>
+          <BrandToggle expand onClick={onRail} />
           <span class={`net ${online ? "on" : "off"}`} title={online ? "Connected" : "Offline"} />
           {blocked > 0 && <span class="c-blocked small" title={`${blocked} blocked`}>{blocked}</span>}
           <PushButton push={push} />
@@ -258,12 +288,9 @@ export function Home({
   return (
     <div class="screen">
       <header class="bar list-bar">
-        {/* On the desktop the brand is the minimize button: « takes its place on hover, in the same box. */}
+        {/* On the desktop the brand is the minimize button: on hover its letters fold away to the left and « slides in, in the same box. */}
         {onRail ? (
-          <button class="brand brand-toggle" onClick={onRail} aria-label="Minimize the session list" title="Minimize the session list (Ctrl+\)">
-            <span class="brand-text">tern</span>
-            <span class="brand-arrow" aria-hidden="true">«</span>
-          </button>
+          <BrandToggle onClick={onRail} />
         ) : (
           <span class="brand">tern</span>
         )}

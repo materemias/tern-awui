@@ -26,12 +26,29 @@ a { color: inherit; text-decoration: none; }
 .screen { display: flex; flex-direction: column; height: 100dvh; padding-bottom: env(safe-area-inset-bottom); }
 .bar { display: flex; align-items: center; gap: 10px; padding: calc(10px + env(safe-area-inset-top)) 14px 10px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .brand { font-weight: 650; letter-spacing: .02em; }
-/* The desktop brand doubles as the sidebar's minimize button: both labels share one grid cell, so the box keeps the word's size and only « shows on hover or keyboard focus. */
+/* The desktop brand doubles as the sidebar's minimize button: the word and « share one grid cell, so the
+   box keeps the word's size. On hover or keyboard focus the letters fold away to the left, last one first,
+   and « slides in after them, its leading chevron first; leaving plays it back in reverse. The rail's
+   expand button (.expand) runs it backwards: » rests there and, hovered, shoots off to the right while
+   "tern" unfolds from the left, first letter first. */
 .brand-toggle { display: inline-grid; padding: 0; border: 0; background: none; font-size: inherit; line-height: inherit; }
-.brand-toggle > span { grid-area: 1 / 1; text-align: center; }
-.brand-arrow { visibility: hidden; color: var(--accent); font-size: 18px; line-height: 1; align-self: center; }
-.brand-toggle:hover .brand-text, .brand-toggle:focus-visible .brand-text { visibility: hidden; }
-.brand-toggle:hover .brand-arrow, .brand-toggle:focus-visible .brand-arrow { visibility: visible; }
+.brand-toggle > * { grid-area: 1 / 1; }
+.brand-text > span { display: inline-block; transition: transform .2s cubic-bezier(.4,0,.2,1), opacity .16s; transition-delay: calc(90ms + var(--i) * 30ms); }
+.brand-arrow { width: 20px; height: 20px; align-self: center; justify-self: center; color: var(--accent); fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+.brand-arrow path { opacity: 0; transform: translateX(6px); transition: transform .22s cubic-bezier(.3,1.5,.5,1), opacity .15s; }
+.brand-arrow path + path { transition-delay: 40ms; }
+.brand-toggle:is(:hover, :focus-visible) .brand-text > span { opacity: 0; transform: translateX(-.7em) scaleX(.4); transition-delay: calc((3 - var(--i)) * 30ms); }
+.brand-toggle:is(:hover, :focus-visible) .brand-arrow path { opacity: 1; transform: none; transition-delay: 110ms; }
+.brand-toggle:is(:hover, :focus-visible) .brand-arrow path + path { transition-delay: 160ms; }
+.brand-toggle.expand .brand-text > span { opacity: 0; transform: translateX(-.7em) scaleX(.4); transition-delay: calc((3 - var(--i)) * 30ms); }
+.brand-toggle.expand .brand-arrow path { opacity: 1; transform: none; transition-delay: 160ms; }
+.brand-toggle.expand .brand-arrow path + path { transition-delay: 110ms; }
+.brand-toggle.expand:is(:hover, :focus-visible) .brand-text > span { opacity: 1; transform: none; transition-delay: calc(90ms + var(--i) * 30ms); }
+.brand-toggle.expand:is(:hover, :focus-visible) .brand-arrow path { opacity: 0; transform: translateX(6px); transition-delay: 40ms; }
+.brand-toggle.expand:is(:hover, :focus-visible) .brand-arrow path + path { transition-delay: 0s; }
+@media (prefers-reduced-motion: reduce) {
+  .brand-text > span, .brand-arrow path { transition: opacity .12s; transition-delay: 0s !important; transform: none !important; }
+}
 /* A subagent's prompt (written by its parent agent) renders as Markdown inside the prompt rail. */
 .msg.user.sub-prompt { white-space: normal; }
 .sub-prompt .user-text { flex: 1; }
@@ -417,8 +434,7 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
   .desk-main .ext-session { margin-inline: max(12px, calc((100% - var(--reading-width)) / 2)); }
   /* The sidebar minimized to a rail (Ctrl+\): one icon per session, ringed in its status colour. */
   .desk.rail { grid-template-columns: 56px 1fr; }
-  .rail-toggle { flex: none; font-size: 18px; line-height: 1; color: var(--muted); }
-  .rail-toggle:hover { color: var(--fg); background: var(--raise); }
+  .rail-head .brand-toggle { flex: none; padding: 6px 2px; }
   .side-rail { align-items: center; padding-bottom: 8px; }
   .rail-head { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 0; width: 100%; border-bottom: 1px solid var(--line); background: var(--panel); }
   .rail-list { width: 100%; display: flex; flex-direction: column; align-items: center; scrollbar-width: none; padding-bottom: 8px; }

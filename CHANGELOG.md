@@ -10,6 +10,7 @@
 - The session header's two buttons are drawn icons in the style of the composer's instead of `⌖` and `✕` glyphs in boxed outlines: a monitor with an arrow out of its corner for "Show this pane on the desktop", and a thin cross for Close, grey until hovered or pressed, when it turns red on a faint red disc.
 - **+ omp**, in the list header and on each project heading, is now a mark instead of words: a plus and the blocky π from omp's welcome screen, borderless instead of in a boxed outline. Hovered with a mouse, π fills in its shaded foot, stomps it down a cell and wiggles; not under reduced motion. A project heading's button is named "New omp in <project>" for screen readers and on hover.
 - An omp session with nothing in it yet shows omp's welcome mark at the top of the chat, as a new omp pane does in Tern: the blocky π and "omp" in the monospace face, nothing else. Hovering the π plays the same foot stomp and wiggle as **+ omp**. The first prompt, or a turn already running, replaces it.
+- On the desktop, hovering "tern" at the top left of the sidebar animates it into the minimize button: the letters fold away to the left, last one first, and a drawn « slides in after them, one chevron then the other; moving away plays it back. The minimized rail's expand button runs it backwards: a drawn » rests there and, hovered, slides off to the right while "tern" unfolds from the left. Under reduced motion they only cross-fade. Both were text glyphs (« and ») that swapped in without motion.
 
 ## 0.6.0 (2026-10-25)
 
