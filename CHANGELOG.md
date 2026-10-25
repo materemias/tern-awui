@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Parser copy synced with omp-stretch: a gist written both before its stretch and as its short form shows once, the guide tells the model to write each short form only once and ends with a short example reply, and the experimental `section` level is known.
+
 ## 0.5.0 (2026-10-22)
 
 - Parser copy synced with omp-stretch: stretches ending on the same word share one `«` (each tap closes the innermost), ✦ stands before its `«`, a waiting ✦ steps once a second, and ✦ shows on any open stretch whose inner stretches are all open.

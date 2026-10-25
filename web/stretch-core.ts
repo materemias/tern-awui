@@ -5,14 +5,20 @@
 // opening it puts `long` in its place. `long` may hold further stretches. Code spans and fences are
 // copied as written, so braces in code never open a stretch.
 
-/** How heavily stretches are used: `light` keeps a sentence or two per paragraph in view, `dense` one clause. */
-export type Level = "light" | "dense";
+/**
+ * How heavily stretches are used: `light` keeps a sentence or two per paragraph in view, `dense` one
+ * clause, and `section` (experimental) one line per section under a heading, dense inside.
+ */
+export type Level = "light" | "dense" | "section";
 export type Mode = Level | "off";
+
+const DENSE_GIST = "each paragraph or list item shows only its gist, one short clause; everything else in it goes into its stretch.";
+const OWN_GIST = "Each short form states that gist itself, never a label such as \"Details.\" or \"Limits.\"";
 
 const SHORTEST: Record<Level, string> = {
   light: "- At its shortest, the reply answers on its own, a sentence or two per paragraph or list item.",
-  dense:
-    "- At its shortest, each paragraph or list item shows only its gist, one short clause; everything else in it goes into its stretch. Each short form states that gist itself, never a label such as \"Details.\" or \"Limits.\"",
+  dense: `- At its shortest, ${DENSE_GIST} ${OWN_GIST}`,
+  section: `- At its shortest, each section under a heading shows one line, its finding: one stretch right below the heading, whose long form is the whole section. Inside that long form, ${DENSE_GIST} Text outside any section, and a reply without headings, follow that paragraph rule directly. ${OWN_GIST}`,
 };
 
 export function guideFor(level: Level): string {
@@ -24,6 +30,7 @@ const GUIDE_TEMPLATE = `# Stretchtext replies
 The reader's screen draws each stretch \`{{short|long}}\` in your reply as its short form. Opening one puts the long form in its place and the text reads on; nothing moves to a separate section. So write every reply to read complete at its shortest, with depth where each stretch stands:
 
 {{shortest}} Anything the reader must decide or do stays outside every stretch.
+- Write each short form once, inside its stretch: never also write it just before the stretch, not even as a bold lead-in.
 - Keep the structure the reply would have without stretches: separate topics go in their own paragraphs, parallel items in a list, code in code blocks, each paragraph or list item with its own stretches. Never fold a whole reply into one paragraph of stretches.
 - Stretch list items, not whole lists.
 - The long form keeps every word of the short form, in the same order, and grows around them: words added before, between and after the ones the reader already saw. On screen those words stay where they are while the new ones open up around them, so the reader never loses their place. Example: "{{The build fails on a stale cache.|The CI build fails, about one run in five, on a stale dependency cache keyed only by \`package.json\`.}}"
@@ -33,6 +40,15 @@ The reader's screen draws each stretch \`{{short|long}}\` in your reply as its s
 - If other instructions require a closing block, such as a status block, make it the reply's last stretch, its short form a one-line gist of the block.
 - A reply that is already short needs no stretches.
 - A side question wrapped in \`<btw>\` is answered in plain text, without stretches: its view shows markup as written and cannot open it.
+
+An example reply:
+
+{{CI fails on a stale cache.|CI fails, about one run in five, on a stale cache keyed only by \`package.json\`.}}
+
+- **Fix:** {{key it on the lockfile too.|key it on the lockfile, \`bun.lock\`, too, so a dependency bump misses the cache.}}
+- **Cost:** {{one cold build per bump.|one cold build, about four minutes, per dependency bump.}}
+
+Should I make the change?
 
 With each of the reader's messages you are told which stretches they opened. Do not assume they read a long form they did not open; if it matters to what they asked, say it again.`;
 
@@ -119,6 +135,8 @@ export function parse(text: string): Segment[] {
     if (isInShort && text[i] === "|") {
       frame.stretch.key = keyOf(frame.stretch.short, stack.at(-2), rootSiblings);
       frame.stretch.long = [];
+      const parent = stack.at(-2);
+      dropRepeat(parent?.stretch.long ?? root, frame.stretch.short, parent === undefined);
       i += 1;
       continue;
     }
@@ -133,6 +151,40 @@ export function parse(text: string): Segment[] {
     i += 1;
   }
   return root;
+}
+
+/**
+ * The gist written twice, once before its stretch and once as its short form (`**Gist.** {{Gist.|…}}`),
+ * shows twice: the copy in front goes. Only a copy that starts its line (after any list, quote or
+ * heading mark) or a sentence counts, so `a stale cache {{cache|…}}` keeps its words. Where that
+ * line starts outside `before` (after another stretch, or in a parent's long form) nothing goes, and
+ * neither does a copy holding a backtick, which may end a code span, or an emphasis mark it doesn't
+ * close, as in `**Gist. {{Gist.|…}}**`.
+ */
+function dropRepeat(segments: Segment[], short: string, isRoot: boolean): void {
+  const before = segments.at(-2);
+  if (typeof before !== "string") return;
+  const want = short.split(/\s+/).map(bare).filter(word => word !== "");
+  if (want.length === 0) return;
+  const lineStart = before.lastIndexOf("\n") + 1;
+  if (lineStart === 0 && !(isRoot && segments.length === 2)) return;
+  const words = [...before.slice(lineStart).matchAll(/\S+/g)];
+  let left = want.length;
+  let k = words.length - 1;
+  for (; k >= 0 && left > 0; k--) {
+    const word = bare(words[k]![0]);
+    if (word === "") continue;
+    if (word !== want[left - 1]) return;
+    left--;
+  }
+  if (left > 0) return;
+  const cut = lineStart + words[k + 1]!.index!;
+  if (before.includes("`", cut)) return;
+  const unpaired = before.slice(cut).replace(/(\*\*|__|~~|\*|_)(?=\S)(.*?\S)\1/g, "$2");
+  if (/[*_~]/.test(unpaired)) return;
+  const lead = before.slice(lineStart, cut).trim();
+  if (lead !== "" && !/^([-*+>]|\d+[.)]|#+)$/.test(lead) && !/[.!?:;]$/.test(lead)) return;
+  segments[segments.length - 2] = before.slice(0, cut);
 }
 
 /**
@@ -525,10 +577,12 @@ export function deepenNote(added: { section: string; text: string }[]): string |
   return `${DEEPEN_REPORTED}, and you answered outside the transcript: ${each}.`;
 }
 
-const ALL_GUIDES = [guideFor("light"), guideFor("dense")];
+const ALL_GUIDES = [guideFor("light"), guideFor("dense"), guideFor("section")];
 const SWITCH_NOTE: Record<Level, string> = {
   light: "Stretchtext is now light: at its shortest, a sentence or two per paragraph or list item.",
   dense: "Stretchtext is now dense: at its shortest, each paragraph or list item shows only its gist, one short clause.",
+  section:
+    "Stretchtext is now section: at its shortest, each section under a heading shows one line, its finding; inside it, each paragraph or list item shows only its gist.",
 };
 
 /** Pure prompt edits; the caller owns pending reads and consumes the mode-change notification. */
