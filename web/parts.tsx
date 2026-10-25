@@ -29,6 +29,22 @@ export function Dot({ state }: { state: string | undefined }) {
 }
 
 /**
+ * omp's π from its welcome screen: twelve by five terminal cells (1:2), the left leg's foot shaded.
+ * Inside an `.omp-play` element it finishes the foot, stomps it and wiggles on hover (style.css).
+ * `plus` puts a plus before it, as on the "+ omp" buttons.
+ */
+export function PiMark({ plus = false }: { plus?: boolean }) {
+  const x = plus ? 9 : 0;
+  return (
+    <svg class="omp-logo" viewBox={`0 0 ${x + 12} 10`} aria-hidden="true">
+      {plus && <path d="M0 4.2h6v1.6H0ZM2.2 2h1.6v6H2.2Z" fill="currentColor" />}
+      <path d={`M${x} 0h12v2H${x}ZM${x + 3} 2h2v4h-2ZM${x + 7} 2h2v8h-2Z`} fill="currentColor" />
+      <path class="omp-foot" d={`M${x + 3} 6h2v2h-2Z`} fill="currentColor" opacity=".4" />
+    </svg>
+  );
+}
+
+/**
  * Image thumbnails. A tap opens the full-screen view on `gallery`, every image of the turn, so
  * the others are a swipe (touch) or ‹ › and the arrow keys (desktop) away. The view is a history
  * entry holding the image's src: back closes it and stays in the session, forward reopens it.

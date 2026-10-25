@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { postJson, type Item } from "./api";
 import { age, folderLabel, isOld, jobsSummary, listProjects, matchesWords, parseStoredList, rowText, toggled } from "./lib";
-import { Dot } from "./parts";
+import { Dot, PiMark } from "./parts";
 import { ExtensionBanner } from "./extension";
 import { useExitGuard, useNow, useStream } from "./hooks";
 import { PUSH_LABEL, permissionHelp, type PushState } from "./push";
@@ -311,8 +311,8 @@ export function Home({
           </svg>
           {hideOld && oldCount > 0 && <span class="hidden-count">{oldCount}</span>}
         </button>
-        <button class="ghost" onClick={() => setPicker(true)} aria-label="New omp in a project">
-          + omp
+        <button class="new-omp omp-play" onClick={() => setPicker(true)} aria-label="New omp in a project" title="New omp in a project">
+          <PiMark plus />
         </button>
       </header>
       <div class="search">
@@ -339,14 +339,16 @@ export function Home({
                 {shut && hot > 0 && <span class="group-hot">{hot} active</span>}
                 <span class="spacer" />
                 <button
-                  class="ghost"
+                  class="new-omp omp-play"
+                  aria-label={`New omp in ${p.name}`}
+                  title={`New omp in ${p.name}`}
                   disabled={busy === p.name}
                   onClick={(e) => {
                     e.stopPropagation();
                     void newAgent(p.items[0].cwd, p.name);
                   }}
                 >
-                  + omp
+                  <PiMark plus />
                 </button>
               </h2>
               {!shut &&

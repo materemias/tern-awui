@@ -37,8 +37,6 @@ a { color: inherit; text-decoration: none; }
 .sub-prompt .user-text { flex: 1; }
 .sub-prompt .md > :first-child { margin-top: 0; }
 .sub-prompt .md > :last-child { margin-bottom: 0; }
-/* Header labels never break mid-label ("+ / omp"). */
-.bar .ghost { white-space: nowrap; }
 .bar .net { flex: none; }
 .spacer { flex: 1; }
 .muted { color: var(--muted); }
@@ -289,6 +287,21 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .age-blocked { color: var(--blocked); font-weight: 600; }
 .icon-btn.danger:hover, .icon-btn.danger:active { color: var(--blocked); background: color-mix(in srgb, var(--blocked) 14%, transparent); }
 .session-bar .icon-btn:not(.danger):active { background: var(--raise); }
+/* "+ omp": a plus and omp's π mark, borderless like the header icons. */
+.new-omp { display: inline-grid; place-items: center; height: 30px; padding: 0 8px; border: 0; border-radius: 8px; background: none; color: var(--muted); }
+.new-omp:active { background: var(--raise); color: var(--fg); }
+.new-omp:disabled { opacity: .5; }
+.new-omp .omp-logo { width: 25px; height: 12px; }
+.group-head .new-omp { height: 26px; }
+/* Hovered, π finishes its shaded foot and stomps it, and the stomp sets off a short wiggle. */
+.omp-logo, .omp-foot { transform-box: fill-box; transform-origin: center; }
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .new-omp:hover:not(:disabled) { color: var(--fg); }
+  .omp-play:hover:not(:disabled) .omp-foot { animation: omp-kick .45s ease-out forwards; }
+  .omp-play:hover:not(:disabled) .omp-logo { animation: omp-wiggle .35s ease-in-out .3s; }
+}
+@keyframes omp-kick { 0% { opacity: .4; } 45% { opacity: 1; transform: none; } 70% { opacity: 1; transform: translateY(60%); } 100% { opacity: 1; transform: none; } }
+@keyframes omp-wiggle { 0%, 100% { transform: none; } 25% { transform: rotate(-6deg); } 50% { transform: rotate(5deg); } 75% { transform: rotate(-2deg); } }
 .row-sub.recap { font-style: italic; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 30; padding: 9px 16px; border-radius: 999px; background: var(--raise); border: 1px solid var(--line); color: var(--fg); font-size: 14px; box-shadow: 0 4px 18px rgb(0 0 0 / .4); white-space: nowrap; }
 /* The gauge lies on the straight part of the top border: the border itself is the unused part,
@@ -511,7 +524,6 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .list-bar .icon-btn { width: 30px; height: 30px; }
 .list-bar .icon-btn.hide-old { width: auto; }
 .list-bar .icon-btn svg { width: 16px; height: 16px; }
-.list-bar .ghost { font-size: 12.5px; padding: 3px 9px; }
 
 /* The extension doesn't match the server: a banner on the list, a notice under a session's header,
    a chip in the list header counting such sessions and a mark on their rows. */
