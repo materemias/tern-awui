@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.7.0 (2026-10-25)
+
 ### Features
 
 - omp's working row under the chat: spinner, the turn's running time and the current tool's intent.
