@@ -1,8 +1,10 @@
 # tern-awui (another web UI for Tern)
 
-A web app for following and steering the [omp](https://github.com/can1357/oh-my-pi) agents running in [Tern](https://stencil.so/tern), from a phone or another browser. It has no login of its own: you reach it over a private network you control, such as Tailscale (see [Security](#security)).
+A web app for following and steering the [omp](https://github.com/can1357/oh-my-pi) agents running in [Tern](https://stencil.so/tern), from a phone or another browser.
 
-I built it for how I work. Tern stays open on the desktop with its panes, tern-awui sits next to it in a browser tab, and the same app is installed on my Android phone as a PWA. When I step away, I can still see which agent finished, which one is waiting for an answer, and reply. It's a companion to Tern, not a replacement, and a stopgap until Tern's official mobile client ships.
+![One omp task handed over: a prompt typed in a Tern pane, finished and sent from a desktop browser, an ask answered on the phone, the reply's stretches opened and deepened there and shown open in Tern, a reply started on the phone and sent from the Tern pane](docs/handover.gif)
+
+More screens:
 
 | Phone: sessions | Phone: a session | Phone: a question |
 |---|---|---|
@@ -10,7 +12,9 @@ I built it for how I work. Tern stays open on the desktop with its panes, tern-a
 
 ![Desktop browser: session list and an open session](docs/desktop.png)
 
-The screenshots show invented sessions; `bun docs/screenshots.ts` regenerates them.
+I built it for how I work. Tern stays open on the desktop with its panes, tern-awui sits next to it in a browser tab, and the same app is installed on my Android phone as a PWA. When I step away, I can still see which agent finished, which one is waiting for an answer, and reply. It's a companion to Tern, not a replacement, as it provides a project-based and focused view on the sessions.
+
+It has no login of its own: you reach it over a private network you control, such as Tailscale (see [Security](#security)).
 
 ## Features
 
@@ -32,7 +36,7 @@ The screenshots show invented sessions; `bun docs/screenshots.ts` regenerates th
 Tern is a full terminal multiplexer. tern-awui looks only at what I need away from the keyboard:
 
 - **omp first.** An omp pane shows as a conversation instead of a terminal screen. Other panes are still there, but secondary.
-- **No tabs or splits.** All panes are in one flat list, grouped by project, regardless of which Tern window or tab they live in.
+- **No tabs or splits.** All panes are in one flat list, grouped by project, regardless of which Tern tab they live in.
 - **Recent work in front.** The newest activity is on top, old sessions can be hidden, and idle sessions show what they did last.
 - **Status and notifications.** It is built around "who needs me", with counts in the header, red for waiting, green for finished and unread markers.
 
