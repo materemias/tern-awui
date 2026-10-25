@@ -58,6 +58,32 @@ export function Session({ block }: { block: string }) {
     const el = scroller.current;
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
   }, [chat, live, queued, screen, view]);
+  // Anything else that grows the bottom (the working row, subagent jobs, images loading, an
+  // answer card) keeps a reader at the bottom there too: each child's size is watched, and the
+  // watch follows children coming and going. A prompt jump in flight is left to finish.
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const follow = () => {
+      if (pinned.current && !gliding(glide.current, el)) el.scrollTop = el.scrollHeight;
+    };
+    const sizes = new ResizeObserver(follow);
+    const watch = () => {
+      sizes.disconnect();
+      sizes.observe(el);
+      for (const child of el.children) sizes.observe(child);
+    };
+    const children = new MutationObserver(() => {
+      watch();
+      follow();
+    });
+    watch();
+    children.observe(el, { childList: true });
+    return () => {
+      sizes.disconnect();
+      children.disconnect();
+    };
+  }, []);
 
   const shownState = item?.status ?? undefined;
   const working = shownState === "working";
