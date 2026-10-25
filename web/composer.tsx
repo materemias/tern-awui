@@ -464,22 +464,7 @@ export function Composer({
         </div>
       )}
       <form class="composer" onSubmit={submit}>
-        {context && (
-          // Context-window use drawn as the composer's top border, like omp's own composer:
-          // the used part in accent, the percent riding just past it, the window at the right end.
-          <div class={`ctx${context.percent > 100 ? " ctx-over" : ""}`} title={`${context.percent}% of the context window · ${tokensShort(context.tokens)} tokens`}>
-            <div class="ctx-scale">
-              <div class="ctx-fill" style={{ width: `${Math.max(1, Math.min(context.percent, 100))}%` }} />
-              {context.compactAt !== null && (
-                <span class="ctx-mark" style={{ left: `${context.compactAt}%` }} title={`auto-compacts at ${Math.round(context.compactAt)}%`} />
-              )}
-              <span class="ctx-label ctx-pct" style={{ left: `min(${Math.min(context.percent, 100)}%, calc(100% - 4.5ch))` }}>
-                {context.percent}%
-              </span>
-            </div>
-            <span class="ctx-label ctx-window">{tokensShort(context.window)}</span>
-          </div>
-        )}
+        {context && <ContextGauge context={context} working={working} />}
         {pasted.length > 0 && (
           <div class="pasted">
             {pasted.map((p, i) => (
@@ -605,6 +590,63 @@ export function Composer({
           }}
         />
       )}
+    </div>
+  );
+}
+
+type Context = NonNullable<NonNullable<Item["live"]>["context"]>;
+/** How long a tapped gauge keeps its details open. */
+const TIP_MS = 3000;
+
+/**
+ * Context-window use drawn as the composer's top border, like omp's own composer: the used part in
+ * accent, the percent riding just past it, a tick where auto-compaction fires, the window at the
+ * right end. Its details (use, tokens, compaction threshold) fade in on hover after 600 ms, as in
+ * omp, or at once on a tap, closing after 3 s; either way above the pointer. While the agent works,
+ * a glint runs along the border, as in omp.
+ */
+function ContextGauge({ context, working }: { context: Context; working: boolean }) {
+  const [tip, setTip] = useState(false);
+  useEffect(() => {
+    if (!tip) return;
+    const t = setTimeout(() => setTip(false), TIP_MS);
+    return () => clearTimeout(t);
+  }, [tip]);
+  const fill = Math.min(context.percent, 100);
+  const big = (n: number) => tokensShort(n).toUpperCase();
+  // The card follows the pointer through a CSS variable set on the gauge, outside the rendered
+  // style, so a context update doesn't move it back; keyboard focus places it over the fill's end.
+  const follow = (e: PointerEvent) => {
+    const gauge = (e.currentTarget as HTMLElement).parentElement!;
+    gauge.style.setProperty("--tip-x", `${e.clientX - gauge.getBoundingClientRect().left}px`);
+  };
+  return (
+    <div class={`ctx${context.percent > 100 ? " ctx-over" : ""}${tip ? " tip-open" : ""}`}>
+      <button
+        type="button"
+        class="ctx-hit"
+        aria-label="Context window details"
+        aria-expanded={tip}
+        onPointerMove={follow}
+        onPointerDown={follow}
+        onClick={() => setTip((t) => !t)}
+      />
+      <div class="ctx-scale">
+        <div class="ctx-fill" style={{ width: `${Math.max(1, fill)}%` }} />
+        {working && <span class="ctx-glint" />}
+        {context.compactAt !== null && <span class="ctx-mark" style={{ left: `${context.compactAt}%` }} />}
+        <span class="ctx-label ctx-pct" style={{ left: `min(${fill}%, calc(100% - 4.5ch))` }}>
+          {context.percent}%
+        </span>
+      </div>
+      <span class="ctx-label ctx-window">{big(context.window)}</span>
+      <div class="ctx-tip" role="tooltip" style={{ left: `clamp(90px, var(--tip-x, ${fill}%), calc(100% - 90px))` }}>
+        <strong>Context {context.percent}% used</strong>
+        <span>
+          {big(context.tokens)} of {big(context.window)} tokens
+        </span>
+        {context.compactAt !== null && <span>Auto-compact at {Math.round(context.compactAt)}%</span>}
+      </div>
     </div>
   );
 }

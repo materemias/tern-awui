@@ -283,18 +283,50 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
    the fill paints over it, and the labels cut it like a fieldset legend. */
 .ctx { position: absolute; top: -0.5px; left: 18px; right: 18px; height: 0; display: flex; align-items: center; gap: 2px; pointer-events: none; }
 .ctx-scale { position: relative; flex: 1; align-self: stretch; }
-.ctx-fill { position: absolute; left: 0; top: -1px; height: 2px; border-radius: 1px; background: var(--accent); transition: width .3s; }
+/* The used part in omp's grey, brightening toward its end; red past the window. */
+.ctx-fill { position: absolute; left: 0; top: -1px; height: 2px; border-radius: 1px; background: linear-gradient(90deg, color-mix(in srgb, var(--fg) 22%, transparent), color-mix(in srgb, var(--fg) 62%, transparent)); transition: width .3s; }
 .ctx-label { font: 11px/1 var(--mono); padding: 0 4px; font-variant-numeric: tabular-nums; background: linear-gradient(var(--bg) 50%, var(--panel) 50%); }
-.ctx-pct { position: absolute; top: 0; transform: translateY(-50%); margin-left: 2px; color: var(--accent); transition: left .3s; }
+.ctx-pct { position: absolute; z-index: 1; top: 0; transform: translateY(-50%); margin-left: 2px; color: color-mix(in srgb, var(--fg) 70%, var(--muted)); transition: left .3s, color .25s ease-out; }
 .ctx-window { color: var(--muted); }
 .ctx-over .ctx-pct { color: var(--blocked); }
+.ctx-over .ctx-fill { background: var(--blocked); }
+/* Hovered or tapped, the used part lightens, as in omp: a brighter copy fades in over it
+   (gradients don't transition themselves). */
+.ctx-fill::after { content: ""; position: absolute; inset: 0; border-radius: inherit; opacity: 0; transition: opacity .25s ease-out;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--fg) 50%, transparent), var(--fg)); }
+.ctx-over .ctx-fill::after { background: color-mix(in srgb, var(--blocked) 65%, var(--fg)); }
+/* The remaining part is the composer's border; a lighter line fades in over it the same way. */
+.ctx-scale::before { content: ""; position: absolute; left: 0; right: 0; top: -0.5px; height: 1px; opacity: 0; transition: opacity .25s ease-out; background: color-mix(in srgb, var(--fg) 28%, transparent); }
+.ctx.tip-open .ctx-fill::after, .ctx.tip-open .ctx-scale::before { opacity: 1; }
+.ctx.tip-open:not(.ctx-over) .ctx-pct { color: var(--fg); }
+@media (hover: hover) {
+  .ctx-hit:hover ~ .ctx-scale .ctx-fill::after, .ctx-hit:hover ~ .ctx-scale::before { opacity: 1; }
+  .ctx:not(.ctx-over) .ctx-hit:hover ~ .ctx-scale .ctx-pct { color: var(--fg); }
+}
 .hints { display: flex; flex-direction: column; max-height: 38dvh; overflow-y: auto; margin-bottom: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
 .hint { display: flex; flex-direction: column; gap: 1px; padding: 8px 12px; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left; }
 .hint:last-child { border-bottom: 0; }
 .hint:active { background: var(--raise); }
 .hint-label { font: 13.5px var(--mono); color: var(--fg); }
 .hint-desc { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ctx-mark { position: absolute; top: -4px; width: 2px; height: 7px; margin-left: -1px; border-radius: 1px; background: color-mix(in srgb, var(--accent) 55%, var(--muted)); }
+/* Where auto-compaction fires: a fine, faint tick, as omp draws it. */
+.ctx-mark { position: absolute; top: -1.5px; width: 1px; height: 3px; margin-left: -.5px; background: color-mix(in srgb, var(--fg) 40%, transparent); }
+/* While the agent works, a soft glint runs along the gauge from its 0 point, as in omp. */
+.ctx-glint { position: absolute; left: 0; right: 0; top: -1px; height: 2px; overflow: hidden; pointer-events: none; }
+.ctx-glint::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 22%;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--fg) 55%, transparent), transparent); animation: ctx-glint 2.8s ease-in-out infinite; }
+@keyframes ctx-glint { from { transform: translateX(-100%); } to { transform: translateX(455%); } }
+@media (prefers-reduced-motion: reduce) { .ctx-glint { display: none; } }
+/* The gauge's hover/tap target: a thin strip over the border (the gauge itself takes no pointer). */
+.ctx-hit { position: absolute; left: 0; right: 0; top: -10px; height: 16px; padding: 0; border: 0; background: none; pointer-events: auto; cursor: default; }
+/* Its details, as omp shows them: fade in after 600 ms of hover, or at once on a tap. */
+.ctx-tip { position: absolute; bottom: 12px; z-index: 6; display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--raise); box-shadow: 0 4px 16px rgb(0 0 0 / .4); color: var(--muted); font-size: 13px; line-height: 1.35; white-space: nowrap;
+  opacity: 0; visibility: hidden; transform: translate(-50%, 4px); transition: opacity .15s, transform .15s, visibility 0s .15s; }
+.ctx-tip strong { color: var(--fg); font-weight: 600; }
+.ctx.tip-open .ctx-tip { opacity: 1; visibility: visible; transform: translate(-50%, 0); transition: opacity .15s, transform .15s; }
+@media (hover: hover) {
+  .ctx-hit:hover ~ .ctx-tip { opacity: 1; visibility: visible; transform: translate(-50%, 0); transition: opacity .15s .6s, transform .15s .6s, visibility 0s .6s; }
+}
 .send.stop { background: var(--fg); color: var(--bg); }
 .btw { margin-bottom: 8px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: 12px; background: var(--panel); max-height: 40dvh; overflow-y: auto; font-size: 14px; }
 .btw-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 6px; }
