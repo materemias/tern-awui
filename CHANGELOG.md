@@ -23,136 +23,156 @@
 
 ## 0.6.0 (2026-10-25)
 
-- Parser copy synced with omp-stretch: a gist written both before its stretch and as its short form shows once, the guide tells the model to write each short form only once and ends with a short example reply, and the experimental `section` level is known.
-- **+ omp** starts the new session at once, without the "Start a new omp in …?" confirmation.
-- While a new omp session starts, its composer hides the key bar and takes a prompt that can't be sent yet: Send is disabled and Enter does nothing until omp connects, and the text then becomes omp's draft instead of being replaced by its empty editor. The same holds in the moment before a freshly opened session's state arrives. The server marks such panes with a new `starting` flag (an omp command, not exited, no bridge yet).
-- Agent replies have a Copy action, shown on hover or after a tap like the one on prompts. It copies the reply's markdown with every stretch drawn open and the `{{…|…}}` markup removed, whatever is open on screen, ✦ answers included. A tap on a stretch or the end of a text selection doesn't show it.
+### Features
+
+- **+ omp** starts the new session without asking.
+- A starting omp session takes a prompt that becomes omp's draft once it connects.
+- Copy on agent replies, with every stretch open.
+
+### Internal
+
+- Stretchtext parser synced with omp-stretch.
 
 ## 0.5.0 (2026-10-22)
 
-- Parser copy synced with omp-stretch: stretches ending on the same word share one `«` (each tap closes the innermost), ✦ stands before its `«`, a waiting ✦ steps once a second, and ✦ shows on any open stretch whose inner stretches are all open.
-- Support for omp-stretch's deepen action: tap ✦ on a fully open stretch to ask the pane's model for more. The waiting star twinkles with elapsed seconds, then the answer streams into the section. Saved answers and open stretches stay in sync with Tern. A new model request uses the pane's conversation and provider; existing detail still opens without inference.
-- The tern-mobile bridge forwards ✦ presses and reports saved answers and running requests (bridge protocol 3; omp sessions running an older tern-mobile show as older and get no ✦, since that version would accept a press and drop it). Older omp-stretch versions keep working without ✦. The app keeps its own parser source copy and adds no package dependency. A ✦ answer after a table or code fence starts its own paragraph instead of joining the last row.
-- Stretchtext parser updated from omp-stretch 0.1.0, now kept as an unchanged copy in `web/stretch-core.ts` instead of a trimmed hand-made one: literal `{{name}}` keeps its braces, a lone backtick no longer hides the stretches after it, a long form may end on its code fence's line, and stretch keys can't collide.
-- README lists [omp-stretch](https://github.com/materemias/omp-stretch) under Features, as the omp extension behind stretchtext replies. `LICENSE` carries cc-stretch's copyright notice for the copied parser.
-- **+ omp** lists folders by last use: an open block counts at its omp session's last activity, a past session at its transcript's last write, so a folder you just worked in is on top whether or not its tab is still open (open blocks used to come first, in Tern's order). Open blocks without omp activity follow the dated folders. A folder no longer shows twice when one session recorded it with a trailing separator (`~/work/` and `~/work`), in another case on a case-insensitive file system, or through a symlink: entries are told apart by the folder they are, not by their spelling.
+### Features
+
+- omp-stretch's ✦: tap it on a fully open stretch to ask the pane's model for more, in sync with Tern (bridge protocol 3).
+- **+ omp** lists folders by last use, each folder once.
+
+### Fixes
+
+- A ✦ answer after a table or code fence starts its own paragraph.
+
+### Docs
+
+- README names omp-stretch as the extension behind stretchtext replies.
+
+### Internal
+
+- Stretchtext parser is an unchanged copy of omp-stretch's.
 
 ## 0.4.0 (2026-10-20)
 
-- **Breaking:** the security model is stated as it is: tern-awui has no authentication, and who reaches its loopback port is up to you (loopback only, Tailscale Serve, another authenticating proxy). Tailscale is optional: without `TERN_AWUI_ALLOW` the server now starts with no login check (and says so in its startup log) instead of refusing to start. `TERN_AWUI_DEV` is gone; leaving `TERN_AWUI_ALLOW` unset does the same. README and `docs/architecture.md` describe what is in and out of scope, including that the machine must be single-user.
-- **Breaking:** requests must name a known host (`localhost`, `127.0.0.1`, `[::1]` or a `TERN_AWUI_HOSTS` entry), so a web page that rebinds its own domain to 127.0.0.1 can't reach the server through your browser. The installer writes the tailnet name into `TERN_AWUI_HOSTS`: run `bun install.ts` again after updating, or the tailnet address gets 403. Behind another proxy, add the name it serves under to `TERN_AWUI_HOSTS`.
-- Releases: pushing a `vX.Y.Z` tag publishes a GitHub release with that version's section of this changelog as its notes (`.github/workflows/release.yml`). 0.2.0 and 0.3.0 have releases too.
-- Opened files are syntax highlighted by their extension, as are fenced code blocks in opened markdown files (highlight.js, loaded on first use). Files over 256 KB stay plain.
-- A session's chat has ↑ and ↓ buttons floating over its bottom right corner: ↑ glides to the previous prompt, ↓ to the next one, or to the end of the conversation after the last prompt. Quick repeated taps step one prompt each. With reduced motion on, they jump.
-- Open pages reload by themselves after `bun run build`: each build has an id (a hash of `dist/`'s files), the server sends the current one and a page from another build reloads. A page whose composer holds unsent text or images waits until it is empty. The service needs no restart for app-only changes.
-- Rules omp injects mid-turn (its time-traveling stream rules) show in the chat the way Tern prints them: quiet mono lines, `• inject: <name>` with the rule's first line, no card. Tap for the whole rule. Interrupting rules show their name only, because omp writes only the name to the transcript.
-- Advisor notes without a `Key:` line (free-form notes) show their own text, as markdown, two lines when folded and whole after a tap, instead of the first line cut off in mono and repeated in the body.
-- Notifications stay on across updates and restarts in more cases. A device that chose *on* retries a failed start by itself (5 s, doubling to once a minute) instead of showing the bell off until the next foreground or network change, so opening the app while the server restarts no longer needs a tap. A tap on the bell while a retry is due postpones the retry instead of cancelling it. If the browser forgot the notification permission, the first tap anywhere asks again and turns them back on, instead of only a tap on the bell (except when the installed Android app shows the stopped bell, below, where only the bell asks). A dismissed prompt isn't repeated on every tap; it is asked again after the permission is granted and then lost again. Both run on every screen, not only the session list: a phone that reloads into a session recovers too. Turning on asks the browser to keep the app's storage (`navigator.storage.persist()`), so that, where the browser agrees, storage cleanup doesn't erase the choice and the subscription. The service log records each subscription the push service reports gone and each one a device removes.
-- A blocked permission, whether refused when turning notifications on or found when tapping a blocked bell, now comes with a message saying where to allow it. In the installed Android app: long-press its icon → App info → Notifications, because the installed app has its own Android notification permission, and without it Chrome resets the site's permission and drops the subscription each time the app opens from its icon. In an Android browser tab: the site's permissions. A dismissed prompt says nothing, except in the installed Android app, where it may mean Android blocked the prompt, so the message mentions App info. Without the Android permission, the request shows no prompt and never finishes, so the bell stops waiting after 10 s instead of pulsing until the app is closed; a grant that still comes later turns notifications on. The app can't open these settings pages itself, because Chrome doesn't let pages open Android settings screens.
-- The installed Android app shows when Android has taken its notifications away: if a launch from the icon finds the permission reset and the subscription gone although notifications were on, the bell turns red and slashed ("Notifications stopped: Android blocks this app") instead of plain off. Turning them on again from there can succeed with another installed app's permission and still stop at the next launch, so it then says so and points to App info → Notifications. The device keeps that warning until notifications are turned off, because no page load can tell that the Android permission came back.
-- Text typed from the phone that starts with `-` (`--amend`, `-h`, `--help`) reaches the pane as written instead of being read as `tern send` flags (`--help` used to print tern's usage and count as success).
-- A desktop tab or the installed app reconnects by itself after the server restarts (Tailscale Serve answers 502 meanwhile), retrying after 1 s and doubling up to 30 s, instead of staying offline until hidden and shown again.
-- Fewer lost desktop drafts: the phone's draft clear after a command (`/btw`) is refused ("draft changed") when the pane's editor moved on since the server last saw it, sending an image or follow-up keeps text typed on the desktop meanwhile, and Enter always submits the phone's own text rather than a desktop draft the phone never saw. Keystrokes typed on both sides at once still follow the last writer, as before. Needs the updated extension (`/restart`).
-- A phone prompt sent while omp has no model selected is refused ("no model selected") and stays in the composer instead of vanishing. A thinking level the model doesn't support now shows an error instead of a silent no-op.
-- `/new` and `/resume` on current omp (its `session_switch` event) reset the previous session's context gauge, jobs, queue and live text at once.
-- The server sends a Content-Security-Policy: images agent markdown links from other sites are no longer fetched, so a prompt-injected `![](https://…?secret)` can't leak data.
-- Prompts, drafts and other block texts over 1,000,000 characters are refused with "text too long" (a larger draft made the bridge reconnect every 5 s).
-- `git` lookups for project and branch names give up after 2 s, so a pane on a hung network mount can't freeze the server.
-- The Subagents view reads at most the last 4 MB of each subagent transcript, one file at a time (a 58-file, 203 MB session peaked at 328 MB of memory before).
-- Mermaid diagrams aren't drawn in still-streaming live text (redrawn every 200 ms before); the drawn-diagram cache keeps 32. A failed load of highlight.js or mermaid is retried on next use instead of staying broken until reload.
-- The copyable fix command quotes POSIX paths with `\` and PowerShell paths with `,` or `@`.
-- The bridge token is created atomically, so two starts at once can't end with the server and the file holding different tokens.
-- Installer: re-installing on another port unpublishes the old `tailscale serve` port, and `--uninstall` without `--port` turns off the port actually installed (read from `bridge.json`). On Windows, re-installing no longer fails its port check on Tailscale's own listener at the tailnet address. A relative `TERN_AWUI_PROJECTS` path is resolved against the folder the installer runs in.
-- The release workflow publishes only after the typecheck, the platform test suites and the build pass.
+### Breaking
+
+- No authentication of its own: without `TERN_AWUI_ALLOW` the server starts with no login check; `TERN_AWUI_DEV` is gone.
+- Requests must name a known host; re-run `bun install.ts` to add the tailnet name to `TERN_AWUI_HOSTS`.
+
+### Features
+
+- Syntax highlighting for opened files and fenced code in opened markdown.
+- ↑ and ↓ buttons jump between prompts in a chat.
+- Open pages reload by themselves after `bun run build`.
+- omp's injected rules show as quiet `• inject:` lines.
+- Free-form advisor notes show their own text as markdown.
+- Notifications recover by themselves after updates, restarts and lost permissions.
+- A blocked notification permission says where to allow it.
+- The installed Android app shows when Android has taken its notifications away.
+- Releases are published from this changelog when a version tag is pushed.
+
+### Fixes
+
+- Text starting with `-` reaches the pane as written.
+- The app reconnects by itself after the server restarts.
+- Fewer lost desktop drafts when typing on both sides.
+- A prompt sent with no model selected stays in the composer with an error.
+- `/new` and `/resume` reset the previous session's gauge, jobs and queue.
+- A Content-Security-Policy stops agent markdown from loading images from other sites.
+- Very long texts are refused instead of making the bridge reconnect.
+- Hung `git` lookups can't freeze the server.
+- The Subagents view reads less, using far less memory on big sessions.
+- Mermaid isn't redrawn in streaming text; failed library loads retry.
+- Fix commands are quoted correctly for POSIX and PowerShell.
+- The bridge token is created atomically.
+- Installer fixes for port changes, uninstall and Windows.
 
 ## 0.3.0 (2026-10-16)
 
-- A config file cut off by a crash no longer stops the server for good. An unreadable `push.json` starts with no subscriptions (phones that chose *on* subscribe again on their next check). Unreadable VAPID keys are replaced, and their subscriptions dropped. An empty `bridge-token` gets a new token instead of refusing every omp session. The server writes these files through a temporary file and a rename, mode 600.
-- A slow or hanging `TERN_AWUI_PROJECTS` command no longer freezes the server (streams, bridges, every request) while it runs: it runs in the background and is killed after 5 s, which lists no folders. The `omp config` reads behind the model picker's roles and the context gauge's compaction tick no longer block the server either (about 0.4 s every 5 minutes before).
-- `bun install.ts --uninstall` keeps an extension link that points to another checkout instead of deleting it.
-- Commands sent to an omp whose bridge connection closes (a `/restart`, say) fail at once instead of after the 2 s reply deadline.
-- Leaving a session with images still attached frees their previews.
-- The Linux systemd unit is now `tern-awui.service`, matching the macOS launchd label and the Windows task. `bun install.ts` stops, disables and removes the old `tern-mobile.service` before starting the new one; `--uninstall` removes either. The config folder, extension file and headers keep their `tern-mobile` names.
-- Stretchtext replies: a reply holding `{{short|long}}` markup (from an omp stretchtext extension, `stretch.ts`) shows its short forms as links; a tap grows the long form in place and `«` closes it. Live text shows the short forms, btw answers the long forms. When the pane's omp runs stretch.ts, phone and desktop share what is open: a tap opens it in the Tern pane too (and counts for the model's read note), and a phrase opened on the desktop opens on the phone. The extension reports the open stretches in its snapshot and applies a new `stretch` bridge message; restart omp sessions to load it.
-- Desktop sidebar minimizes to a 56 px rail: hover the "tern" brand in the list header and it turns into `«` in the same box (one click minimizes), or press Ctrl+\ (⌘\ on macOS); `»` expands it again, and the choice is remembered on the device. The rail keeps a button per session (its title icon, else its tag, else the title's first two letters), ringed green while working and red while blocked, with the unseen dot, an accent bar on the open one and the row's text as a tooltip. Project labels collapse and expand their groups; the connection dot, blocked count, bell and `+` (new omp) stay. Phones are unchanged.
-- The list header's counts are a status dot and a number each (the rows' red diamond for blocked, green dot for working, grey ring for idle); hovering one shows "N working" etc. The header fits on one line in the desktop sidebar again.
-- The hide-old-sessions toggle is an eye instead of a clock. While it hides sessions it is lit, with the hidden count next to the eye instead of a corner badge.
-- Image previews in the chat show the whole image at its own aspect ratio (up to 180 px high and 480 px wide, never upscaled), as Tern does, instead of a 96 px square cropped from the middle. In prompts the images come before the text. A wide screenshot no longer looks like an unrelated sliver, which made a prompt's image and a tool's screenshot look like the same image twice.
-- **Subagents (N)** under a session's transcript shows only while a subagent runs; once all have finished it goes away with them.
-- A subagent's prompts (task briefs and session updates written by its parent agent) render as Markdown with every stretch drawn open, not as raw text with `###`, `**` and `{{…|…}}` showing.
-- omp's idle recaps show in the session's chat too, not only on its list row: each one as an italic `※` line where the terminal prints it, after the turn it sums up and before the next prompt. All of a session's recaps come from `history.db` and merge into the chat by time; a recap written while the session sits idle reaches an open chat without a transcript change.
-- CI fixes: the sanitizer binds to the current window (a test file loading it under another file's DOM left it sanitizing nothing, depending on file order); path expectations use the OS separator; installer `main()` tests, which run shell-script fakes, skip on Windows; the cold-start PowerShell test gets 30 s.
-- README security section: never expose the app publicly; Tailscale is the recommended setup. Other private setups are described with their requirements: an authenticating proxy (such as Cloudflare Access) must set an allowed `Tailscale-User-Login` itself, overwriting the client's, and `TERN_AWUI_DEV=1` is for loopback-only use.
-- README screenshots show Opus 5.5.
-- `bun run assets` and `bun docs/screenshots.ts` run `optipng` when it is installed (about 25% smaller PNGs, pixel-identical).
-- README install: a copy-paste prompt to have a coding agent do the install, with the manual steps as fallback.
-- README/docs: macOS is tested (install, launchd service, `tailscale serve`, omp extension on macOS 26, Apple Silicon).
-- Attach button in the composer of omp sessions: it opens the phone's picker (camera, photos, files) and adds the chosen images to the same tray as pasted ones (up to 8, large or unusual formats re-encoded to JPEG). Before this, images could only be pasted, since mobile browsers don't drag and drop.
-- Notifications stay on more reliably. A device that turned them on re-registers with the server every time the app comes back to the foreground or the network returns, not only when the app loads. Before this, an app left open in the background stayed unregistered once the server had dropped its subscription. A failed recheck no longer shows the bell as off. The service worker also registers a subscription the browser replaced by itself (`pushsubscriptionchange`), even when the app is closed.
+### Breaking
+
+- The Linux service is now `tern-awui.service`; `bun install.ts` replaces the old one.
+
+### Features
+
+- Stretchtext replies: tap a phrase to grow it in place, in sync with the Tern pane.
+- The desktop sidebar minimizes to a rail of session icons (Ctrl+\).
+- List header counts are status dots with numbers.
+- The hide-old-sessions toggle is an eye with the hidden count.
+- Image previews show the whole image at its own aspect ratio.
+- **Subagents (N)** shows only while a subagent runs.
+- Subagent prompts render as markdown.
+- omp's idle recaps show in the chat.
+- An attach button adds images from the camera or gallery.
+- Notifications re-register whenever the app returns to the foreground.
+
+### Fixes
+
+- A config file cut off by a crash no longer stops the server.
+- A slow `TERN_AWUI_PROJECTS` command or `omp config` read no longer freezes the server.
+- `--uninstall` keeps an extension link to another checkout.
+- Commands to an omp whose bridge closed fail at once.
+- Leaving a session frees attached image previews.
+- CI fixes for test order, path separators and Windows.
+
+### Docs
+
+- README: security section, an install prompt for coding agents, macOS tested, screenshots with Opus 5.5.
+
+### Internal
+
+- `optipng` shrinks the generated PNGs when installed.
 
 ## 0.2.0 (2026-10-13)
 
-- README links the companion CodexBar AgentView Tern extension.
-- **Breaking:** environment variables are renamed from `TERN_MOBILE_*` to `TERN_AWUI_*` (`TERN_AWUI_PORT`, `TERN_AWUI_ALLOW`, `TERN_AWUI_CONFIG`, `TERN_AWUI_OMP_DIR`, `TERN_AWUI_NOTES_DIR`, `TERN_AWUI_PROJECTS`, `TERN_AWUI_VAPID_SUBJECT`, `TERN_AWUI_DEV`, `TERN_AWUI_BRIDGE`, `TERN_AWUI_TOKEN_FILE`, `TERN_AWUI_SYMBOLS_FONT`). Run `bun install.ts` again to rewrite the service with the new names. The config folder, service, extension file and headers keep their `tern-mobile` names.
-- GitHub Actions CI: typecheck, the full suite with browser tests and the build on Linux; the platform-dependent suites on macOS and Windows (non-blocking for now).
-- Untitled file blocks are named after their file with a Markdown, note or file icon, show their folder (named from the project) instead of the full path, and drop the shell status ring. Opened documents use page-sized headings.
-- README rewritten for users: features, how it differs from and integrates with Tern, platforms, install including the omp extension. The technical reference moved to `docs/architecture.md`. README screenshots come from invented sessions (`bun docs/screenshots.ts`).
-- Bare `/btw` now opens saved native omp btw history in a read-only web sheet rather than falling through to normal prompt submission. Questions, answers, statuses and follow-up turns come from the session's native history files; viewing history does not invoke a model. Existing transient web `/btw <question>` cards are unchanged.
-- Interactive desktop `->`/`=>` queue commands now display as follow-ups with clean message text, matching explicit web follow-ups instead of showing a steer plus a literal prefix. Input delivery is unchanged; whitespace-prefixed, embedded and RPC arrows remain literal.
-- Widened the desktop session content column to 1100 px, keeping the transcript, header, composer, extension notice and subagent list on the same width setting. Sidebar, desktop breakpoint and mobile layout are unchanged.
-- Removed the table-cell width cap that squeezed descriptive tables to half the available desktop width. Prose columns now use the conversation width; mobile wrapping and local horizontal scrolling for wide tables remain intact, with browser regressions for both.
-- The app icon (the "T" with a green dot) is now rendered from `assets/icon.svg` by `bun run assets`, with rounded-corner and maskable variants under versioned `icon-v2-*` names so installed apps pick it up.
-- Assistant Markdown screenshots with absolute local paths now render through the authenticated blob API, including reference-style images. Supported raster files are validated and cached within bounded memory; evicted bytes reload only from previously indexed, unchanged files with the same hash. Original Markdown, ordinary links and code remain unchanged.
-- Added real-browser regressions for inline assistant screenshots and the 393×852 mobile layout, including long links and horizontally scrolling code without page-wide clipping.
-- API commands reject malformed JSON and report explicit extension failures instead of submitting rejected drafts or caching failed model catalogs. Terminal edits erase the full requested text in bounded key batches; ask choices reject fractional indices.
-- Bridge ownership/session changes clear old streamed output and notification state. Closing the last pane clears its badge; stale push failures cannot delete a replacement subscription. Transcript replacements and permission recovery refresh open views, and unavailable transcripts no longer break the whole session list.
-- Project discovery retries incomplete transcript headers, refreshes cached repository roots, and excludes non-directories from configured project lists.
-- Fixed prompt loss when typing the next draft during a pending submission, duplicate ask answers, stale live text after SSE reconnect, stuck new-session controls after network errors, and delayed close responses navigating away from another session.
-- Queued skill and image markers now use the bundled symbols font. Chart currency parsing handles `k`/`M` suffixes correctly, and malformed saved model/project preferences no longer crash the picker or corrupt collapsed groups.
-- Transcript readers detect file replacement and same-size rewrites, preserve complete rows at tail boundaries, and return independent snapshots for concurrent readers. An explicit rewind leaf outside the bounded tail no longer displays an abandoned branch.
-- Extension session changes clear old queued prompts, blocked state, jobs, context and completions. Stale completion results and side-turn output cannot leak into a replacement session; asynchronous command errors return replies. Context token/window changes refresh even when their percentage stays unchanged.
-- The installer writes local bridge discovery settings so independently started omp sessions find custom ports and config directories, resolves relative data paths, and explicitly disables development-mode auth bypass in installed services. Uninstall continues when optional commands are unavailable and preserves unrelated discovery settings. Corrected systemd executable quoting for dollar signs.
-- Builds prepare replacement assets before removing the previous `dist/`, preserving the working bundle when compilation or asset copying fails.
-- Added persistent Chromium browser tests for phone and desktop navigation, draft syncing and submission, asks, model selection, rewind, streaming replies and read-only subagents. They build and run against temporary files and fake Tern/omp processes, without using the live service.
-- Server integration tests now run through an isolated `startServer()` instance, making server coverage measurable. Shutdown closes owned resources and prevents late stream initialization or push failures from modifying a stopped instance.
-- Split the web entry into importable components and hooks, with behavioral tests for composer races, image uploads, chat rendering, project filters, model selection, SSE lifecycle and notification preferences.
-- Added installer execution tests for install, uninstall, dry runs, environment overrides and command failures using temporary directories and fake commands.
-- Pairing is removed: no access token, no `tern_awui` cookie, no `/pair` route (now just an unknown path that falls to the app's index), no `bun server.ts pair`, no "Not paired" screen, and the installer prints the plain app URL `https://<tailnet name>:<port>/`. The protection is the server listening on `127.0.0.1` only, reached through `tailscale serve` (tailnet only, never Funnel), with every request carrying an allowed `Tailscale-User-Login` (`TERN_MOBILE_ALLOW`). An existing `access-token` file in the config dir is left in place, unused.
-- Subagents are viewable, read-only: tapping a running subagent in a session's `⑂` strip opens its chat, and **Subagents (N)** lists all of them, finished ones too, with their result and age. A subagent's chat uses the session's chat renderer without composer, prompt actions or answerable questions, shows the text it yields as its final reply, and updates while it runs. Routes `#/b/<block>/sub` and `#/b/<block>/sub/<name>`; ‹ returns to the screen it was opened from. Server: `GET /api/blocks/<id>/subagents`, and `/api/stream` with `view=subagents` or `sub=<name>`; names are validated strictly (no paths, no advisor transcripts, no symlinks).
-- Windows install/uninstall no longer kill whatever owns the port: they stop only tern-awui's own processes, bun running our `server.ts` and wscript/cscript running our launcher `.vbs` (never the helper itself or, say, an editor open on `server.ts`). If another program holds the port, install fails with a conflict message; uninstall leaves it alone.
-- The app says when omp's extension doesn't match the server, and how to fix it. A banner tops the session list when `<omp dir>/extensions/tern-mobile.ts` is missing, a stale copy or a link to another checkout, with the command to copy (`cd <checkout> && bun install.ts`, PowerShell form on Windows). The extension now reports its build (a sha256 prefix of the file omp loaded) with bridge protocol 2; a session that loaded an older build or protocol gets a notice under its header, a `!` on its row and a count in the list header. Its fix is **Reload** (omp's `/restart`: restarts omp in the pane and resumes the session; offered while idle, after a confirm, when that omp has it), else `omp --resume <id>` after quitting. A newer extension than the server asks for `git pull && bun install.ts`. This replaces the "extension outdated" line. Server: `state.extension` (install status, path, link target, checkout, Windows) and per session `live.build`, `live.mismatch` (`older`/`newer`/null) and `live.restart`.
+### Breaking
+
+- Environment variables are renamed from `TERN_MOBILE_*` to `TERN_AWUI_*`; re-run `bun install.ts`.
+- Pairing is removed; access is the tailnet plus `TERN_AWUI_ALLOW`.
+
+### Features
+
+- Subagents are viewable, read-only.
+- The app says when omp's extension doesn't match the server, with a **Reload** fix.
+- Bare `/btw` opens the session's saved btw history.
+- Untitled file blocks are named after their file.
+- Desktop `->` / `=>` queue commands show as follow-ups.
+- A wider desktop session column, and tables use the full width.
+- A new app icon.
+- Agent markdown screenshots with local paths render inline.
+
+### Fixes
+
+- Malformed requests and extension failures are reported instead of submitting rejected drafts.
+- Session and bridge changes clear stale output, queue and notifications.
+- Project discovery, transcript reading and rewind edge cases.
+- Lost drafts, duplicate answers, stale live text and stuck controls.
+- Symbols font for queued markers, chart currency parsing, broken saved preferences.
+- Installer discovery settings, uninstall and systemd quoting.
+- A failed build keeps the previous `dist/`.
+- Windows install no longer kills whatever owns the port.
+
+### Docs
+
+- README rewritten for users; the technical reference is in `docs/architecture.md`.
+- README links CodexBar AgentView.
+
+### Internal
+
+- GitHub Actions CI on Linux, macOS and Windows.
+- Browser tests in Chromium, an isolated `startServer()`, split web components, installer tests.
 
 ## 0.1.0 (2026-10-11)
 
-First release. tern-awui is a phone-sized web app (PWA) for the Tern panes on one machine, served over Tailscale.
+First release: a phone-sized web app for the Tern panes on one machine, served over Tailscale.
 
-### App
+### Features
 
-- Session list grouped by git root or folder, newest activity first: live status (working, blocked, idle), the title's Nerd Font icon, omp's recap or the last prompt, time in status. Projects fold; sessions idle for over a day can be hidden.
-- Chat for omp agents laid out like Tern's: prompts, markdown replies, grouped tool lines with intents, per-turn footers, tables with bar charts, inline SVG and mermaid figures, advisor notes, todo lists, images and image paste, live text while the agent writes, queued steers and follow-ups, subagents and background jobs.
-- Control: send, steer, follow-up, stop, `/btw` side questions, answering `ask` dialogs, rewinding to before a prompt, omp's own command and file autocomplete, the key bar, and a model picker with effort and priority tiers.
-- Screen capture for terminals with live typing on the shell's line; read-only notes and files; new omp tabs in any project; closing blocks; the git branch and the context-window gauge in the session.
-- Web Push notifications for sessions that need you or finished, an unseen-updates badge and haptics.
-- Desktop browser layout at 1000 px and wider.
-- Updates over one SSE stream per screen, open only while the app is visible.
-
-### omp extension
-
-- `omp-extension/tern-mobile.ts` bridges each omp in a Tern pane to the server over a local WebSocket: draft mirroring, status, model, thinking and tier, context usage, live text, queue, session leaf, jobs, rewind and autocomplete.
-- Capabilities and protocol: the extension reports its bridge protocol version and the features it detects in the running omp (model list, service tiers, jobs, queue, rewind, `/btw`, autocomplete, thinking levels). The server refuses and the phone turns off what that omp lacks, and the phone flags an extension older than its protocol so the omp gets restarted. Extensions from before versioning keep working as before.
-
-### Security
-
-- Pairing (removed again in Unreleased): besides an allowed Tailscale login, every `/api` request and stream needed the `tern_awui` cookie set by a one-time visit to `/pair?code=<access token>`.
-- `TERN_MOBILE_DEV=1` still turns off all auth and is documented as unsafe.
-
-### Install and build
-
-- `install.ts` (`bun run install-service`): builds, installs the omp extension (symlink on Linux/macOS, copy on Windows), reads the allowed login and DNS name from Tailscale, writes and starts a per-user service (systemd user unit on Linux, LaunchAgent on macOS, a logon scheduled task on Windows), runs `tailscale serve` and prints the app's URL (0.1.0 printed a pairing link). `--dry-run` prints the plan, `--uninstall` reverses it.
-- Cross-platform paths: the config dir is `~/.config/tern-mobile` on every OS (`TERN_MOBILE_CONFIG`), found via the OS home directory rather than `$HOME`; omp's data dir follows omp's own resolution (`TERN_MOBILE_OMP_DIR`); Tern's notes dir is per OS (`TERN_MOBILE_NOTES_DIR`); the **+ omp** project list defaults to the open blocks' and sessions' folders (`TERN_MOBILE_PROJECTS`); the VAPID subject defaults to the first allowed login.
-- The icon PNGs and the Nerd Font symbols subset are committed in `assets/` (with the Nerd Fonts license), so `bun run build` needs only Bun; `bun run assets` regenerates them with `rsvg-convert` and `pyftsubset`.
-- The hardcoded `tern-mobile.service` is gone from the repo; the installer writes the unit.
-
-### Tests
-
-- `bun test` covers the server (HTTP API, auth, bridge, SSE) against fixtures, the omp extension against a fake omp, the web client's logic and components under happy-dom, the pure modules in `lib/`, and the installer's plans for Linux, macOS and Windows.
+- Session list grouped by project, with live status, icon, recap and time.
+- omp chats laid out like Tern's: replies, tools, tables, figures, todos, images, live text, queue, subagents and jobs.
+- Send, steer, stop, `/btw`, answer asks, rewind, autocomplete, key bar and model picker.
+- Terminal screens with live typing, notes and files, new omp tabs, closing blocks.
+- Web Push notifications, an unseen badge and haptics.
+- Desktop layout from 1000 px.
+- The omp extension bridges each omp to the server and reports its capabilities.
+- `install.ts` sets up the service and `tailscale serve` on Linux, macOS and Windows.
