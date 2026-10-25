@@ -150,7 +150,7 @@ describe("omp extension bridge contract", () => {
 
 	test("authenticates and snapshots all fields, sends only changes, and replaces main session context", async () => {
 		const f = fixture();
-		expect<unknown>(await f.start()).toEqual({ t: "state", pane: "test-pane", sessionId: "session-123", text: "desktop draft", model: "openai/reasoner", thinking: "medium", levels: ["off", "minimal", "low", "medium", "high", "xhigh"], tiers: ["", "flex", "priority"], tier: "", status: "idle", jobs: [], context: { tokens: 1234, window: 10000, percent: 12 }, queued: [], leaf: "entry-1", protocol: PROTOCOL, build: BUILD, caps: capsWithoutShim, stretch: null });
+		expect<unknown>(await f.start()).toEqual({ t: "state", pane: "test-pane", sessionId: "session-123", text: "desktop draft", model: "openai/reasoner", thinking: "medium", levels: ["off", "minimal", "low", "medium", "high", "xhigh"], tiers: ["", "flex", "priority"], tier: "", status: "idle", run: null, jobs: [], context: { tokens: 1234, window: 10000, percent: 12 }, queued: [], leaf: "entry-1", protocol: PROTOCOL, build: BUILD, caps: capsWithoutShim, stretch: null });
 		expect(f.bridge.connections[0].data.token).toBe("test-bridge-secret");
 		expect(f.state.intervals).toEqual([100]);
 		f.state.poll!();
@@ -269,6 +269,26 @@ describe("omp extension bridge contract", () => {
 		}
 		f.ctx.getAsyncJobSnapshot = () => { throw new Error("job manager disposed"); }; advance(1001);
 		expect((await f.bridge.request({ t: "sync" })).status).toBe("idle");
+	});
+
+	test("run: the turn's start and its newest tool intent, streamed or resolved; gone when idle", async () => {
+		const f = fixture(); await f.start();
+		f.state.idle = false;
+		f.emit("agent_start");
+		const started = (await f.bridge.request({ t: "sync" })).run!;
+		expect(started).toEqual({ since: expect.any(Number), intent: "" });
+		// While the call streams, its `i` argument; then omp's resolved label replaces it.
+		f.emit("message_update", { message: { role: "assistant", content: [{ type: "toolCall", arguments: { i: " Old " } }, { type: "toolCall", arguments: { i: "  Rebuilding suite  " } }] } });
+		expect((await f.bridge.request({ t: "sync" })).run).toEqual({ since: started.since, intent: "Rebuilding suite" });
+		f.emit("message_update", { message: { role: "assistant", content: [{ type: "toolCall", arguments: { code: "1" } }] } });
+		f.emit("tool_execution_start", { toolCallId: "e1", toolName: "eval", intent: "running javascript" });
+		expect((await f.bridge.request({ t: "sync" })).run).toEqual({ since: started.since, intent: "running javascript" });
+		f.emit("tool_execution_start", { toolCallId: "e2", toolName: "eval", intent: "x".repeat(200) });
+		expect((await f.bridge.request({ t: "sync" })).run?.intent).toBe("x".repeat(120));
+		f.state.idle = true;
+		expect((await f.bridge.request({ t: "sync" })).run).toBeNull();
+		f.state.idle = false; f.emit("agent_end");
+		expect((await f.bridge.request({ t: "sync" })).run).toBeNull();
 	});
 
 	test("set/unknown/sync roundtrip drafts and sequences; malformed JSON does not kill connection", async () => {

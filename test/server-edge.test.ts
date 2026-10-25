@@ -643,7 +643,7 @@ test("bridge errors reach every command response and never submit a rejected dra
   }
 });
 
-test("a replacement bridge clears the previous live text and queue and ignores its late side answers", async () => {
+test("a replacement bridge clears the previous live text, queue and run, and ignores its late side answers", async () => {
   const s = new Sandbox();
   try {
     await s.start();
@@ -653,16 +653,20 @@ test("a replacement bridge clears the previous live text and queue and ignores i
     const events = new Events();
     await events.open(s, "?block=1");
     await events.take("chat");
+    expect(await events.take("run")).toBeNull();
     await old.take("watch");
     old.send({ t: "live", text: "old live", done: false });
     await events.take("live", (data) => obj(data).text === "old live");
-    old.report({ queued: ["old queued"] });
+    old.report({ queued: ["old queued"], status: "working", run: { since: 1000, intent: "old intent" } });
     await events.take("queued", (data) => arr(data).length === 1);
+    await events.take("run", (data) => obj(data).intent === "old intent");
     const fresh = new Extension(s, "1", "test/replacement");
     await fresh.connect();
     await events.take("state", (state) => obj(item(state, 1).live).model === "test/replacement");
     expect(await events.take("live")).toEqual({ text: "", done: false });
     expect(await events.take("queued")).toEqual([]);
+    // The replacement reports no run (an older extension): the open page must not keep the old one.
+    expect(await events.take("run")).toBeNull();
     expect((await old.take("watch")).on).toBe(false);
     expect((await fresh.take("watch")).on).toBe(true);
     old.send({ t: "btw", id: "previous-question", text: "stale answer", done: true });

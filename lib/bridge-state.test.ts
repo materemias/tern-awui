@@ -17,6 +17,7 @@ const snapshot = {
   context: { tokens: 50_000, window: 200_000, percent: 25 },
   queued: [{ text: "steer", followUp: false }, { text: "later", followUp: true }],
   jobs: [{ id: "bg_1", type: "task", label: "Scout", agent: "scout", since: 5 }],
+  run: { since: 1500, intent: "Rebuilding suite" },
   leaf: "e012",
   protocol: 3,
   build: "0123456789abcdef",
@@ -45,6 +46,7 @@ describe("parseBridgeState", () => {
       context: { tokens: 50_000, window: 200_000, percent: 25 },
       queued: snapshot.queued,
       jobs: snapshot.jobs,
+      run: { since: 1500, intent: "Rebuilding suite" },
       leaf: "e012",
       protocol: 3,
       build: "0123456789abcdef",
@@ -78,6 +80,10 @@ describe("parseBridgeState", () => {
     expect(s.levels).toEqual([]);
     expect(s.jobs).toEqual([]);
     expect(s.queued).toEqual([]);
+    // No run from older extensions, an idle session or a report without a start.
+    expect(parseBridgeState({ ...snapshot, run: undefined }, fresh, 1).run).toBeNull();
+    expect(parseBridgeState({ ...snapshot, run: { intent: "x" } }, fresh, 1).run).toBeNull();
+    expect(parseBridgeState({ ...snapshot, run: { since: 9, intent: 4 } }, fresh, 1).run).toEqual({ since: 9, intent: "" });
   });
 
   test("stretch state: null without stretch.ts; malformed blocks, keys and empty blocks dropped", () => {

@@ -845,6 +845,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
             onPane("draft", draftPayload(b));
             if (b?.live) onPane("live", b.live);
             if (b?.state.queued.length) onPane("queued", b.state.queued);
+            // Always, null included: what the turn is doing, or nothing once it ended while away.
+            onPane("run", b?.state.run ?? null);
             // Always, null included: a reconnecting phone must drop state from an omp that restarted without stretch.ts.
             onPane("stretch", b?.state.stretch ?? null);
             // Opening a session on the phone is seeing its update.
@@ -1244,6 +1246,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     doneTimers.delete(pane);
     emit(pane, "live", { text: "", done: false });
     emit(pane, "queued", []);
+    emit(pane, "run", null);
     emit(pane, "stretch", null);
   }
 
@@ -1395,6 +1398,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           // A rewind moves the leaf without writing to the file: the open chat must re-read.
           if (before.leaf !== b.state.leaf) emit(pane, "leaf", null);
           if (JSON.stringify(before.queued) !== JSON.stringify(b.state.queued)) emit(pane, "queued", b.state.queued);
+          if (JSON.stringify(before.run) !== JSON.stringify(b.state.run)) emit(pane, "run", b.state.run);
           if (JSON.stringify(before.stretch) !== JSON.stringify(b.state.stretch)) emit(pane, "stretch", b.state.stretch);
           if (listChanged(before, b.state)) invalidateState();
           // `before.status` is empty on a fresh connection: a restarted omp is not a finished turn.

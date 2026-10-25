@@ -1,5 +1,5 @@
 export type { BtwHistoryRecord, BtwHistoryTurn } from "../lib/btw-history";
-export type { StretchState } from "../lib/bridge-state";
+export type { Run, StretchState } from "../lib/bridge-state";
 
 // ---------- API shapes (mirror server.ts) ----------
 

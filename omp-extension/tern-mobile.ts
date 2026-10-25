@@ -113,7 +113,7 @@ type Ctx = {
 	sessionManager: { getSessionId(): string; getLeafId?(): string | null };
 	setInterval(callback: () => void, ms: number): unknown;
 };
-type ToolEvent = { toolCallId: string; toolName: string };
+type ToolEvent = { toolCallId: string; toolName: string; intent?: string };
 type CompletionItem = { value: string; label: string; description?: string };
 /** pi-tui's AutocompleteProvider, the part this bridge calls. */
 type Completer = {
@@ -134,7 +134,7 @@ type Completer = {
 /** The part of an omp message this bridge reads. */
 type Message = { role?: string; content?: unknown };
 type Pi = {
-	on(event: "session_start" | "session_switch" | "session_shutdown", handler: (event: unknown, ctx: Ctx) => unknown): void;
+	on(event: "session_start" | "session_switch" | "session_shutdown" | "agent_start" | "agent_end", handler: (event: unknown, ctx: Ctx) => unknown): void;
 	on(
 		event: "tool_execution_start" | "tool_execution_end" | "tool_approval_requested" | "tool_approval_resolved",
 		handler: (event: ToolEvent) => unknown,
@@ -222,6 +222,23 @@ function textOf(message: Message): string {
 		.join("\n\n");
 }
 
+/** omp's intent labels are short; anything longer is cut, as the phone shows one line. */
+const INTENT_MAX = 120;
+
+/**
+ * The intent of the tool call omp is streaming, as its working row shows it before the call runs:
+ * the newest tool call carrying an `i` argument.
+ */
+export function streamingIntent(message: Message): string {
+	if (!Array.isArray(message.content)) return "";
+	for (let i = message.content.length - 1; i >= 0; i--) {
+		const part = message.content[i] as { type?: string; arguments?: { i?: unknown } } | null;
+		const intent = part?.type === "toolCall" ? part.arguments?.i : undefined;
+		if (typeof intent === "string" && intent.trim()) return intent.trim().slice(0, INTENT_MAX);
+	}
+	return "";
+}
+
 export default function ternMobile(pi: Pi): void {
 	// Read when omp loads the extension (tests load it once and call this per scenario).
 	const PANE = process.env.TERN_PANE;
@@ -244,6 +261,12 @@ export default function ternMobile(pi: Pi): void {
 	const noteQueued = (text: string, followUp = false) => {
 		const last = queued[queued.length - 1];
 		if (text && !(last?.text === text && Date.now() - last.at < QUEUE_GRACE_MS)) queued.push({ text, at: Date.now(), followUp });
+	};
+	// The running turn as omp's working row shows it: when it started and what the current tool
+	// call is doing ("" until the first one: omp's "Working…").
+	let run: { since: number; intent: string } | null = null;
+	const noteIntent = (intent: string) => {
+		if (intent) run = { since: run?.since ?? Date.now(), intent };
 	};
 
 	// Background jobs, sampled once a second: subagents keep a session working after its own turn
@@ -285,6 +308,12 @@ export default function ternMobile(pi: Pi): void {
 			};
 		}
 		if (queued.length && ctx.hasPendingMessages?.() !== true) queued = queued.filter((q) => Date.now() - q.at < QUEUE_GRACE_MS);
+		// Running subagents count as work; a backgrounded shell job (a watcher, a server) doesn't.
+		const status = waiting.size
+			? "blocked"
+			: !ctx.isIdle() || runningJobs(ctx).some((j) => j.type === "task" || j.type === "eval")
+				? "working"
+				: "idle";
 		return {
 			t: "state",
 			pane: PANE,
@@ -294,12 +323,8 @@ export default function ternMobile(pi: Pi): void {
 			thinking: pi.getThinkingLevel() ?? "",
 			// What the current model offers the phone's picker: its thinking levels and serving tiers.
 			...modelCaps(ctx.model),
-			// Running subagents count as work; a backgrounded shell job (a watcher, a server) doesn't.
-			status: waiting.size
-				? "blocked"
-				: !ctx.isIdle() || runningJobs(ctx).some((j) => j.type === "task" || j.type === "eval")
-					? "working"
-					: "idle",
+			status,
+			run: status === "idle" ? null : run,
 			jobs: runningJobs(ctx),
 			context: context.value,
 			queued: queued.map((q) => ({ text: q.text, followUp: q.followUp })),
@@ -353,6 +378,7 @@ export default function ternMobile(pi: Pi): void {
 		if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: "live", text, done }));
 	};
 	pi.on("message_update", (e) => {
+		if (run && e.message.role === "assistant") noteIntent(streamingIntent(e.message));
 		if (!watched || e.message.role !== "assistant") return;
 		live.message = e.message;
 		live.timer ??= setTimeout(() => {
@@ -540,6 +566,7 @@ export default function ternMobile(pi: Pi): void {
 		ctx = c;
 		waiting.clear();
 		queued = [];
+		run = null;
 		context = { at: 0, value: null };
 		jobs = { at: 0, value: [] };
 		offered = [];
@@ -578,8 +605,16 @@ export default function ternMobile(pi: Pi): void {
 		const text = (followUp ? e.text.slice(2) : e.text).trim();
 		noteQueued(text || (e.images?.length ? "(image)" : ""), followUp);
 	});
+	pi.on("agent_start", () => {
+		run = { since: Date.now(), intent: "" };
+	});
+	pi.on("agent_end", () => {
+		run = null;
+	});
 	pi.on("tool_execution_start", (e) => {
 		if (e.toolName === "ask") waiting.add(e.toolCallId);
+		// omp resolves the label: the call's `i`, else the tool's own (eval's "running javascript").
+		if (typeof e.intent === "string") noteIntent(e.intent.trim().slice(0, INTENT_MAX));
 	});
 	pi.on("tool_approval_requested", (e) => waiting.add(e.toolCallId));
 	pi.on("tool_execution_end", (e) => waiting.delete(e.toolCallId));

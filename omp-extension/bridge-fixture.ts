@@ -7,7 +7,7 @@ export type CatalogModel = { p: string; id: string; name: string; r: boolean; ct
 export type Completion = { value: string; label: string; description?: string; [key: string]: unknown };
 export type State = {
 	t: string; seq: number; sessionId: string; text: string; model: string; thinking: string;
-	levels: string[]; jobs: unknown[]; queued: unknown[]; leaf: string; status: string; tier: string;
+	levels: string[]; jobs: unknown[]; queued: unknown[]; leaf: string; status: string; tier: string; run: { since: number; intent: string } | null;
 	context: { tokens: number; window: number; percent: number }; models: CatalogModel[];
 	items: Completion[]; done: boolean;
 	protocol: number; build: string;

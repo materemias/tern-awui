@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- While an omp session works, the bottom of its chat shows omp's working row instead of "working · 2m": a spinner, the turn's running time (tenths of a second for the first minute, `31.6s`, then `3m 05s`), and the intent of the tool call it is running ("Rebuilding and running full suite", "running javascript") in grey, with a blueish tint sweeping across a couple of words at a time; "Working…" before the first tool call. The extension reports the turn's start and current intent (`run`), and the server forwards it to the open session only; a replacement or lost bridge clears it. Sessions running an older extension count from the status change and show "Working…" until restarted.
+
 ## 0.6.0 (2026-10-25)
 
 - Parser copy synced with omp-stretch: a gist written both before its stretch and as its short form shows once, the guide tells the model to write each short form only once and ends with a short example reply, and the experimental `section` level is known.

@@ -35,6 +35,14 @@ export function duration(ms: number): string {
   return `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`;
 }
 
+/** A running turn's time as omp's working row counts it: "31.6s", "3m 05s", "1h 02m". */
+export function elapsed(ms: number): string {
+  if (ms < 60_000) return `${(Math.floor(Math.max(0, ms) / 100) / 10).toFixed(1)}s`;
+  const s = Math.floor(ms / 1000);
+  if (s < 3600) return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+  return `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`;
+}
+
 /** Wall-clock time, always 24-hour. */
 export const clock = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 

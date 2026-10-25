@@ -1,8 +1,8 @@
 // An open session (chat, raw screen or note, with the composer) and its subagent screens.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { highlightFile } from "./highlight";
-import { post } from "./api";
-import { age, backStep, can, isNote, type Route } from "./lib";
+import { post, type Run } from "./api";
+import { age, backStep, can, elapsed, isNote, type Route } from "./lib";
 import { Chat, Markdown, StretchContext, type StretchSync } from "./chat";
 import { liveText, withOpen } from "./stretch";
 import { screenHtml } from "./markdown";
@@ -16,7 +16,7 @@ import { goBack, origins, useNow, useStream, type View } from "./hooks";
 export function Session({ block }: { block: string }) {
   const [view, setView] = useState<View>("chat");
   // The server answers a chat request for a non-omp block with its screen.
-  const { state, chat, live, queued, btw, setBtw, screen, draft, doc, online, stretch } = useStream(block, view);
+  const { state, chat, live, queued, run, btw, setBtw, screen, draft, doc, online, stretch } = useStream(block, view);
   // Open stretches: the omp session's (stretch.ts) when it reports them, else this page's own.
   const [opened, setOpened] = useState<Record<string, string[]>>({});
   // Whether `opened` mirrors the pane: then losing the report (omp restarted without stretch.ts) drops
@@ -165,7 +165,7 @@ export function Session({ block }: { block: string }) {
             <div class="empty">Loading…</div>
           )}
           {doc?.clipped && <div class="muted small">Showing the first 512 KB.</div>}
-          {working && <div class="working">working · {item ? age(item.since, now) : ""}</div>}
+          {working && item && <WorkingRow run={run} since={item.since} />}
           {item && <JobsStrip block={block} jobs={item.live?.jobs ?? []} subagents={item.agent?.subagents ?? 0} now={now} />}
         </div>
         {!item?.doc && chat && view === "chat" && (
@@ -194,6 +194,25 @@ export function Session({ block }: { block: string }) {
           raw={isOmp ? { on: view === "screen", toggle: () => setView(view === "screen" ? "chat" : "screen") } : undefined}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * omp's working row: a spinner, the turn's running time and what its current tool call is doing,
+ * swept by a highlight. Without the turn's report (older extension) it counts from the status change.
+ */
+function WorkingRow({ run, since }: { run: Run | null; since: number }) {
+  const start = run?.since ?? since;
+  // Tenths tick under a minute, as in omp; whole seconds after.
+  const now = useNow(Date.now() - start < 60_000 ? 100 : 1000);
+  return (
+    // No live region: a clock ticking ten times a second would flood screen readers.
+    <div class="working-row">
+      <span class="spinner" aria-hidden="true" />
+      <span class="working-time">{elapsed(now - start)}</span>
+      <span aria-hidden="true">·</span>
+      <span class="working-intent">{run?.intent || "Working…"}</span>
     </div>
   );
 }

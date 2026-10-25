@@ -71,7 +71,13 @@ test("session header, transcript, live text and queued steer/follow-up marks", a
   expect(root.querySelector(".live strong")!.textContent).toBe("Writing now");
   expect([...root.querySelectorAll(".queued-mark")].map((e) => e.textContent)).toEqual(["↳", "→"]);
   expect([...root.querySelectorAll(".queued")].map((e) => e.getAttribute("title"))).toEqual(["Steers the running turn", "Sent once the running turn ends"]);
-  expect(root.querySelector(".working")!.textContent).toMatch(/^working · \d+s$/);
+  // Without the turn's report (older extension) it counts from the status change.
+  expect(root.querySelector(".working-row")!.textContent).toMatch(/^2\d\.\ds·Working…$/);
+  await emit("run", { since: Date.now() - 125_000, intent: "Running full suite" });
+  expect(root.querySelector(".working-time")!.textContent).toMatch(/^2m 0\ds$/);
+  expect(root.querySelector(".working-intent")!.textContent).toBe("Running full suite");
+  await emit("run", { since: Date.now() - 3_000, intent: "" });
+  expect(root.querySelector(".working-intent")!.textContent).toBe("Working…");
   await emit("live", { text: "Writing now", done: true });
   expect(root.querySelector(".live")).not.toBeNull();
   await emit("chat", { entries: [{ role: "assistant", text: "Writing now", ts: 2 }] });
