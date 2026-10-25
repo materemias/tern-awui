@@ -2,16 +2,24 @@
 
 ## Unreleased
 
-- The full-screen image view pages through every image of the turn: the prompt's images and the screenshots tools took before the next prompt. On a phone you swipe from one to the next; on the desktop ‹ › buttons and the arrow keys page, with a "2 / 5" counter on both. Back (the Android back gesture or the browser's) closes the view and stays in the session instead of leaving it, and the browser's Forward reopens it; Escape closes it on the desktop. A screenshot that arrives while the view is open joins it, and an image rewound out of the transcript closes it.
-- README opens with a film of the handover, styled after Apple's product pages: a display showing Tern, a laptop showing the desktop browser and a phone, all live, with a camera flying between them under a large headline for each step. A prompt started in the Tern pane is finished and sent from the browser, omp's question is answered on the phone, the reply's [omp-stretch](https://github.com/materemias/omp-stretch) stretches are opened, closed and deepened with ✦ there, the Tern pane shows the same stretches open, and a reply typed on the phone is sent back at the desk (`docs/handover.gif`, `docs/handover.mp4`). The session list shows sessions in three projects, grouped by project. `film/` shoots it from a real Tern window, tern-awui server, omp and browsers on scratch state, answered by a fake model. The README screenshots are regenerated from the current app, and the session shots show a stretchtext reply: an open stretch with a closed one inside it, and an open stretch ending in ✦ and «.
-- While an omp session works, the bottom of its chat shows omp's working row instead of "working · 2m": a spinner, the turn's running time (tenths of a second for the first minute, `31.6s`, then `3m 05s`), and the intent of the tool call it is running ("Rebuilding and running full suite", "running javascript") in grey, with a blueish tint sweeping across a couple of words at a time; "Working…" before the first tool call. The extension reports the turn's start and current intent (`run`), and the server forwards it to the open session only; a replacement or lost bridge clears it. Sessions running an older extension count from the status change and show "Working…" until restarted.
-- The context gauge has omp's details card: hovering the gauge for 600 ms fades in "Context 27% used", "160K of 600K tokens" and "Auto-compact at 80%" above the mouse, following it along the gauge; on a phone a tap opens it at once above the finger and it closes after 3 s. Token counts on the gauge now read `600K` like omp's. The gauge's browser tooltips, which never showed because the gauge took no pointer, are gone.
-- The context gauge looks like omp's: the used part is grey, brightening toward its end, with a grey percent (red past the window); hovering the gauge (or tapping it on a phone) lightens the whole bar, used and remaining part, and the percent over a quarter second; while the agent works, a soft glint runs along it from the gauge's 0 point every 2.8 s (none under reduced motion); and the auto-compaction tick is a fine, faint 1 px mark instead of a bold accent bar.
-- A chat scrolled to the bottom stays there whenever anything below grows, not only when the transcript, live text or queue change: the working row appearing, subagent jobs, images finishing loading, a btw card, or the window resizing. Before, these left the newest lines hidden until scrolled by hand.
-- The session header's two buttons are drawn icons in the style of the composer's instead of `⌖` and `✕` glyphs in boxed outlines: a monitor with an arrow out of its corner for "Show this pane on the desktop", and a thin cross for Close, grey until hovered or pressed, when it turns red on a faint red disc.
-- **+ omp**, in the list header and on each project heading, is now a mark instead of words: a plus and the blocky π from omp's welcome screen, borderless instead of in a boxed outline. Hovered with a mouse, π fills in its shaded foot, stomps it down a cell and wiggles; not under reduced motion. A project heading's button is named "New omp in <project>" for screen readers and on hover.
-- An omp session with nothing in it yet shows omp's welcome mark at the top of the chat, as a new omp pane does in Tern: the blocky π and "omp" in the monospace face, nothing else. Hovering the π plays the same foot stomp and wiggle as **+ omp**. The first prompt, or a turn already running, replaces it.
-- On the desktop, hovering "tern" at the top left of the sidebar animates it into the minimize button: the letters fold away to the left, last one first, and a drawn « slides in after them, one chevron then the other; moving away plays it back. The minimized rail's expand button runs it backwards: a drawn » rests there and, hovered, slides off to the right while "tern" unfolds from the left. Under reduced motion they only cross-fade. Both were text glyphs (« and ») that swapped in without motion.
+### Features
+
+- omp's working row under the chat: spinner, the turn's running time and the current tool's intent.
+- Context gauge details card on hover or tap: percent used, tokens, auto-compact threshold.
+- Context gauge styled like omp's: grey fill, faint compaction tick, a glint while the agent works.
+- The full-screen image view pages through all of a turn's images (swipe, ‹ ›, arrow keys); Back closes it.
+- Session header uses drawn monitor and close icons instead of `⌖` and `✕`.
+- **+ omp** is omp's blocky π with a plus; hovered, π stomps and wiggles.
+- An empty omp session shows omp's welcome mark.
+- Sidebar minimize/expand: "tern" folds into « and » unfolds back into "tern".
+
+### Fixes
+
+- A chat scrolled to the bottom stays there when the working row, jobs, images or a btw card grow it.
+
+### Docs
+
+- README opens with a film of one task handed from Tern to a browser to the phone and back (`film/` re-shoots it); screenshots regenerated with a stretchtext reply.
 
 ## 0.6.0 (2026-10-25)
 
