@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Fixes
+
+- The service runs at normal CPU priority under load: on Linux it is no longer named `bun`, which ananicy-cpp idles, and on Windows the scheduled task no longer runs below normal. Re-run `bun install.ts` to apply.
+- A slow git, as on Windows, no longer stalls the server: git runs in the background, gives up after 2 s, and once per folder instead of two or three times.
+- omp settings are read with one `omp config list --json` instead of six `omp config get` runs.
+- A working agent's context gauge goes only to the phones showing that session, without rebuilding and resending the session list or rerunning `tern ls`.
+- Chat messages with images are no longer re-rendered on every transcript update.
+- Several phones on one session share one screen capture and one transcript read.
+- omp's prompt-history writes to `history.db` no longer rebuild the list; only new recaps do.
+- The server's caches drop closed sessions and folders instead of growing with uptime.
+- Clocks on the page stop while it is hidden.
+- The web app is sent brotli-compressed (about a third of its size), and reloads of an unchanged build download nothing.
+- After the first full copy, session list updates carry only the rows that changed.
+
 ## 0.7.0 (2026-10-25)
 
 ### Features
