@@ -144,7 +144,6 @@ export function live(over: Partial<Live> = {}): Live {
     levels: ["off", "low", "medium", "high"],
     tiers: [],
     tier: "",
-    context: null,
     jobs: [],
     protocol: 3,
     caps: null,

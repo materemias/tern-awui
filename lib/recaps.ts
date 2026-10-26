@@ -35,6 +35,15 @@ export function querySessionRecaps(db: Database, id: string): { text: string; cr
 }
 
 /**
+ * Changes whenever a recap is added or removed: other history.db writes (prompt history) leave it alone.
+ * Assumes omp only inserts recaps (an in-place UPDATE wouldn't show; the 15 s recheck still picks it up).
+ * Throws on a schema omp doesn't have.
+ */
+export function recapMark(db: Database): string {
+  return JSON.stringify(db.query("SELECT COUNT(*) AS n, MAX(id) AS id FROM session_recaps").get());
+}
+
+/**
  * The chat with each recap where the terminal shows it: after everything said before it was
  * written. Recaps older than the oldest entry shown belong to the part of the chat left out.
  */

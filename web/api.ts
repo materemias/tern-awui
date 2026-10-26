@@ -1,5 +1,5 @@
 export type { BtwHistoryRecord, BtwHistoryTurn } from "../lib/btw-history";
-export type { Run, StretchState } from "../lib/bridge-state";
+export type { ContextUse, Run, StretchState } from "../lib/bridge-state";
 
 // ---------- API shapes (mirror server.ts) ----------
 
@@ -20,8 +20,6 @@ export type Live = {
   levels: string[];
   tiers: string[];
   tier: string;
-  /** `compactAt`: percent of the window where omp auto-compacts; null when off. */
-  context: { tokens: number; window: number; percent: number; compactAt: number | null } | null;
   /** Background jobs: subagents (`task`, `eval`) and backgrounded bash. */
   jobs: Job[];
   /** The extension's bridge protocol; 0 when it sent none (an extension from before versioning). */

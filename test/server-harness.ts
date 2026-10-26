@@ -5,6 +5,7 @@ import { Transcript, call, HASH } from "./fixtures";
 
 import { arr, obj, type Obj as Message } from "../lib/json";
 import { startServer, type ServerHandle, type ServerOptions } from "../server";
+import { applyStatePatch } from "../lib/state-patch";
 
 const DEFAULT_SERVER = `${import.meta.dir}/../server.ts`;
 
@@ -77,14 +78,12 @@ case "$1" in
      if [ -f "$TERN_FAKE_DIR/exit" ]; then exit "$(cat "$TERN_FAKE_DIR/exit")"; fi ;;
 esac
 `);
+    // `omp config list --json`: every key as {value, type}; an unset key has no value.
     writeFileSync(`${this.home}/bin/omp`, `#!/bin/bash
-case "$3" in
-modelRoles) echo '{"fast":"test/fast:low","smart":"test/smart:high"}' ;;
-cycleOrder) echo '["smart","missing","fast"]' ;;
-compaction.enabled) echo true ;;
-compaction.thresholdPercent) echo 80 ;;
-*) echo null ;;
-esac
+[ "$1 $2 $3" = "config list --json" ] || exit 1
+cat <<'EOF'
+{"modelRoles":{"value":{"fast":"test/fast:low","smart":"test/smart:high"},"type":"record"},"cycleOrder":{"value":["smart","missing","fast"],"type":"array"},"compaction.enabled":{"value":true,"type":"boolean"},"compaction.thresholdPercent":{"value":80,"type":"number"},"compaction.thresholdTokens":{"type":"number"},"compaction.reserveTokens":{"type":"number"}}
+EOF
 `);
     for (const name of ["tern", "omp"]) chmodSync(`${this.home}/bin/${name}`, 0o755);
   }
@@ -219,6 +218,8 @@ export class Extension {
 
 export class Events {
   events: { event: string; data: unknown }[] = [];
+  /** The list as the stream last left it: the first `state`, then each `patch` applied. */
+  list: unknown = null;
   abort = new AbortController();
   reading?: Promise<void>;
   async open(s: Sandbox, query = "") {
@@ -237,7 +238,18 @@ export class Events {
             buf = buf.slice(end + 2);
             const event = /^event: (.*)$/m.exec(frame)?.[1];
             const data = /^data: (.*)$/m.exec(frame)?.[1];
-            if (event && data) this.events.push({ event, data: JSON.parse(data) });
+            if (!event || !data) continue;
+            const parsed = JSON.parse(data);
+            // Like the page: after the first full list, `patch` carries changed rows; tests read the result as `state`.
+            if (event === "patch") {
+              const next = this.list && applyStatePatch<Message & { projects: { name: string; items: { block: string }[] }[] }, { block: string }>(this.list as never, parsed);
+              if (!next) throw new Error("patch without a full list first");
+              this.list = next;
+              this.events.push({ event: "state", data: next });
+              continue;
+            }
+            if (event === "state") this.list = parsed;
+            this.events.push({ event, data: parsed });
           }
         }
       } catch (err) { if (!this.abort.signal.aborted) throw err; }

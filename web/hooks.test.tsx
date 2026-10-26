@@ -80,7 +80,7 @@ describe("useStream", () => {
     property(navigator, "setAppBadge", badge);
     property(navigator, "clearAppBadge", clear);
     await act(() => render(<StreamHost block="5" />, root));
-    expect(snapshot()).toEqual({ state: null, chat: null, subagents: null, live: null, queued: [], run: null, btw: null, screen: null, draft: null, doc: null, online: false, stretch: null });
+    expect(snapshot()).toEqual({ state: null, chat: null, subagents: null, live: null, queued: [], run: null, context: null, btw: null, screen: null, draft: null, doc: null, online: false, stretch: null });
     await act(() => FakeEventSource.last.open());
     expect(snapshot()).toMatchObject({ online: true });
     const current = state([item()], { badge: 2 });
@@ -102,13 +102,30 @@ describe("useStream", () => {
     await emit("doc", doc);
     await emit("subagents", subagents);
     await emit("stretch", { off: false, open: { "1.0": ["cache"] } });
-    expect(snapshot()).toMatchObject({ chat: entries, screen: { text: "<pre>shell</pre>", html: true }, draft: { text: "Not sent", live: true }, doc, subagents, stretch: { off: false, open: { "1.0": ["cache"] } } });
+    const context = { tokens: 1000, window: 200000, percent: 1, compactAt: 80 };
+    await emit("context", context);
+    expect(snapshot()).toMatchObject({ chat: entries, screen: { text: "<pre>shell</pre>", html: true }, draft: { text: "Not sent", live: true }, doc, subagents, stretch: { off: false, open: { "1.0": ["cache"] } }, context });
     await emit("chat", null);
     expect(snapshot()).toMatchObject({ chat: [] });
     await act(() => FakeEventSource.last.fail());
     expect(snapshot()).toMatchObject({ online: false });
     await act(() => FakeEventSource.last.open());
     expect(snapshot()).toMatchObject({ online: true });
+  });
+
+  test("a patch updates changed rows and the order; one the page can't apply reconnects for a full list", async () => {
+    await act(() => render(<StreamHost block="5" />, root));
+    const a = item({ block: "1", title: "A" });
+    const b = item({ block: "2", title: "B" });
+    await emit("state", state([a, b]));
+    const { projects, ...rest } = state([a, b], { badge: 1 });
+    const renamed = { ...b, title: "B2" };
+    await emit("patch", { ...rest, order: [[projects[0].name, ["2", "1"]]], changed: [renamed] });
+    expect(snapshot()).toMatchObject({ state: { badge: 1, projects: [{ name: projects[0].name, items: [renamed, a] }] } });
+    const before = FakeEventSource.all.length;
+    await emit("patch", { ...rest, order: [[projects[0].name, ["9"]]], changed: [] });
+    expect(FakeEventSource.all.length).toBe(before + 1);
+    expect(FakeEventSource.all.at(-2)!.readyState).toBe(FakeEventSource.CLOSED);
   });
 
   test("live text stays until the finished transcript arrives, but not for an unrelated chat update", async () => {

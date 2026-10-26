@@ -125,15 +125,11 @@ describe("listChanged", () => {
   const base = parseBridgeState(snapshot, fresh, 1);
   const changed = (patch: Partial<BridgeState>) => listChanged(base, { ...base, ...patch });
 
-  test("what the list shows: model, thinking, tier, status, context, session, jobs", () => {
+  test("what the list shows: model, thinking, tier, status, session, jobs", () => {
     expect(changed({ model: "x/y" })).toBe(true);
     expect(changed({ thinking: "high" })).toBe(true);
     expect(changed({ tier: "priority" })).toBe(true);
     expect(changed({ status: "idle" })).toBe(true);
-    expect(changed({ context: { ...base.context!, percent: 26 } })).toBe(true);
-    expect(changed({ context: { ...base.context!, tokens: 50_001 } })).toBe(true);
-    expect(changed({ context: { ...base.context!, window: 400_000 } })).toBe(true);
-    expect(changed({ context: null })).toBe(true);
     expect(changed({ sessionId: "other" })).toBe(true);
     expect(changed({ jobs: [] })).toBe(true);
     expect(changed({ protocol: 4 })).toBe(true);
@@ -142,10 +138,11 @@ describe("listChanged", () => {
     expect(changed({ caps: null })).toBe(true);
   });
 
-  test("not drafts, queue or leaf", () => {
+  test("not drafts, queue, leaf or the context gauge (its own event)", () => {
     expect(changed({ text: "typing" })).toBe(false);
     expect(changed({ queued: [] })).toBe(false);
     expect(changed({ leaf: "e001" })).toBe(false);
+    expect(changed({ context: { ...base.context!, tokens: 50_001 } })).toBe(false);
     expect(listChanged(base, parseBridgeState(snapshot, base, 99))).toBe(false);
   });
 });

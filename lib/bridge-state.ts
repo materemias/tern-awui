@@ -52,6 +52,8 @@ export type StretchState = {
   running: Record<string, { key: string; seconds: number; partial: string }[]>;
 };
 export type Context = { tokens: number; window: number; percent: number };
+/** The context gauge as phones get it (`context` stream event); `compactAt`: percent of the window where omp auto-compacts, null when off. */
+export type ContextUse = Context & { compactAt: number | null };
 type Queued = { text: string; followUp: boolean };
 /** `since`: when the turn started (ms); `intent`: what its current tool call does, "" before the first. */
 export type Run = { since: number; intent: string };
@@ -139,16 +141,13 @@ export function parseBridgeState(msg: Obj, before: BridgeState, now: number): Br
   };
 }
 
-/** Whether the change shows in the list (a draft or queue change alone doesn't). */
+/** Whether the change shows in the list (a draft, the queue or the context gauge alone doesn't). */
 export function listChanged(before: BridgeState, after: BridgeState): boolean {
   return (
     before.model !== after.model ||
     before.thinking !== after.thinking ||
     before.tier !== after.tier ||
     before.status !== after.status ||
-    before.context?.percent !== after.context?.percent ||
-    before.context?.tokens !== after.context?.tokens ||
-    before.context?.window !== after.context?.window ||
     before.sessionId !== after.sessionId ||
     before.protocol !== after.protocol ||
     before.build !== after.build ||

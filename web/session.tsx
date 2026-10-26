@@ -16,7 +16,7 @@ import { goBack, origins, useNow, useStream, type View } from "./hooks";
 export function Session({ block }: { block: string }) {
   const [view, setView] = useState<View>("chat");
   // The server answers a chat request for a non-omp block with its screen.
-  const { state, chat, live, queued, run, btw, setBtw, screen, draft, doc, online, stretch } = useStream(block, view);
+  const { state, chat, live, queued, run, context, btw, setBtw, screen, draft, doc, online, stretch } = useStream(block, view);
   // Open stretches: the omp session's (stretch.ts) when it reports them, else this page's own.
   const [opened, setOpened] = useState<Record<string, string[]>>({});
   // Whether `opened` mirrors the pane: then losing the report (omp restarted without stretch.ts) drops
@@ -233,6 +233,7 @@ export function Session({ block }: { block: string }) {
           btw={btw}
           setBtw={setBtw}
           raw={isOmp ? { on: view === "screen", toggle: () => setView(view === "screen" ? "chat" : "screen") } : undefined}
+          context={context}
         />
       )}
     </div>

@@ -213,7 +213,6 @@ const live = (over: Partial<Live> = {}): Live => ({
   levels: [],
   tiers: [],
   tier: "",
-  context: null,
   jobs: [],
   protocol: 2,
   caps,

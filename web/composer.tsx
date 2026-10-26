@@ -1,7 +1,7 @@
 // The prompt: draft mirroring, sends and follow-ups, side questions, pasted images, completions,
 // terminal typing and the key bar.
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { post, postJson, type Btw, type BtwHistoryRecord, type Item, type Role } from "./api";
+import { post, postJson, type Btw, type BtwHistoryRecord, type ContextUse, type Item, type Role } from "./api";
 import { btwCommand, can, composerKey, currentRole, fitEdge, lineEdit, needsReencode, prettyModel, tokensShort } from "./lib";
 import { Markdown } from "./chat";
 import { openText } from "./stretch";
@@ -61,6 +61,7 @@ export function Composer({
   raw,
   btw,
   setBtw,
+  context = null,
 }: {
   block: string;
   item: Item | undefined;
@@ -70,6 +71,8 @@ export function Composer({
   /** The open side question (`/btw …`) and its streaming answer. */
   btw: Btw | null;
   setBtw: (b: Btw | null) => void;
+  /** The context gauge, from the stream's `context` event; none without one. */
+  context?: ContextUse | null;
 }) {
   const [text, setText] = useState("");
   /** The composer text now, for async work that must not act on an older value. */
@@ -405,7 +408,6 @@ export function Composer({
   const empty = text.trim() === "" && !pasted.length;
   // While the agent runs and nothing is typed, the send button stops the turn instead.
   const stoppable = working && empty && !terminal && !!a;
-  const context = item?.live?.context ?? null;
 
   return (
     <div class="composer-wrap">
@@ -594,7 +596,6 @@ export function Composer({
   );
 }
 
-type Context = NonNullable<NonNullable<Item["live"]>["context"]>;
 /** How long a tapped gauge keeps its details open. */
 const TIP_MS = 3000;
 
@@ -605,7 +606,7 @@ const TIP_MS = 3000;
  * omp, or at once on a tap, closing after 3 s; either way above the pointer. While the agent works,
  * a glint runs along the border, as in omp.
  */
-function ContextGauge({ context, working }: { context: Context; working: boolean }) {
+function ContextGauge({ context, working }: { context: ContextUse; working: boolean }) {
   const [tip, setTip] = useState(false);
   useEffect(() => {
     if (!tip) return;

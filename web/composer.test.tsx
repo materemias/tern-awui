@@ -976,7 +976,7 @@ describe("stop, context and model controls", () => {
   });
 
   test("context usage shows its window, compaction tick and details, opened by a tap, while clamping the fill", async () => {
-    await show({ item: item({ live: live({ context: { tokens: 150000, window: 200000, percent: 75, compactAt: 82.4 } }) }) });
+    await show({ item: item({ live: live({}) }), context: { tokens: 150000, window: 200000, percent: 75, compactAt: 82.4 } });
     expect([...root.querySelectorAll(".ctx-tip > *")].map((e) => e.textContent)).toEqual(["Context 75% used", "150K of 200K tokens", "Auto-compact at 82%"]);
     expect(node(".ctx-fill").style.width).toBe("75%");
     expect(node(".ctx-mark").style.left).toBe("82.4%");
@@ -986,13 +986,13 @@ describe("stop, context and model controls", () => {
     expect(node(".ctx").classList.contains("tip-open")).toBe(true);
     await act(() => node(".ctx-hit").click());
     expect(node(".ctx").classList.contains("tip-open")).toBe(false);
-    await show({ item: item({ live: live({ context: { tokens: 220000, window: 200000, percent: 110, compactAt: null } }) }) });
+    await show({ context: { tokens: 220000, window: 200000, percent: 110, compactAt: null } });
     expect(node(".ctx").classList.contains("ctx-over")).toBe(true);
     expect(node(".ctx-fill").style.width).toBe("100%");
     expect(node(".ctx-pct").textContent).toBe("110%");
     expect(root.querySelector(".ctx-mark")).toBeNull();
     expect([...root.querySelectorAll(".ctx-tip > *")].map((e) => e.textContent)).toEqual(["Context 110% used", "220K of 200K tokens"]);
-    await show({ item: item({ live: live({ context: { tokens: 0, window: 200000, percent: 0, compactAt: null } }) }) });
+    await show({ context: { tokens: 0, window: 200000, percent: 0, compactAt: null } });
     expect(node(".ctx-fill").style.width).toBe("1%");
   });
 

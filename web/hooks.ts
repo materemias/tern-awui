@@ -1,7 +1,8 @@
 // The app's hooks: the clock, the route and back navigation, the layout, and the server stream.
 import { useEffect, useState } from "preact/hooks";
-import type { Btw, ChatEntry, Doc, Run, State, StretchState, Subagent } from "./api";
+import type { Btw, ChatEntry, ContextUse, Doc, Item, Run, State, StretchState, Subagent } from "./api";
 import { backStep, parseRoute, trackOrigin, type Route } from "./lib";
+import { applyStatePatch } from "../lib/state-patch";
 
 /** The app icon counts updates not seen yet: finished turns and waits on you. */
 function setBadge(count: number) {
@@ -131,9 +132,13 @@ export function useStream(block: string | null, view: View, sub: string | null =
   const [queued, setQueued] = useState<{ text: string; followUp: boolean }[]>([]);
   /** The running turn as omp's working row shows it: its start and the current tool's intent. */
   const [run, setRun] = useState<Run | null>(null);
+  /** The session's context gauge, sent on its own as omp updates it (every 2 s while it works). */
+  const [context, setContext] = useState<ContextUse | null>(null);
   /** The pane's open stretches as its omp (stretch.ts) reports them; null when it reports none. */
   const [stretch, setStretch] = useState<StretchState | null>(null);
   const [online, setOnline] = useState(false);
+  // The gauge belongs to the block: switching chat and Raw on one block keeps it until the new stream resends it.
+  useEffect(() => setContext(null), [block]);
   useEffect(() => {
     setChat(null);
     setSubagents(null);
@@ -171,11 +176,21 @@ export function useStream(block: string | null, view: View, sub: string | null =
         retryTimer = window.setTimeout(open, retryMs);
         retryMs = Math.min(retryMs * 2, 30_000);
       };
-      src.addEventListener("state", (e) => {
-        const s: State = JSON.parse(e.data);
+      // The first `state` is the whole list; after it the stream sends `patch`: changed rows and the order.
+      let current: State | null = null;
+      const take = (s: State) => {
+        current = s;
         setState(s);
         setBadge(s.badge);
         reloadInto(s.app);
+      };
+      src.addEventListener("state", (e) => take(JSON.parse(e.data)));
+      src.addEventListener("patch", (e) => {
+        const next = current && applyStatePatch<State, Item>(current, JSON.parse(e.data));
+        if (next) return take(next);
+        // A patch for a list this page doesn't hold: reconnect for a full copy.
+        src.close();
+        if (es === src) open();
       });
       src.addEventListener("chat", (e) => {
         setChat(JSON.parse(e.data)?.entries ?? []);
@@ -198,6 +213,7 @@ export function useStream(block: string | null, view: View, sub: string | null =
       src.addEventListener("draft", (e) => setDraft(JSON.parse(e.data)));
       src.addEventListener("queued", (e) => setQueued(JSON.parse(e.data)));
       src.addEventListener("run", (e) => setRun(JSON.parse(e.data)));
+      src.addEventListener("context", (e) => setContext(JSON.parse(e.data)));
       src.addEventListener("stretch", (e) => setStretch(JSON.parse(e.data)));
       src.addEventListener("doc", (e) => setDoc(JSON.parse(e.data)));
       src.addEventListener("subagents", (e) => setSubagents(JSON.parse(e.data)));
@@ -230,5 +246,5 @@ export function useStream(block: string | null, view: View, sub: string | null =
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [block, view, sub]);
-  return { state, chat, subagents, live, queued, run, btw, setBtw, screen, draft, doc, online, stretch };
+  return { state, chat, subagents, live, queued, run, context, btw, setBtw, screen, draft, doc, online, stretch };
 }

@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { branchOf, projectOf } from "./git";
+import { repoOf } from "./git";
 
 const root = realpathSync(mkdtempSync(`${tmpdir()}/tern-awui-git-`));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -21,57 +21,70 @@ function repo(name: string): string {
   return dir;
 }
 
-describe("projectOf", () => {
-  test("a folder inside a repo is named for the repo", () => {
+const project = async (cwd: string, home = "/home/nobody") => (await repoOf(cwd, home, () => {})).project;
+const branch = async (cwd: string) => (await repoOf(cwd, "/home/nobody", () => {})).branch;
+
+describe("project", () => {
+  test("a folder inside a repo is named for the repo", async () => {
     const dir = repo("my-repo");
-    expect(projectOf(`${dir}/src/deep`, "/home/nobody")).toBe("my-repo");
+    expect(await project(`${dir}/src/deep`)).toBe("my-repo");
   });
 
-  test("outside a repo, the folder's own name; home is ~", () => {
+  test("outside a repo, the folder's own name; home is ~", async () => {
     mkdirSync(`${root}/plain/inner`, { recursive: true });
-    expect(projectOf(`${root}/plain/inner`, "/home/nobody")).toBe("inner");
-    expect(projectOf(`${root}/plain`, `${root}/plain`)).toBe("~");
+    expect(await project(`${root}/plain/inner`)).toBe("inner");
+    expect(await project(`${root}/plain`, `${root}/plain`)).toBe("~");
   });
 
-  test("a missing folder still gets a name", () => {
-    expect(projectOf(`${root}/gone/away`, "/home/nobody")).toBe("away");
-    expect(projectOf("/", "/home/nobody")).toBe("/");
+  test("a missing folder still gets a name", async () => {
+    expect(await project(`${root}/gone/away`)).toBe("away");
+    expect(await project("/")).toBe("/");
   });
 
-  test("a folder is regrouped after git init changes its repository root", () => {
+  test("a stale answer is served while git reruns; the change is reported, then served", async () => {
     const cwd = `${root}/new-project/src`;
     mkdirSync(cwd, { recursive: true });
-    expect(projectOf(cwd, root)).toBe("src");
+    expect(await project(cwd, root)).toBe("src");
     git(`${root}/new-project`, "init", "-q");
+    const changed = Promise.withResolvers<void>();
     const clock = spyOn(Date, "now").mockReturnValue(Date.now() + 10_001);
     try {
-      expect(projectOf(cwd, root)).toBe("new-project");
+      expect((await repoOf(cwd, root, changed.resolve)).project).toBe("src");
+      await changed.promise;
+      expect(await project(cwd, root)).toBe("new-project");
     } finally {
       clock.mockRestore();
     }
   });
 });
 
-describe("branchOf", () => {
-  test("the checked-out branch; a short sha when detached", () => {
+describe("branch", () => {
+  test("the checked-out branch; a short sha when detached; the name on an unborn branch", async () => {
     const dir = repo("branchy");
-    expect(branchOf(dir)).toBe("trunk");
+    expect(await branch(dir)).toBe("trunk");
+    // A tag with the branch's name makes `--abbrev-ref` say `heads/trunk`; the list shows the plain name.
+    git(dir, "tag", "trunk");
+    // A folder not looked up yet: the cache would otherwise answer from before the tag.
+    expect(await branch(`${dir}/src/deep`)).toBe("trunk");
     const sha = git(dir, "rev-parse", "--short", "HEAD");
     git(dir, "checkout", "-q", "--detach");
-    expect(branchOf(`${dir}/src`)).toBe(sha);
+    expect(await branch(`${dir}/src`)).toBe(sha);
+    mkdirSync(`${root}/unborn`);
+    git(`${root}/unborn`, "init", "-q", "-b", "fresh");
+    expect(await branch(`${root}/unborn`)).toBe("fresh");
   });
 
-  test("null outside a repo", () => {
+  test("null outside a repo", async () => {
     mkdirSync(`${root}/norepo`, { recursive: true });
-    expect(branchOf(`${root}/norepo`)).toBeNull();
+    expect(await branch(`${root}/norepo`)).toBeNull();
   });
 });
 
 test("without git on PATH: names from the folder, no branch", () => {
   const dir = repo("hidden-repo");
-  const script = `import { projectOf, branchOf } from ${JSON.stringify(`${import.meta.dir}/git.ts`)};
-console.log(JSON.stringify([projectOf(${JSON.stringify(`${dir}/src`)}, "/h"), branchOf(${JSON.stringify(dir)})]));`;
+  const script = `import { repoOf } from ${JSON.stringify(`${import.meta.dir}/git.ts`)};
+console.log(JSON.stringify(await repoOf(${JSON.stringify(`${dir}/src`)}, "/h", () => {})));`;
   const r = Bun.spawnSync([process.execPath, "-e", script], { env: { PATH: "/nonexistent", HOME: root } });
   expect(r.stderr.toString()).toBe("");
-  expect(JSON.parse(r.stdout.toString())).toEqual(["src", null]);
+  expect(JSON.parse(r.stdout.toString())).toEqual({ project: "src", branch: null });
 });

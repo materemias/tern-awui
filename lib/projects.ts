@@ -38,6 +38,9 @@ export async function recentProjects(sessionsDir: string, open: { cwd: string; a
   let files: string[] = [];
   try {
     files = [...new Bun.Glob("*/*.jsonl").scanSync(sessionsDir)].map((rel) => join(sessionsDir, rel));
+    // Deleted transcripts' header cwds go with them.
+    const present = new Set(files);
+    for (const file of cwdCache.keys()) if (!present.has(file)) cwdCache.delete(file);
   } catch {
     // No sessions folder yet: only the open blocks.
   }

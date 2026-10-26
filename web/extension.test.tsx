@@ -60,7 +60,7 @@ function item(live: Partial<Live> | null, status = "idle"): Item {
     project: "app",
     branch: null,
     agent: { sessionId: "019a-c0de", lastPrompt: "", recap: "", recapStale: false, lastActivity: 0, subagents: 0 },
-    live: live && { model: "m", thinking: "", levels: [], tiers: [], tier: "", context: null, jobs: [], protocol: 2, caps: null, build: "b", mismatch: null, restart: false, ...live },
+    live: live && { model: "m", thinking: "", levels: [], tiers: [], tier: "", jobs: [], protocol: 2, caps: null, build: "b", mismatch: null, restart: false, ...live },
     status,
     since: 0,
     starting: false,

@@ -133,6 +133,15 @@ test("assistant markdown local images resolve through authenticated blob URLs", 
     expect(Buffer.from(await image.arrayBuffer())).toEqual(PNG);
     expect((await fetch(local.base + src)).status).toBe(403);
     expect((await local.get(path)).headers.get("content-type")).not.toBe("image/png");
+    // Overwritten in place, transcript unchanged: a reopened chat gets the new image's hash, not the shared read's old one.
+    const changed = Buffer.concat([PNG, Buffer.from("more")]);
+    writeFileSync(path, changed);
+    const again = new Events();
+    await again.open(local, "?block=1&view=chat");
+    const reread = arr(obj(await again.take("chat")).entries).map(obj).find((entry) => entry.text === `![Corrected queued message](${path})`)!;
+    const fresh = String(obj(reread.imageSources)[path]);
+    expect(fresh).not.toBe(src);
+    expect(Buffer.from(await (await local.get(fresh)).arrayBuffer())).toEqual(changed);
   } finally {
     await local.close();
   }
@@ -194,7 +203,6 @@ test("a bridge snapshot creates an agent, reads transcript facts/recap and reord
   expect(arr(state.projects).map((p) => obj(p).name)).toEqual(["alpha", "beta", "~"]);
   expect(arr(obj(arr(state.projects)[0]).items).map((i) => obj(i).block)).toEqual(["1", "4"]);
   expect(item(state, 1).agent).toEqual({ sessionId: s.session, lastPrompt: "Which route?", recap: "Earlier recap", recapStale: true, lastActivity: T0 + 4000, subagents: 0 });
-  expect(obj(item(state, 1).live).context).toEqual({ tokens: 40000, window: 200000, percent: 20, compactAt: 80 });
   // A snapshot without them is an extension from before versioning.
   expect(obj(item(state, 1).live)).toMatchObject({ protocol: 0, caps: null, build: "", mismatch: "older", restart: false });
   expect(state.counts).toEqual({ working: 1, blocked: 0, idle: 0 });
@@ -205,6 +213,8 @@ test("SSE streams chat, draft, live and queued updates and pushes state without 
   await events.open(s, "?block=1&view=chat");
   expect((await agent.take("watch")).on).toBe(true);
   expect(await events.take("draft")).toEqual({ live: true, text: "" });
+  // The gauge comes as its own event, with where auto-compaction fires (omp config: 80 %).
+  expect(await events.take("context")).toEqual({ tokens: 40000, window: 200000, percent: 20, compactAt: 80 });
   expect(item(await events.take("state"), 1).status).toBe("working");
   const chat = obj(await events.take("chat"));
   expect(arr(chat.entries).map((e) => obj(e).role)).toEqual(["user", "assistant", "turn", "user", "ask"]);
@@ -217,6 +227,8 @@ test("SSE streams chat, draft, live and queued updates and pushes state without 
   expect(await events.take("live")).toEqual({ text: "Finished", done: true });
   agent.send({ t: "btw", id: "side", text: "side answer", done: true });
   expect(await events.take("btw")).toEqual({ id: "side", text: "side answer", done: true, error: "" });
+  agent.report({ context: { tokens: 50000, window: 200000, percent: 25 } });
+  expect(await events.take("context")).toEqual({ tokens: 50000, window: 200000, percent: 25, compactAt: 80 });
   const start = Date.now();
   agent.report({ model: "test/changed" });
   await events.take("state", (state) => obj(item(state, 1).live).model === "test/changed", 1500);
