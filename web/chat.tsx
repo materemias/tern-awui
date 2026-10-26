@@ -83,7 +83,9 @@ export function Markdown({
   onClick?: (e: MouseEvent) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const html = useMemo(() => renderMarkdown(text, imageSources), [text, imageSources]);
+  // Each `chat` event parses a fresh `imageSources` object: compare its content, not its identity.
+  const sources = imageSources && JSON.stringify(imageSources);
+  const html = useMemo(() => renderMarkdown(text, imageSources), [text, sources]);
   const lang = useMemo(() => langOf(text), [text]);
   useEffect(() => {
     if (!ref.current) return;

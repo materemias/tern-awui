@@ -33,11 +33,24 @@ function reloadInto(build: string) {
 export type Draft = { live: boolean; text: string };
 export type View = "chat" | "screen" | "subagents";
 
+/** The clock, ticking every `intervalMs` while the page is visible; a hidden page's timer stops, and it catches up on return. */
 export function useNow(intervalMs: number): number {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), intervalMs);
-    return () => clearInterval(t);
+    let t: number | undefined;
+    const sync = () => {
+      clearInterval(t);
+      t = undefined;
+      if (document.visibilityState === "hidden") return;
+      setNow(Date.now());
+      t = window.setInterval(() => setNow(Date.now()), intervalMs);
+    };
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", sync);
+    };
   }, [intervalMs]);
   return now;
 }
