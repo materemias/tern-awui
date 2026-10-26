@@ -61,8 +61,8 @@ describe("plan: linux", () => {
   const actions = plan(linux);
   const [, unit] = writes(actions);
 
-  test("builds, links the extension, retires the old tern-mobile unit, writes the unit, starts it, serves it", () => {
-    expect(actions.map((a) => a.kind)).toEqual(["run", "symlink", "write", "run", "remove", "write", "run", "run", "run", "run"]);
+  test("builds, links the extension, retires the old tern-mobile unit, links bun as tern-awui, writes the unit, starts it, serves it", () => {
+    expect(actions.map((a) => a.kind)).toEqual(["run", "symlink", "write", "run", "remove", "symlink", "write", "run", "run", "run", "run"]);
     expect(actions[0]).toEqual({ kind: "run", argv: ["/home/ann/.bun/bin/bun", "build.ts"], cwd: linux.repo });
     expect(actions[1]).toEqual({
       kind: "symlink",
@@ -71,6 +71,8 @@ describe("plan: linux", () => {
     });
     expect(unit.path).toBe("/home/ann/.config/systemd/user/tern-awui.service");
     expect(actions[4]).toEqual({ kind: "remove", path: "/home/ann/.config/systemd/user/tern-mobile.service" });
+    // A process named bun is what scheduler rules (ananicy-cpp: nice 16, SCHED_IDLE) push to the back.
+    expect(actions[5]).toEqual({ kind: "symlink", path: "/home/ann/.config/tern-mobile/tern-awui", target: "/home/ann/.bun/bin/bun" });
     expect(runs(actions).slice(1)).toEqual([
       ["systemctl", "--user", "disable", "--now", "tern-mobile.service"],
       ["systemctl", "--user", "daemon-reload"],
@@ -82,7 +84,7 @@ describe("plan: linux", () => {
 
   test("the unit quotes paths with spaces and sets PATH, port and logins", () => {
     expect(unit.content).toContain("WorkingDirectory=/home/ann/My Code/tern-awui\n");
-    expect(unit.content).toContain('ExecStart="/home/ann/.bun/bin/bun" "/home/ann/My Code/tern-awui/server.ts"\n');
+    expect(unit.content).toContain('ExecStart="/home/ann/.config/tern-mobile/tern-awui" "/home/ann/My Code/tern-awui/server.ts"\n');
     expect(unit.content).toContain('Environment="PATH=/home/ann/.local/bin:/home/ann/bin:/home/ann/.bun/bin:/usr/local/bin:/usr/bin:/bin"\n');
     expect(unit.content).toContain('Environment="TERN_AWUI_PORT=4380"\n');
     expect(unit.content).toContain('Environment="TERN_AWUI_ALLOW=ann@example.com,bob@example.com"\n');
@@ -93,13 +95,13 @@ describe("plan: linux", () => {
   test("systemd specifiers, quotes and $ in paths are escaped", () => {
     const [, u] = writes(plan({ ...linux, repo: '/home/ann/100% "x" $y', extraEnv: { TERN_AWUI_VAPID_SUBJECT: "mailto:a@b" } }));
     expect(u.content).toContain('WorkingDirectory=/home/ann/100%% "x" $y\n');
-    expect(u.content).toContain('ExecStart="/home/ann/.bun/bin/bun" "/home/ann/100%% \\"x\\" $$y/server.ts"\n');
+    expect(u.content).toContain('ExecStart="/home/ann/.config/tern-mobile/tern-awui" "/home/ann/100%% \\"x\\" $$y/server.ts"\n');
     expect(u.content).toContain('Environment="TERN_AWUI_VAPID_SUBJECT=mailto:a@b"\n');
   });
 
   test("systemd does not expand dollars in the executable name", () => {
-    const [, u] = writes(plan({ ...linux, bun: "/home/ann/$tools/bun", repo: "/home/ann/$code" }));
-    expect(u.content).toContain('ExecStart="/home/ann/$tools/bun" "/home/ann/$$code/server.ts"\n');
+    const [, u] = writes(plan({ ...linux, configDir: "/home/ann/$conf", repo: "/home/ann/$code" }));
+    expect(u.content).toContain('ExecStart="/home/ann/$conf/tern-awui" "/home/ann/$$code/server.ts"\n');
   });
 
   test("the port flows into the unit, serve and the app URL", () => {
@@ -124,6 +126,7 @@ describe("plan: linux", () => {
     expect(plan({ ...linux, uninstall: true })).toEqual([
       { kind: "run", argv: ["systemctl", "--user", "disable", "--now", "tern-awui.service"], mayFail: true },
       { kind: "remove", path: "/home/ann/.config/systemd/user/tern-awui.service" },
+      { kind: "remove", path: "/home/ann/.config/tern-mobile/tern-awui" },
       { kind: "run", argv: ["systemctl", "--user", "disable", "--now", "tern-mobile.service"], mayFail: true },
       { kind: "remove", path: "/home/ann/.config/systemd/user/tern-mobile.service" },
       { kind: "run", argv: ["systemctl", "--user", "daemon-reload"] },
@@ -241,6 +244,8 @@ describe("plan: win32", () => {
     expect(task.encoding).toBe("utf16le");
     expect(task.content).toContain("<LogonTrigger><Enabled>true</Enabled><UserId>DESK\\Ann</UserId></LogonTrigger>");
     expect(task.content).toContain("<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>");
+    // Task Scheduler's default 7 is below normal, which bun and its tern/git/omp children inherit.
+    expect(task.content).toContain("<Priority>5</Priority>");
     expect(task.content).toContain(
       "<Command>wscript.exe</Command><Arguments>//B //NoLogo &quot;C:\\Users\\Ann\\.config\\tern-mobile\\tern-awui.vbs&quot;</Arguments>",
     );

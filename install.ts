@@ -94,6 +94,14 @@ const sdSpec = (s: string) => s.replaceAll("%", "%%");
 const sdQuote = (s: string) => `"${sdSpec(s).replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 const sdExecArg = (s: string) => sdQuote(s).replaceAll("$", "$$$$");
 
+/**
+ * The unit runs bun through `<configDir>/tern-awui`, a link to it: the process is then named tern-awui, so a
+ * scheduler rule for `bun` (ananicy-cpp files bun under BG_CPUIO: nice 16, SCHED_IDLE) leaves it alone.
+ */
+function bunAlias(input: PlanInput): string {
+  return path.posix.join(input.configDir, "tern-awui");
+}
+
 function systemdUnit(input: PlanInput): string {
   const server = path.posix.join(input.repo, "server.ts");
   const env = [["PATH", servicePath(input).join(":")] as [string, string], ...serviceEnv(input)];
@@ -105,7 +113,7 @@ function systemdUnit(input: PlanInput): string {
     "[Service]",
     `WorkingDirectory=${sdSpec(input.repo)}`,
     ...env.map(([k, v]) => `Environment=${sdQuote(`${k}=${v}`)}`),
-    `ExecStart=${sdQuote(input.bun)} ${sdExecArg(server)}`,
+    `ExecStart=${sdQuote(bunAlias(input))} ${sdExecArg(server)}`,
     "Restart=on-failure",
     "RestartSec=3",
     "",
@@ -181,6 +189,8 @@ function windowsTask(input: PlanInput, launcher: string): string {
     "    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>",
     "    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>",
     "    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>",
+    // Normal priority; the default 7 (below normal) starves the server, and the tern/git/omp it runs, under load.
+    "    <Priority>5</Priority>",
     "    <Enabled>true</Enabled>",
     "  </Settings>",
     '  <Actions Context="Author">',
@@ -258,7 +268,13 @@ export function plan(input: PlanInput): Action[] {
   if (input.uninstall) {
     const service: Action[] =
       input.platform === "linux"
-        ? [{ ...systemctl("disable", "--now", `${SERVICE_NAME}.service`), mayFail: true }, { kind: "remove", path: unit }, ...dropLegacyUnit, systemctl("daemon-reload")]
+        ? [
+            { ...systemctl("disable", "--now", `${SERVICE_NAME}.service`), mayFail: true },
+            { kind: "remove", path: unit },
+            { kind: "remove", path: bunAlias(input) },
+            ...dropLegacyUnit,
+            systemctl("daemon-reload"),
+          ]
         : input.platform === "darwin"
           ? [bootout, { kind: "remove", path: plist }]
           : [
@@ -281,6 +297,7 @@ export function plan(input: PlanInput): Action[] {
   if (input.platform === "linux") {
     actions.push(
       ...dropLegacyUnit,
+      { kind: "symlink", path: bunAlias(input), target: input.bun },
       { kind: "write", path: unit, content: systemdUnit(input) },
       systemctl("daemon-reload"),
       systemctl("enable", `${SERVICE_NAME}.service`),

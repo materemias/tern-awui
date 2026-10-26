@@ -58,7 +58,7 @@ describe.skipIf(!POSIX)("main: linux", () => {
     expect(existsSync(path.join(home, ".config"))).toBe(false);
     expect(existsSync(ompDir)).toBe(false);
     const actions = out.filter((l) => l.startsWith("[dry-run] "));
-    expect(actions).toHaveLength(10);
+    expect(actions).toHaveLength(11);
     expect(actions.join("\n")).toContain(unit());
     expect(actions.join("\n")).toContain(extension());
     expect(actions.at(-1)).toContain("serve --bg --https=4380 http://127.0.0.1:4380");
