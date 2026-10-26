@@ -72,10 +72,10 @@ function pushBrowser(permission: NotificationPermission = "default") {
   let subscribed = false;
   property(window, "PushManager", class {});
   property(globalThis, "Notification", { permission, requestPermission: async () => "granted" });
-  property(navigator, "serviceWorker", { ready: Promise.resolve({ pushManager: {
+  property(navigator, "serviceWorker", Object.assign(new EventTarget(), { ready: Promise.resolve({ pushManager: {
     getSubscription: async () => subscribed ? subscription : null,
     subscribe: async () => { subscribed = true; return subscription; },
-  } }) });
+  } }) }));
 }
 
 describe("Home", () => {

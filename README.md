@@ -28,7 +28,7 @@ It has no login of its own. You reach it over a private network you control, suc
 - **Two-way control.** Send prompts, steer a running turn or queue a follow-up, stop the agent, answer `ask` questions with a tap, attach photos, and use omp's `/command`, `/skill:` and `@file` completions.
 - **The draft is shared.** Text typed on the phone appears in the Tern pane's prompt and the other way round, so you can start on one and finish on the other.
 - **Session controls.** Switch model, effort or Ctrl+P role, watch the context gauge, rewind or copy, ask a side question with `/btw`, and read running subagents' conversations.
-- **Notifications.** Optional push notifications when a session finishes or needs you, and an unread count on the app icon.
+- **Notifications.** Optional push notifications when a session finishes or needs you, and an unread count on the app icon. Notifications dismiss when you open the session or start another turn, including on desktop, while the mobile app is active. Cleanup preserves newly arrived unread notifications. If the app is closed or suspended, dismissal waits until it resumes.
 - **Shells and files too.** Plain terminals show their screen with a key bar (Esc, ^C, arrows, Tab), and Tern notes and opened files are readable.
 
 ## Works with Tern

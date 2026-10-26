@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeEach, describe, expect, jest, mock, spyOn, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import type { Btw, ChatEntry, Doc, Subagent } from "./api";
+import type { Btw, ChatEntry, Doc, State, Subagent } from "./api";
 import type { View } from "./hooks";
-import { FakeEventSource, item, settle, state } from "./fakes";
+import { FakeEventSource, item, Net, settle, state } from "./fakes";
 
 GlobalRegistrator.register({ url: "http://localhost/" });
 afterAll(() => GlobalRegistrator.unregister());
@@ -72,6 +72,334 @@ async function visibility(value: DocumentVisibilityState) {
   Object.defineProperty(document, "visibilityState", { configurable: true, value });
   await act(() => { document.dispatchEvent(new Event("visibilitychange")); });
 }
+
+function notificationBrowser(tags: string[]) {
+  const notifications = tags.map((tag) => ({ tag, close: mock(() => {}) }));
+  const getNotifications = mock(async () => notifications);
+  const getRegistration = mock(async (): Promise<{ getNotifications: typeof getNotifications } | undefined> => ({ getNotifications }));
+  const serviceWorker = Object.assign(new EventTarget(), { getRegistration });
+  property(navigator, "serviceWorker", serviceWorker);
+  const shown = () => serviceWorker.dispatchEvent(new MessageEvent("message", { data: { type: "notification-shown" } }));
+  return { notifications, getNotifications, getRegistration, serviceWorker, shown };
+}
+
+describe("session notification dismissal", () => {
+  const net = new Net();
+  let serverState: State;
+  beforeEach(() => {
+    net.install();
+    restore.push(() => net.restore());
+    serverState = state([]);
+    net.reply = () => Response.json(serverState);
+  });
+
+  test("fresh state and patches close seen or deleted sessions but retain unseen and unrelated notifications", async () => {
+    const browser = notificationBrowser(["b5", "b6", "b7", "tern", "other", "build"]);
+    await act(() => render(<StreamHost />, root));
+    await act(() => FakeEventSource.last.open());
+    const waiting = item({ block: "5", unseen: "blocked" });
+    const finished = item({ block: "6", unseen: "done" });
+    serverState = state([waiting, finished], { badge: 2 });
+    await emit("state", serverState);
+    expect(browser.notifications.map((n) => n.close.mock.calls.length)).toEqual([0, 0, 1, 0, 0, 0]);
+    serverState = state([{ ...waiting, unseen: null }]);
+    const { projects, ...rest } = serverState;
+    await emit("patch", { ...rest, order: [[projects[0].name, ["5"]]], changed: projects[0].items });
+    expect(browser.notifications.map((n) => n.close.mock.calls.length)).toEqual([1, 1, 2, 0, 0, 0]);
+  });
+
+  test.each(["stream", "response"] as const)("incomplete %s pane listings preserve unread notifications until an authoritative list arrives", async (incomplete) => {
+    const browser = notificationBrowser(["b5"]);
+    await act(() => render(<StreamHost />, root));
+    await act(() => FakeEventSource.last.open());
+    const unread = state([item({ unseen: "done" })], { badge: 1 });
+    serverState = unread;
+    await emit("state", unread);
+    serverState = incomplete === "response" ? state([], { badge: 1 }) : state([]);
+    await emit("state", incomplete === "stream" ? state([], { badge: 1 }) : state([]));
+    expect(browser.notifications[0].close).not.toHaveBeenCalled();
+    serverState = state([]);
+    await emit("state", state([]));
+    expect(browser.notifications[0].close).toHaveBeenCalledTimes(1);
+  });
+
+  test("a worker display message reconciles delayed pushes using the current unseen state", async () => {
+    const browser = notificationBrowser([]);
+    await act(() => render(<StreamHost block="5" />, root));
+    await act(() => FakeEventSource.last.open());
+    serverState = state([item(), item({ block: "6", unseen: "done" })], { badge: 1 });
+    await emit("state", serverState);
+    const seen = { tag: "b5", close: mock(() => {}) };
+    const unseen = { tag: "b6", close: mock(() => {}) };
+    browser.notifications.push(seen, unseen);
+    await act(async () => { browser.shown(); await settle(); });
+    expect(seen.close).not.toHaveBeenCalled();
+    await act(() => FakeEventSource.last.open());
+    await emit("state", serverState);
+    expect(seen.close).toHaveBeenCalledTimes(1);
+    expect(unseen.close).not.toHaveBeenCalled();
+    await act(async () => {
+      browser.serviceWorker.dispatchEvent(new MessageEvent("message", { data: { open: "/#/b/5" } }));
+      await settle();
+    });
+    expect(seen.close).toHaveBeenCalledTimes(1);
+  });
+
+  test("push delivery before its unseen SSE update waits for a fresh snapshot and retains the unread notification", async () => {
+    const browser = notificationBrowser([]);
+    await act(() => render(<StreamHost />, root));
+    await act(() => FakeEventSource.last.open());
+    await emit("state", state([item()]));
+    const notification = { tag: "b5", close: mock(() => {}) };
+    browser.notifications.push(notification);
+    const old = FakeEventSource.last;
+    await act(async () => { browser.shown(); await settle(); });
+    expect(old.readyState).toBe(FakeEventSource.CLOSED);
+    expect(notification.close).not.toHaveBeenCalled();
+    // Another push while the replacement stream is connecting also needs a newer snapshot.
+    const connecting = FakeEventSource.last;
+    await act(async () => { browser.shown(); await settle(); });
+    expect(connecting.readyState).toBe(FakeEventSource.CLOSED);
+    await act(() => FakeEventSource.last.open());
+    serverState = state([item({ unseen: "done" })], { badge: 1 });
+    await emit("state", serverState);
+    expect(notification.close).not.toHaveBeenCalled();
+    serverState = state([item()]);
+    await emit("state", serverState);
+    expect(notification.close).toHaveBeenCalledTimes(1);
+  });
+
+  test("a notification displayed during enumeration stays unread before its worker message and SSE update arrive", async () => {
+    const browser = notificationBrowser([]);
+    const notifications = Promise.withResolvers<typeof browser.notifications>();
+    browser.getNotifications.mockImplementationOnce(() => notifications.promise);
+    const fetchState = spyOn(globalThis, "fetch");
+    const timeout = spyOn(AbortSignal, "timeout");
+    serverState = state([item()]);
+    await act(() => render(<StreamHost />, root));
+    const source = FakeEventSource.last;
+    await act(() => source.open());
+    await emit("state", serverState);
+    expect(browser.getNotifications).toHaveBeenCalledTimes(1);
+    expect(net.calls).toHaveLength(0);
+
+    serverState = state([item({ unseen: "done" })], { badge: 1 });
+    const notification = { tag: "b5", close: mock(() => {}) };
+    browser.notifications.push(notification);
+    await act(async () => { notifications.resolve(browser.notifications); await settle(); });
+
+    expect(net.calls).toEqual([{ url: "/api/state", method: "GET", body: undefined, headers: {} }]);
+    expect(fetchState).toHaveBeenCalledWith("/api/state", {
+      cache: "no-store",
+      signal: expect.any(AbortSignal),
+    });
+    expect(timeout).toHaveBeenCalledWith(5000);
+    expect(FakeEventSource.last).toBe(source);
+    expect(snapshot()).toMatchObject({ state: state([item()]), online: true });
+    expect(notification.close).not.toHaveBeenCalled();
+
+    await act(async () => { browser.shown(); await settle(); });
+    await act(() => FakeEventSource.last.open());
+    await emit("state", serverState);
+    expect(notification.close).not.toHaveBeenCalled();
+    serverState = state([item()]);
+    await emit("state", serverState);
+    expect(notification.close).toHaveBeenCalledTimes(1);
+  });
+
+  test("newer unseen SSE state preserves notifications while an older state request is pending", async () => {
+    const browser = notificationBrowser(["b5"]);
+    const response = Promise.withResolvers<Response>();
+    net.reply = () => response.promise;
+    await act(() => render(<StreamHost />, root));
+    await act(() => FakeEventSource.last.open());
+    await emit("state", state([item()]));
+    expect(net.calls).toHaveLength(1);
+
+    // Older HTTP replies must not override the latest unread SSE state.
+    net.reply = () => Response.json(state([item()]));
+    await emit("state", state([item({ unseen: "blocked" })], { badge: 1 }));
+    expect(net.calls).toHaveLength(2);
+    expect(browser.notifications[0].close).not.toHaveBeenCalled();
+    await act(async () => { response.resolve(Response.json(state([item()]))); await settle(); });
+    expect(browser.notifications[0].close).not.toHaveBeenCalled();
+
+    await emit("state", state([item()]));
+    expect(browser.notifications[0].close).toHaveBeenCalledTimes(1);
+  });
+
+  test.each(["network", "http", "json", "shape", "missing rows", "undercount"] as const)("a failed or inconsistent state request preserves notifications: %s", async (failure) => {
+    const browser = notificationBrowser(["b5"]);
+    net.reply = () => {
+      if (failure === "network") return Promise.reject(new Error("offline"));
+      if (failure === "http") return new Response("unavailable", { status: 503 });
+      if (failure === "json") return new Response("not json");
+      if (failure === "shape") return Response.json({ badge: 0, projects: [{ items: [{ block: "6" }] }] });
+      if (failure === "missing rows") return Response.json(state([], { badge: 1 }));
+      return Response.json(state([item({ block: "6", unseen: "done" })]));
+    };
+    await act(() => render(<StreamHost />, root));
+    await act(() => FakeEventSource.last.open());
+    await emit("state", state([item()]));
+    expect(net.calls).toHaveLength(1);
+    expect(browser.notifications[0].close).not.toHaveBeenCalled();
+    expect(snapshot()).toMatchObject({ state: state([item()]), online: true });
+
+    net.reply = () => Response.json(state([item()]));
+    await emit("state", state([item()]));
+    expect(browser.notifications[0].close).toHaveBeenCalledTimes(1);
+  });
+
+  test.each(["hidden", "disconnected", "unmounted", "reconnected"] as const)("an in-flight state request cannot close notifications after becoming %s", async (lifecycle) => {
+    const browser = notificationBrowser(["b5"]);
+    const response = Promise.withResolvers<Response>();
+    net.reply = () => response.promise;
+    await act(() => render(<StreamHost />, root));
+    const source = FakeEventSource.last;
+    await act(() => source.open());
+    await emit("state", state([item()]));
+    expect(net.calls).toHaveLength(1);
+
+    if (lifecycle === "hidden") await visibility("hidden");
+    else if (lifecycle === "unmounted") await act(() => render(null, root));
+    else {
+      await act(() => source.fail());
+      if (lifecycle === "reconnected") {
+        browser.getNotifications.mockResolvedValueOnce([]);
+        await act(() => source.open());
+        await emit("state", state([item()]));
+      }
+    }
+    await act(async () => { response.resolve(Response.json(state([item()]))); await settle(); });
+    expect(browser.notifications[0].close).not.toHaveBeenCalled();
+    expect(net.calls).toHaveLength(1);
+  });
+
+  test("discovery without numeric session notifications does not request state", async () => {
+    const browser = notificationBrowser(["tern", "other", "b", "bfoo", "b-5"]);
+    await act(() => render(<StreamHost />, root));
+    await act(() => FakeEventSource.last.open());
+    await emit("state", state([item()]));
+    expect(browser.getNotifications).toHaveBeenCalledTimes(1);
+    expect(net.calls).toHaveLength(0);
+    expect(browser.notifications.every((n) => n.close.mock.calls.length === 0)).toBe(true);
+  });
+
+  test("reconnecting cancels an older notification enumeration even after a fresh state arrives", async () => {
+    const browser = notificationBrowser(["b5"]);
+    const notifications = Promise.withResolvers<typeof browser.notifications>();
+    browser.getNotifications.mockImplementationOnce(() => notifications.promise);
+    await act(() => render(<StreamHost />, root));
+    await act(() => FakeEventSource.last.open());
+    await emit("state", state([item()]));
+    browser.getNotifications.mockResolvedValueOnce([]);
+    await act(async () => { browser.shown(); await settle(); });
+    await act(() => FakeEventSource.last.open());
+    await emit("state", state([item()]));
+    await act(async () => { notifications.resolve(browser.notifications); await settle(); });
+    expect(browser.notifications[0].close).not.toHaveBeenCalled();
+  });
+
+  test("hidden and disconnected pages wait for fresh visible state, including native reconnects", async () => {
+    const browser = notificationBrowser([]);
+    await act(() => render(<StreamHost />, root));
+    const source = FakeEventSource.last;
+    await act(() => source.open());
+    await emit("state", state([item()]));
+    const notification = { tag: "b5", close: mock(() => {}) };
+    browser.notifications.push(notification);
+    await visibility("hidden");
+    await emit("state", state([item()]));
+    await act(async () => { browser.shown(); await settle(); });
+    await visibility("visible");
+    await act(async () => { browser.shown(); await settle(); });
+    await act(() => FakeEventSource.last.open());
+    expect(notification.close).not.toHaveBeenCalled();
+    await emit("state", state([item({ unseen: "done" })], { badge: 1 }));
+    const reconnected = FakeEventSource.last;
+    await act(() => reconnected.fail());
+    await act(async () => { browser.shown(); await settle(); });
+    await act(() => reconnected.open());
+    await act(async () => { browser.shown(); await settle(); });
+    expect(notification.close).not.toHaveBeenCalled();
+    await act(() => FakeEventSource.last.open());
+    await emit("state", state([item()]));
+    expect(notification.close).toHaveBeenCalledTimes(1);
+  });
+
+  test("returning before the hidden grace expires requests fresh state and dismisses seen notifications", async () => {
+    const browser = notificationBrowser([]);
+    await act(() => render(<StreamHost />, root));
+    await act(() => FakeEventSource.last.open());
+    await emit("state", state([item()]));
+    const first = FakeEventSource.last;
+    await visibility("hidden");
+    const notification = { tag: "b5", close: mock(() => {}) };
+    browser.notifications.push(notification);
+    await act(async () => { browser.shown(); await settle(); });
+    await advance(1000);
+    expect(first.readyState).toBe(FakeEventSource.OPEN);
+    await visibility("visible");
+    expect(first.readyState).toBe(FakeEventSource.CLOSED);
+    expect(notification.close).not.toHaveBeenCalled();
+    await act(() => FakeEventSource.last.open());
+    expect(notification.close).not.toHaveBeenCalled();
+    await emit("state", state([item()]));
+    expect(notification.close).toHaveBeenCalledTimes(1);
+  });
+
+  test("async browser lookups use the latest state rather than the state that started them", async () => {
+    const browser = notificationBrowser(["b5"]);
+    const registration = Promise.withResolvers<{ getNotifications: typeof browser.getNotifications }>();
+    browser.getRegistration.mockImplementationOnce(() => registration.promise);
+    const notifications = Promise.withResolvers<typeof browser.notifications>();
+    browser.getNotifications.mockImplementationOnce(() => notifications.promise);
+    await act(() => render(<StreamHost />, root));
+    await act(() => FakeEventSource.last.open());
+    await emit("state", state([item()]));
+    await emit("state", state([item({ unseen: "blocked" })], { badge: 1 }));
+    await act(async () => {
+      registration.resolve({ getNotifications: browser.getNotifications });
+      await settle();
+      notifications.resolve(browser.notifications);
+      await settle();
+    });
+    expect(browser.notifications[0].close).not.toHaveBeenCalled();
+  });
+
+  test.each(["hidden", "disconnected", "unmounted"] as const)("an in-flight notification lookup cannot close after becoming %s", async (lifecycle) => {
+    const browser = notificationBrowser(["b5"]);
+    const notifications = Promise.withResolvers<typeof browser.notifications>();
+    browser.getNotifications.mockImplementationOnce(() => notifications.promise);
+    await act(() => render(<StreamHost />, root));
+    await act(() => FakeEventSource.last.open());
+    await emit("state", state([item()]));
+    if (lifecycle === "hidden") await visibility("hidden");
+    else if (lifecycle === "disconnected") await act(() => FakeEventSource.last.fail());
+    else await act(() => render(null, root));
+    await act(async () => { notifications.resolve(browser.notifications); await settle(); });
+    expect(browser.notifications[0].close).not.toHaveBeenCalled();
+    if (lifecycle === "unmounted") {
+      const calls = browser.getRegistration.mock.calls.length;
+      browser.shown();
+      expect(browser.getRegistration).toHaveBeenCalledTimes(calls);
+    }
+  });
+
+  test("missing registration and rejected browser APIs do not interrupt stream state", async () => {
+    const browser = notificationBrowser(["b5"]);
+    browser.getRegistration.mockRejectedValueOnce(new Error("registration unavailable"));
+    await act(() => render(<StreamHost />, root));
+    await act(() => FakeEventSource.last.open());
+    await emit("state", state([item()]));
+    browser.getNotifications.mockRejectedValueOnce(new Error("notifications unavailable"));
+    await emit("state", state([item()]));
+    browser.getRegistration.mockResolvedValueOnce(undefined);
+    await emit("state", state([item()]));
+    expect(snapshot()).toMatchObject({ state: state([item()]), online: true });
+    expect(browser.notifications[0].close).not.toHaveBeenCalled();
+  });
+});
 
 describe("useStream", () => {
   test("server events update the rendered state, connection status and app badge", async () => {
@@ -229,7 +557,7 @@ describe("useStream", () => {
     expect(FakeEventSource.last.url).toBe("/api/stream?block=6&view=chat&sub=review%20%26%20check%2Fone");
   });
 
-  test("quick switches retain the stream; a hidden grace closes it and reopening discards stale live and queue", async () => {
+  test("quick switches refresh the stream; a hidden grace closes it and reopening discards stale live and queue", async () => {
     await act(() => render(<StreamHost block="5" />, root));
     const first = FakeEventSource.last;
     await act(() => first.open());
@@ -238,23 +566,25 @@ describe("useStream", () => {
     expect(first.readyState).toBe(FakeEventSource.OPEN);
     await visibility("visible");
     await advance(1);
-    expect(FakeEventSource.all).toHaveLength(1);
-    expect(first.readyState).toBe(FakeEventSource.OPEN);
+    expect(FakeEventSource.all).toHaveLength(2);
+    expect(first.readyState).toBe(FakeEventSource.CLOSED);
+    const second = FakeEventSource.last;
+    await act(() => second.open());
     await emit("live", { text: "Stale", done: false });
     await emit("queued", [{ text: "Stale prompt", followUp: false }]);
     await visibility("hidden");
     await advance(10_000);
-    expect(first.readyState).toBe(FakeEventSource.CLOSED);
+    expect(second.readyState).toBe(FakeEventSource.CLOSED);
     expect(snapshot()).toMatchObject({ online: false });
     await visibility("visible");
-    expect(FakeEventSource.all).toHaveLength(2);
+    expect(FakeEventSource.all).toHaveLength(3);
     expect(FakeEventSource.last.url).toBe(first.url);
     expect(snapshot()).toMatchObject({ live: null, queued: [] });
     await act(() => FakeEventSource.last.open());
     expect(snapshot()).toMatchObject({ online: true });
     FakeEventSource.last.close();
     await visibility("visible");
-    expect(FakeEventSource.all).toHaveLength(3);
+    expect(FakeEventSource.all).toHaveLength(4);
   });
 
   test("an HTTP error that closes the stream reopens it with a growing delay", async () => {

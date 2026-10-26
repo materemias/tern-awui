@@ -4,6 +4,8 @@
 
 ### Fixes
 
+- Session notifications dismiss when you open the session or start another turn on either device, once the mobile app is active.
+- New unread notifications stay visible when they arrive during notification cleanup.
 - The service runs at normal CPU priority under load: on Linux it is no longer named `bun`, which ananicy-cpp idles, and on Windows the scheduled task no longer runs below normal. Re-run `bun install.ts` to apply.
 - A slow git, as on Windows, no longer stalls the server: git runs in the background, gives up after 2 s, and once per folder instead of two or three times.
 - omp settings are read with one `omp config list --json` instead of six `omp config get` runs.

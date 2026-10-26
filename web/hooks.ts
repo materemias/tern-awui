@@ -10,6 +10,25 @@ function setBadge(count: number) {
   void (count > 0 ? navigator.setAppBadge(count) : navigator.clearAppBadge()).catch(() => {});
 }
 
+/** Parse only the dismissal fields; an incomplete or malformed snapshot cannot prove a notification was read. */
+function parseUnseenNotificationTags(value: unknown): Set<string> | null {
+  if (!value || typeof value !== "object" || !("badge" in value) || typeof value.badge !== "number"
+    || !Number.isSafeInteger(value.badge) || value.badge < 0 || !("projects" in value) || !Array.isArray(value.projects)) return null;
+  const unseen = new Set<string>();
+  const projects: unknown[] = value.projects;
+  for (const project of projects) {
+    if (!project || typeof project !== "object" || !("items" in project) || !Array.isArray(project.items)) return null;
+    const items: unknown[] = project.items;
+    for (const item of items) {
+      if (!item || typeof item !== "object" || !("block" in item) || typeof item.block !== "string" || !("unseen" in item)) return null;
+      if (item.unseen !== null && item.unseen !== "done" && item.unseen !== "blocked") return null;
+      if (item.unseen) unseen.add(`b${item.block}`);
+    }
+  }
+  // Failed pane listings can omit rows without clearing their unread badge count.
+  return value.badge === unseen.size ? unseen : null;
+}
+
 // Must stay in the entry bundle: build.ts fails if a lazy chunk holds the build id (chunks are cached as immutable).
 declare const __TERN_AWUI_BUILD__: string | undefined;
 /** The build this page runs (build.ts); "" outside a build (tests), which never reloads. */
@@ -168,13 +187,54 @@ export function useStream(block: string | null, view: View, sub: string | null =
     // A failed HTTP response (502 while the server restarts) closes EventSource for good.
     let retryTimer: number | undefined;
     let retryMs = 1000;
+    // Only a visible, connected stream's fresh state may dismiss a system notification.
+    let notificationState: State | null = null;
+    let notificationEpoch = 0;
+    const canDismiss = () => notificationState && document.visibilityState === "visible" && es?.readyState === EventSource.OPEN;
+    const dismissNotifications = async () => {
+      if (!canDismiss() || !("serviceWorker" in navigator)) return;
+      const epoch = notificationEpoch;
+      try {
+        const registration = await navigator.serviceWorker.getRegistration();
+        if (!registration || !canDismiss() || epoch !== notificationEpoch) return;
+        const notifications = (await registration.getNotifications()).filter((n) => /^b\d+$/.test(n.tag));
+        if (!notifications.length || !canDismiss() || epoch !== notificationEpoch) return;
+        // A push may appear during discovery, before its worker message or unseen SSE update.
+        const response = await fetch("/api/state", { cache: "no-store", signal: AbortSignal.timeout(5000) });
+        if (!response.ok) return;
+        const unseen = parseUnseenNotificationTags(await response.json());
+        if (!unseen || !canDismiss() || epoch !== notificationEpoch) return;
+        // Preserve unread updates from SSE that arrived while the state request was pending.
+        const currentUnseen = parseUnseenNotificationTags(notificationState);
+        if (!currentUnseen) return;
+        for (const notification of notifications) {
+          if (!unseen.has(notification.tag) && !currentUnseen.has(notification.tag)) notification.close();
+        }
+      } catch {
+        // Browser APIs and state requests can fail; leave notifications intact when unsure.
+      }
+    };
+    const onWorkerMessage = (event: MessageEvent) => {
+      if (event.data?.type !== "notification-shown" || document.visibilityState !== "visible" || !es || es.readyState === EventSource.CLOSED) return;
+      // Push delivery may beat the unseen SSE update. Reconnect for a full snapshot before closing.
+      notificationState = null;
+      es.close();
+      clearTimeout(retryTimer);
+      open();
+    };
+    if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", onWorkerMessage);
     const open = () => {
+      notificationState = null;
+      notificationEpoch++;
       // Live text and the queue may have moved on while hidden; the stream resends what's current.
       setLive(null);
       setQueued([]);
       const src = new EventSource(`/api/stream${qs}`);
       es = src;
       src.onopen = () => {
+        if (es !== src) return;
+        notificationEpoch++;
+        notificationState = null;
         // Native reconnects also need a fresh snapshot: empty live text and queues aren't resent.
         clearTimeout(liveTimer);
         retryMs = 1000;
@@ -184,6 +244,9 @@ export function useStream(block: string | null, view: View, sub: string | null =
         setOnline(true);
       };
       src.onerror = () => {
+        if (es !== src) return;
+        notificationEpoch++;
+        notificationState = null;
         setOnline(false);
         if (src.readyState !== EventSource.CLOSED || es !== src || document.visibilityState !== "visible") return;
         clearTimeout(retryTimer);
@@ -193,7 +256,12 @@ export function useStream(block: string | null, view: View, sub: string | null =
       // The first `state` is the whole list; after it the stream sends `patch`: changed rows and the order.
       let current: State | null = null;
       const take = (s: State) => {
+        if (es !== src) return;
         current = s;
+        if (document.visibilityState === "visible") {
+          notificationState = s;
+          void dismissNotifications();
+        }
         setState(s);
         setBadge(s.badge);
         reloadInto(s.app);
@@ -233,6 +301,8 @@ export function useStream(block: string | null, view: View, sub: string | null =
       src.addEventListener("subagents", (e) => setSubagents(JSON.parse(e.data)));
     };
     const close = () => {
+      notificationState = null;
+      notificationEpoch++;
       clearTimeout(retryTimer);
       es?.close();
       es = null;
@@ -240,12 +310,17 @@ export function useStream(block: string | null, view: View, sub: string | null =
     };
     // A hidden app (switched away, screen off, tab in the background) holds no stream: no data
     // flows, the server stops live text for it, and its sessions count as unseen again, so
-    // notifications and badges work for them. A short grace keeps quick app switches cheap.
+    // notifications and badges work for them. A short grace keeps receiving brief background updates.
     let hideTimer: number | undefined;
     const onVisibility = () => {
       clearTimeout(hideTimer);
-      if (document.visibilityState === "hidden") hideTimer = window.setTimeout(close, HIDDEN_GRACE_MS);
-      else if (!es || es.readyState === EventSource.CLOSED) {
+      if (document.visibilityState === "hidden") {
+        notificationState = null;
+        notificationEpoch++;
+        hideTimer = window.setTimeout(close, HIDDEN_GRACE_MS);
+      } else {
+        // Even a brief background interval invalidates the dismissal snapshot. Request a full one.
+        es?.close();
         clearTimeout(retryTimer);
         open();
       }
@@ -253,11 +328,15 @@ export function useStream(block: string | null, view: View, sub: string | null =
     if (document.visibilityState === "visible") open();
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
+      notificationState = null;
+      notificationEpoch++;
       es?.close();
+      es = null;
       clearTimeout(liveTimer);
       clearTimeout(retryTimer);
       clearTimeout(hideTimer);
       document.removeEventListener("visibilitychange", onVisibility);
+      if ("serviceWorker" in navigator) navigator.serviceWorker.removeEventListener("message", onWorkerMessage);
     };
   }, [block, view, sub]);
   return { state, chat, subagents, live, queued, run, context, btw, setBtw, screen, draft, doc, online, stretch };

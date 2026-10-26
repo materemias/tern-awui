@@ -6,7 +6,7 @@ type Listener = (e: Record<string, unknown>) => void;
 type Win = { postMessage: (m: unknown) => void; focus: () => Promise<unknown>; messages: unknown[]; focused: number };
 
 /** Runs sw.js against a fake worker scope and records what it asks the browser to do. */
-function worker(opts: { badgeApi?: boolean; windows?: number; badgeFails?: boolean } = {}) {
+function worker(opts: { badgeApi?: boolean; windows?: number; badgeFails?: boolean; display?: Promise<void> } = {}) {
   const listeners: Record<string, Listener> = {};
   const calls = {
     notifications: [] as { title: string; options: Record<string, any> }[],
@@ -42,6 +42,7 @@ function worker(opts: { badgeApi?: boolean; windows?: number; badgeFails?: boole
     registration: {
       showNotification: async (title: string, options: Record<string, unknown>) => {
         calls.notifications.push({ title, options });
+        await opts.display;
       },
     },
     clients: {
@@ -117,6 +118,21 @@ describe("push", () => {
     const none = worker({ badgeApi: false });
     await none.push({ title: "a", badge: 2 });
     expect(none.calls.notifications.length).toBe(1);
+  });
+
+  test("only after display completes, all pages receive a reconciliation message without focus or navigation", async () => {
+    const display = Promise.withResolvers<void>();
+    const w = worker({ windows: 2, display: display.promise });
+    const done = w.push({ title: "Finished", block: "42" });
+    expect(w.calls.notifications).toHaveLength(1);
+    expect(w.calls.matchAll).toEqual([]);
+    expect(w.windows.map((win) => win.messages)).toEqual([[], []]);
+    display.resolve();
+    await done;
+    expect(w.calls.matchAll).toEqual([{ type: "window", includeUncontrolled: true }]);
+    expect(w.windows.map((win) => win.messages)).toEqual([[{ type: "notification-shown" }], [{ type: "notification-shown" }]]);
+    expect(w.windows.map((win) => win.focused)).toEqual([0, 0]);
+    expect(w.calls.opened).toEqual([]);
   });
 });
 

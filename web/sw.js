@@ -19,6 +19,10 @@ self.addEventListener("push", (e) => {
         renotify: true,
         icon: "/icon-v2-192.png",
         data: { url: d.block ? `/#/b/${d.block}` : "/" },
+      }).then(async () => {
+        // A push can finish displaying after SSE already cleared its unseen state.
+        const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+        for (const win of windows) win.postMessage({ type: "notification-shown" });
       }),
     ]),
   );
