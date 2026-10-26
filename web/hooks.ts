@@ -10,6 +10,7 @@ function setBadge(count: number) {
   void (count > 0 ? navigator.setAppBadge(count) : navigator.clearAppBadge()).catch(() => {});
 }
 
+// Must stay in the entry bundle: build.ts fails if a lazy chunk holds the build id (chunks are cached as immutable).
 declare const __TERN_AWUI_BUILD__: string | undefined;
 /** The build this page runs (build.ts); "" outside a build (tests), which never reloads. */
 const BUILD = typeof __TERN_AWUI_BUILD__ === "string" ? __TERN_AWUI_BUILD__ : "";

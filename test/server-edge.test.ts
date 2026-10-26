@@ -248,6 +248,32 @@ describe("static app", () => {
     expect(escape.status).toBe(400);
     expect(await escape.text()).toBe("bad path");
   });
+
+  test("brotli when the browser takes it, chunks immutable, the rest revalidated by build id", async () => {
+    const get = (path: string, extra: Record<string, string> = {}) =>
+      fetch(s.base + path, { headers: { ...s.headers, ...extra }, decompress: false } as RequestInit);
+    writeFileSync(`${dist}/app.js.br`, Bun.deflateSync("x"));
+    writeFileSync(`${dist}/chunk-abc123.js`, "export {}");
+    writeFileSync(`${dist}/build-id`, "0123456789abcdef");
+    const plain = await get("/app.js");
+    expect(plain.headers.get("content-encoding")).toBeNull();
+    expect(plain.headers.get("etag")).toBe('"0123456789abcdef"');
+    const br = await get("/app.js", { "accept-encoding": "gzip, br" });
+    expect(br.headers.get("content-encoding")).toBe("br");
+    expect(br.headers.get("vary")).toBe("accept-encoding");
+    expect(br.headers.get("content-type")).toContain("javascript");
+    expect(br.headers.get("etag")).toBe('"0123456789abcdef-br"');
+    const again = await get("/app.js", { "accept-encoding": "br", "if-none-match": '"0123456789abcdef-br"' });
+    expect(again.status).toBe(304);
+    // A new build changes the id: the old tag no longer matches.
+    writeFileSync(`${dist}/build-id`, "fedcba9876543210");
+    expect((await get("/app.js", { "accept-encoding": "br", "if-none-match": '"0123456789abcdef-br"' })).status).toBe(200);
+    const chunk = await get("/chunk-abc123.js");
+    expect(chunk.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    expect(chunk.headers.get("etag")).toBeNull();
+    // No .br beside it: the plain file, even when brotli is accepted.
+    expect((await get("/chunk-abc123.js", { "accept-encoding": "br" })).headers.get("content-encoding")).toBeNull();
+  });
 });
 
 describe("web push", () => {

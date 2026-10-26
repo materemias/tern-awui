@@ -642,11 +642,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     const activity = (i: Item) => i.since;
     const projects = [...groups].map(([name, items]) => ({ name, items: items.sort((x, y) => activity(y) - activity(x)) }));
     projects.sort((x, y) => activity(y.items[0]) - activity(x.items[0]));
-    // dist/'s build id: "" until `bun run build` has run.
-    let app = "";
-    try {
-      app = readFileSync(join(DIST, "build-id"), "utf8").trim();
-    } catch {}
+    const app = buildId();
     return {
       projects,
       counts,
@@ -656,6 +652,21 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
       app,
       extension: { ...extension.install(), path: INSTALLED_EXTENSION, repo: REPO, windows: process.platform === "win32" },
     };
+  }
+
+  /** dist/'s build id, "" until `bun run build` has run; reread only when the file's stamp changes (a stat, no read, per request). */
+  let buildIdCache = { stamp: "", id: "" };
+  function buildId(): string {
+    const st = statSync(join(DIST, "build-id"), { throwIfNoEntry: false });
+    const stamp = st ? `${st.ino}:${st.size}:${st.mtimeMs}` : "";
+    if (stamp !== buildIdCache.stamp) {
+      let id = "";
+      try {
+        id = st ? readFileSync(join(DIST, "build-id"), "utf8").trim() : "";
+      } catch {}
+      buildIdCache = { stamp, id };
+    }
+    return buildIdCache.id;
   }
 
   let stateCache: { at: number; value: Promise<State> } | null = null;
@@ -1483,13 +1494,37 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
         if (url.pathname.startsWith("/api/")) return handleApi(req, url);
         const rel = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
         if (rel.includes("..")) return new Response("bad path", { status: 400 });
-        const file = Bun.file(join(DIST, rel));
         const index = Bun.file(join(DIST, "index.html"));
         if (!(await index.exists())) return new Response("not built: run `bun run build`", { status: 404 });
-        return new Response((await file.exists()) ? file : index, {
-          // The 1 MB symbols font changes only with the Nerd Font package.
-          headers: { "cache-control": rel === "symbols.woff2" ? "max-age=604800" : "no-cache", "content-security-policy": CSP },
+        const found = Bun.file(join(DIST, rel));
+        // Client-side routes get the app.
+        const name = (await found.exists()) ? rel : "index.html";
+        const file = name === rel ? found : index;
+        // build.ts writes `<file>.br` beside each text file; neither Bun.serve nor tailscale serve compresses.
+        // `br;q=0` is a refusal.
+        const takesBr = (req.headers.get("accept-encoding") ?? "").split(",").some((entry) => {
+          const [coding, ...params] = entry.split(";").map((p) => p.trim().toLowerCase());
+          const q = params.find((p) => p.startsWith("q="));
+          return coding === "br" && (!q || Number(q.slice(2)) > 0);
         });
+        const br = takesBr ? Bun.file(join(DIST, `${name}.br`)) : null;
+        const body = br && (await br.exists()) ? br : file;
+        const headers: Record<string, string> = { "content-type": file.type, vary: "accept-encoding", "content-security-policy": CSP };
+        if (body !== file) headers["content-encoding"] = "br";
+        // Chunks are named by their content: a new build gets new names.
+        if (/^chunk-[a-z0-9]+\.js$/.test(name)) headers["cache-control"] = "public, max-age=31536000, immutable";
+        // The 1 MB symbols font changes only with the Nerd Font package.
+        else if (name === "symbols.woff2") headers["cache-control"] = "max-age=604800";
+        else {
+          headers["cache-control"] = "no-cache";
+          // The build id hashes every file in dist/: an unchanged build answers a revalidation with 304.
+          const id = buildId();
+          if (id) {
+            headers.etag = `"${id}${body === file ? "" : "-br"}"`;
+            if (req.headers.get("if-none-match") === headers.etag) return new Response(null, { status: 304, headers });
+          }
+        }
+        return new Response(body, { headers });
       },
       websocket: {
         message(ws, raw) {
