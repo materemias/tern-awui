@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.0 (2026-10-27)
+
 ### Fixes
 
 - Session notifications dismiss when you open the session or start another turn on either device, once the mobile app is active.
