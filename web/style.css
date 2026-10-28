@@ -317,6 +317,10 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
   .omp-play:hover:not(:disabled) .omp-foot { animation: omp-kick .45s ease-out forwards; }
   .omp-play:hover:not(:disabled) .omp-logo { animation: omp-wiggle .35s ease-in-out .3s; }
 }
+@media (prefers-reduced-motion: no-preference) {
+  .omp-play.tap .omp-foot { animation: omp-kick .45s ease-out forwards; }
+  .omp-play.tap .omp-logo { animation: omp-wiggle .35s ease-in-out .3s; }
+}
 @keyframes omp-kick { 0% { opacity: .4; } 45% { opacity: 1; transform: none; } 70% { opacity: 1; transform: translateY(60%); } 100% { opacity: 1; transform: none; } }
 @keyframes omp-wiggle { 0%, 100% { transform: none; } 25% { transform: rotate(-6deg); } 50% { transform: rotate(5deg); } 75% { transform: rotate(-2deg); } }
 /* An omp session with nothing in it yet: omp's welcome mark, as its pane shows it in Tern. */

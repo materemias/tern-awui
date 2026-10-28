@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- On touch screens, tapping the π in an empty omp session plays its stomp and wiggle, which before only hover set off.
+
 ## 0.8.0 (2026-10-27)
 
 ### Fixes

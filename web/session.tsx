@@ -180,7 +180,8 @@ export function Session({ block }: { block: string }) {
                   <Chat entries={chat} block={block} rewind={can(item?.live, "rewind")} />
                 ) : (
                   <div class="welcome">
-                    <span class="omp-play">
+                    {/* Touch screens have no hover: a tap plays π's stomp and wiggle instead (style.css). */}
+                    <span class="omp-play" onClick={replayOmp} onAnimationEnd={(e) => (e.target as Element).classList.contains("omp-logo") && e.currentTarget.classList.remove("tap")}>
                       <PiMark />
                     </span>
                     <span class="welcome-name">omp</span>
@@ -238,6 +239,14 @@ export function Session({ block }: { block: string }) {
       )}
     </div>
   );
+}
+
+/** Restarts the welcome π's animation: drop the class, force a style flush, set it again. */
+function replayOmp(e: { currentTarget: HTMLElement }) {
+  const el = e.currentTarget;
+  el.classList.remove("tap");
+  void el.offsetWidth;
+  el.classList.add("tap");
 }
 
 /**
