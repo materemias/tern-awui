@@ -33,8 +33,8 @@ const COMPLETABLE = /(^|\s)[/@][^\s]*$/;
 type PastedImage = { data: string; mimeType: string; url: string };
 const MAX_PASTED = 8;
 
-async function pastedImage(file: File): Promise<PastedImage> {
-  let blob: Blob = file;
+async function pastedImage(file: Blob): Promise<PastedImage> {
+  let blob = file;
   if (needsReencode(file.type, file.size)) {
     const bitmap = await createImageBitmap(file);
     const { width, height } = fitEdge(bitmap.width, bitmap.height);
@@ -390,7 +390,21 @@ export function Composer({
     if (files.length) await addImages(files);
   }
 
-  async function addImages(files: File[]) {
+  /**
+   * Images on the clipboard, for phones: Android's text menu offers Paste only for text.
+   * Chrome asks for clipboard access the first time.
+   */
+  async function pasteClipboard() {
+    const items = await navigator.clipboard.read().catch(() => null);
+    if (!items) return setError("no clipboard access");
+    const blobs = await Promise.all(
+      items.flatMap((c) => c.types.filter((t) => t.startsWith("image/")).slice(0, 1).map((t) => c.getType(t))),
+    ).catch(() => null);
+    if (!blobs?.length) return setError("no image on the clipboard");
+    await addImages(blobs);
+  }
+
+  async function addImages(files: Blob[]) {
     const room = MAX_PASTED - pasted.length;
     if (room <= 0) return setError(`at most ${MAX_PASTED} images`);
     const next = await Promise.all(files.slice(0, room).map(pastedImage)).catch(() => null);
@@ -556,6 +570,15 @@ export function Composer({
                   <path d="m3 14.5 4.5-4 3 2.5 3-3 3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
                 </svg>
               </button>
+              {"ontouchstart" in window && !!navigator.clipboard?.read && (
+                <button type="button" class="icon-btn" disabled={sending} onClick={() => void pasteClipboard()} aria-label="Paste image">
+                  <svg viewBox="0 0 20 20" aria-hidden="true">
+                    <rect x="4" y="4" width="12" height="13.5" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.4" />
+                    <rect x="7.5" y="2.5" width="5" height="3" rx="1" fill="currentColor" />
+                    <path d="m5.5 15.5 3-3 2 1.8 2-2 2 2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+                  </svg>
+                </button>
+              )}
             </>
           )}
           <button

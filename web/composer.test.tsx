@@ -463,6 +463,21 @@ describe("pasted images", () => {
     expect(root.querySelector('input[type="file"]')).toBeNull();
     expect([...root.querySelectorAll("button")].some((b) => b.getAttribute("aria-label") === "Attach image")).toBe(false);
   });
+
+  test("Paste image on a touch screen adds the clipboard's images and says when there are none", async () => {
+    replace(window, "ontouchstart", null);
+    let items: ClipboardItem[] = [];
+    replace(navigator, "clipboard", { read: async () => items });
+    await show();
+    await click(button("Paste image"));
+    expect(node(".error").textContent).toBe("no image on the clipboard");
+    const entry = (types: string[], blob: Blob) => ({ types, getType: async () => blob }) as unknown as ClipboardItem;
+    items = [entry(["text/plain"], new Blob(["hi"])), entry(["image/png", "image/jpeg"], new Blob(["shot"], { type: "image/png" }))];
+    await click(button("Paste image"));
+    expect(root.querySelectorAll(".pasted-item")).toHaveLength(1);
+    await click(button("Send"));
+    expect(calls("submit")).toEqual([{ text: "", images: [{ data: btoa("shot"), mimeType: "image/png" }], followUp: false }]);
+  });
 });
 
 describe("follow-ups and side questions", () => {

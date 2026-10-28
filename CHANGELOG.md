@@ -6,6 +6,7 @@
 
 - Voice calls: the microphone button in an omp session starts omp's live voice mode with the phone as microphone and speaker. Coding requests run as turns of that session, and the bar above the composer shows what omp is doing, the last thing each side said, mute and hang up. The screen stays on during a call. Needs an omp newer than 18.13.3; restart running omp sessions to load the updated extension.
 - omp's welcome mark stays at the top of an omp session once its first turn starts, and the chat follows right below it.
+- On touch screens, a paste button next to attach adds the image on the clipboard to the prompt, since Android's Paste menu offers only text. Chrome asks for clipboard access the first time.
 
 ### Fixes
 
