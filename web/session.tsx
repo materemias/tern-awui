@@ -176,17 +176,15 @@ export function Session({ block }: { block: string }) {
           ) : chat && view === "chat" ? (
             <>
               <StretchContext.Provider value={stretchSync}>
-                {chat.length || live || queued.length || working ? (
-                  <Chat entries={chat} block={block} rewind={can(item?.live, "rewind")} />
-                ) : (
-                  <div class="welcome">
-                    {/* Touch screens have no hover: a tap plays π's stomp and wiggle instead (style.css). */}
-                    <span class="omp-play" onClick={replayOmp} onAnimationEnd={(e) => (e.target as Element).classList.contains("omp-logo") && e.currentTarget.classList.remove("tap")}>
-                      <PiMark />
-                    </span>
-                    <span class="welcome-name">omp</span>
-                  </div>
-                )}
+                {/* omp's welcome mark heads the chat, as it heads the session's pane in Tern; the first turn follows right below. */}
+                <div class="welcome">
+                  {/* Touch screens have no hover: a tap plays π's stomp and wiggle instead (style.css). */}
+                  <span class="omp-play" onClick={replayOmp} onAnimationEnd={(e) => (e.target as Element).classList.contains("omp-logo") && e.currentTarget.classList.remove("tap")}>
+                    <PiMark />
+                  </span>
+                  <span class="welcome-name">omp</span>
+                </div>
+                <Chat entries={chat} block={block} rewind={can(item?.live, "rewind")} />
               </StretchContext.Provider>
               {live && <Markdown class="msg assistant md live" mermaid={false} text={liveText(live)} />}
               {queued.map((q, i) => (

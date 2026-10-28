@@ -125,7 +125,7 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .msg { max-width: 100%; overflow-wrap: anywhere; }
 /* Tern-style prompt: full width, accent rail and chevron, no bubble. */
 .msg.user { display: flex; gap: 8px; margin-top: 22px; padding: 8px 12px 8px 10px; border-left: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); border-radius: 0 8px 8px 0; white-space: pre-wrap; }
-.msg.user:first-child { margin-top: 0; }
+.msg.user:first-child, .welcome + .msg.user { margin-top: 0; }
 .msg.user + * { margin-top: 4px; }
 .user-mark { color: var(--accent); font-weight: 700; flex: none; }
 .user-text { min-width: 0; }
@@ -323,8 +323,8 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 }
 @keyframes omp-kick { 0% { opacity: .4; } 45% { opacity: 1; transform: none; } 70% { opacity: 1; transform: translateY(60%); } 100% { opacity: 1; transform: none; } }
 @keyframes omp-wiggle { 0%, 100% { transform: none; } 25% { transform: rotate(-6deg); } 50% { transform: rotate(5deg); } 75% { transform: rotate(-2deg); } }
-/* An omp session with nothing in it yet: omp's welcome mark, as its pane shows it in Tern. */
-.welcome { display: flex; align-items: center; justify-content: center; gap: 18px; padding: 40px 0 24px; color: var(--fg); user-select: none; }
+/* omp's welcome mark at the head of an omp session's chat, as its pane shows it in Tern. */
+.welcome { display: flex; align-items: center; justify-content: center; gap: 18px; padding: 40px 0 12px; color: var(--fg); user-select: none; }
 .welcome .omp-play { display: grid; }
 .welcome .omp-logo { width: 54px; height: 45px; }
 .welcome-name { font: 400 44px/1 var(--mono); letter-spacing: .01em; }
