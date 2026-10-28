@@ -136,7 +136,7 @@ async function paste(files: File[], text = "") {
   await flush();
   return event;
 }
-const noCaps: Caps = { models: false, tiers: false, jobs: false, queue: false, rewind: false, btw: false, complete: false, levels: false };
+const noCaps: Caps = { models: false, tiers: false, jobs: false, queue: false, rewind: false, btw: false, complete: false, levels: false, voice: false };
 const suggestions = (prefix = "/he", value = "/help") => ({ prefix, items: [{ value, label: value, description: "Command help" }] });
 
 function historyReply(c: Call, history?: Response | Promise<Response>): Response | Promise<Response> {

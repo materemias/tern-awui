@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features
+
+- Voice calls: the microphone button in an omp session starts omp's live voice mode with the phone as microphone and speaker. Coding requests run as turns of that session, and the bar above the composer shows what omp is doing, the last thing each side said, mute and hang up. The screen stays on during a call. Needs an omp newer than 18.13.3; restart running omp sessions to load the updated extension.
+
 ### Fixes
 
 - On touch screens, tapping the π in an empty omp session plays its stomp and wiggle, which before only hover set off.

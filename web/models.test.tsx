@@ -140,7 +140,7 @@ describe("ModelSheet", () => {
   });
 
   test("without catalog capability roles still work, and failed role picks do not close or write recents", async () => {
-    await mount(live({ levels: ["off"], caps: { models: false, tiers: false, jobs: false, queue: false, rewind: false, btw: false, complete: false, levels: false } }));
+    await mount(live({ levels: ["off"], caps: { models: false, tiers: false, jobs: false, queue: false, rewind: false, btw: false, complete: false, levels: false, voice: false } }));
     expect(net.calls).toEqual([]);
     expect(root.textContent).toContain("This omp can't list models; roles still work");
     expect(root.querySelector(".mp-opt")).toBeNull();

@@ -206,7 +206,7 @@ describe("currentRole", () => {
   });
 });
 
-const caps: Caps = { models: true, tiers: true, jobs: true, queue: true, rewind: true, btw: true, complete: true, levels: true };
+const caps: Caps = { models: true, tiers: true, jobs: true, queue: true, rewind: true, btw: true, complete: true, levels: true, voice: true };
 const live = (over: Partial<Live> = {}): Live => ({
   model: "anthropic/claude-opus-5-5",
   thinking: "medium",

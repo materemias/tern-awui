@@ -1,7 +1,7 @@
 // The prompt: draft mirroring, sends and follow-ups, side questions, pasted images, completions,
 // terminal typing and the key bar.
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { post, postJson, type Btw, type BtwHistoryRecord, type ContextUse, type Item, type Role } from "./api";
+import { post, postJson, type Btw, type BtwHistoryRecord, type ContextUse, type Item, type Role, type Voice } from "./api";
 import { btwCommand, can, composerKey, currentRole, fitEdge, lineEdit, needsReencode, prettyModel, tokensShort } from "./lib";
 import { Markdown } from "./chat";
 import { openText } from "./stretch";
@@ -9,6 +9,7 @@ import { buzz } from "./parts";
 import type { Draft } from "./hooks";
 import { EFFORT_LABEL, ModelSheet, TIER_LABEL } from "./models";
 import { BtwHistorySheet } from "./btw-history";
+import { MicIcon, useVoiceCall, VoiceBar } from "./voice";
 
 type DraftWrite = { text: string; expectedSessionId?: string; expectedText?: string };
 
@@ -60,6 +61,7 @@ export function Composer({
   roles,
   raw,
   btw,
+  voice = null,
   setBtw,
   context = null,
 }: {
@@ -70,6 +72,8 @@ export function Composer({
   raw?: { on: boolean; toggle: () => void };
   /** The open side question (`/btw …`) and its streaming answer. */
   btw: Btw | null;
+  /** The pane's voice call as omp reports it (stream `voice` event). */
+  voice?: Voice | null;
   setBtw: (b: Btw | null) => void;
   /** The context gauge, from the stream's `context` event; none without one. */
   context?: ContextUse | null;
@@ -112,6 +116,9 @@ export function Composer({
   const live = draft?.live === true;
   const [hints, setHints] = useState<Hints | null>(null);
   const hintSeq = useRef(0);
+  const call = useVoiceCall(block, voice, setError);
+  // Only an omp that reports it: an extension from before caps (null) has no voice calls either.
+  const voiceable = live && item?.live?.caps?.voice === true;
 
   // omp's own autocomplete while the phone types a /command, /skill:… or @path token.
   const completable = can(item?.live, "complete");
@@ -455,6 +462,7 @@ export function Composer({
           )}
         </div>
       )}
+      <VoiceBar voice={voice} call={call} />
       {hints && (
         <div class="hints" role="listbox">
           {hints.items.map((h) => (
@@ -525,6 +533,19 @@ export function Composer({
           )}
           {live && <span class="sync" title="Draft mirrors the desktop editor" />}
           <span class="spacer" />
+          {voiceable && !terminal && (
+            <button
+              type="button"
+              class={`icon-btn${call.state !== "idle" ? " on" : ""}`}
+              // Starting, or another device's call runs here (the server takes one call per session).
+              disabled={call.state === "starting" || (call.state === "idle" && !!voice && !voice.ended)}
+              onClick={() => (call.state === "idle" ? void call.start() : call.hangup())}
+              aria-label={call.state === "idle" ? "Talk to omp" : "Hang up"}
+              title="Voice call (omp live mode)"
+            >
+              <MicIcon />
+            </button>
+          )}
           {a && !terminal && (
             <>
               <input ref={picker} type="file" accept="image/*" multiple hidden onChange={onPick} />

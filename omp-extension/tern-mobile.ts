@@ -9,8 +9,8 @@ import { fileURLToPath } from "node:url";
 
 const POLL_MS = 100;
 const RETRY_MS = 5000;
-/** The bridge protocol this extension speaks; the server flags whichever side is older. 2: `build`. 3: ✦ presses. */
-export const PROTOCOL = 3;
+/** The bridge protocol this extension speaks; the server flags whichever side is older. 2: `build`. 3: ✦ presses. 4: voice calls. */
+export const PROTOCOL = 4;
 /**
  * This file's identity, read once when omp loads it, so a later `git pull` doesn't change what a
  * running session reports: the first 16 hex digits of its sha256, as the server computes for its
@@ -86,6 +86,14 @@ function thinkingLevels(model: Model): string[] {
 	} catch {}
 	return model.reasoning ? ["off", "minimal", "low", "medium", "high", "xhigh"] : ["off"];
 }
+/** omp's live voice session started by an extension (`ctx.startLive`, omp after 18.13.3); audio runs on the caller's WebRTC peer. */
+type LiveCall = { sdpAnswer: string; voice: string; stop(): Promise<void> };
+type LiveStart = {
+	sdpOffer: string;
+	onPhase?(phase: string): void;
+	onTranscript?(transcript: { role: "user" | "assistant"; text: string; turn: number; final: boolean }): void;
+	onEnd?(error?: Error): void;
+};
 type Ctx = {
 	hasUI?: boolean;
 	/** `sub` for any spawned session (task, eval agents, advisors, /tan clones). */
@@ -112,6 +120,7 @@ type Ctx = {
 	modelRegistry: { find(provider: string, id: string): Model | undefined; getAvailable?(kind?: string): Model[] };
 	sessionManager: { getSessionId(): string; getLeafId?(): string | null };
 	setInterval(callback: () => void, ms: number): unknown;
+	startLive?(options: LiveStart): Promise<LiveCall>;
 };
 type ToolEvent = { toolCallId: string; toolName: string; intent?: string };
 type CompletionItem = { value: string; label: string; description?: string };
@@ -177,6 +186,10 @@ type ServerMessage =
 	| { t: "stretch"; block: string; key: string; open: boolean; seq: number }
 	/** Press ✦ (ask for more) on a reply's fully open stretch, as a click in the pane does. */
 	| { t: "deepen"; block: string; key: string; seq: number }
+	/** Start a voice call with a phone's WebRTC offer; the reply carries omp's SDP answer. `attempt`: the phone's id for this start. */
+	| { t: "voice"; sdp: string; attempt?: string; seq: number }
+	/** End the call; with `attempt`, only the call that start began (a stale cleanup must not end a newer call). */
+	| { t: "hangup"; attempt?: string; seq: number }
 	/** Report the current state now (the server lost track of this pane). */
 	| { t: "sync"; seq?: undefined };
 const MAX_COMPLETIONS = 40;
@@ -212,6 +225,8 @@ function stretchState(): ReturnType<StretchBridge["state"]> | null {
 const BTW_FLUSH_MS = 150;
 /** The assistant message being written goes out at most this often, only while a phone watches. */
 const LIVE_FLUSH_MS = 200;
+/** A voice call's streaming transcript goes out at most this often; final lines go at once. */
+const VOICE_FLUSH_MS = 150;
 
 /** A message's text parts, as the transcript will show them. */
 function textOf(message: Message): string {
@@ -340,6 +355,7 @@ export default function ternMobile(pi: Pi): void {
 				queue: typeof ctx.hasPendingMessages === "function",
 				rewind: typeof ctx.sessionManager.getLeafId === "function",
 				btw: typeof ctx.runEphemeralTurn === "function",
+				voice: typeof ctx.startLive === "function",
 				complete: completer !== null,
 				levels: typeof ai.getSupportedThinkingLevels === "function",
 			},
@@ -425,6 +441,85 @@ export default function ternMobile(pi: Pi): void {
 		}
 	};
 
+	// The voice call this omp runs for a phone, through omp's live mode (`/live` with the phone's audio).
+	// Its phase and transcript go to the server as `voice` messages; it ends with one `end`.
+	type Call = { attempt: string; session: LiveCall | null; socket: WebSocket | null; cancelled: boolean; end(error?: Error): void };
+	let call: Call | null = null;
+	const sendVoice = (data: object) => {
+		if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: "voice", ...data }));
+	};
+	type Line = { text: string; timer?: ReturnType<typeof setTimeout> };
+	const lines: Record<"user" | "assistant", Line> = { user: { text: "" }, assistant: { text: "" } };
+	const sendTranscript = (role: "user" | "assistant", text: string, final: boolean) => {
+		const line = lines[role];
+		line.text = text;
+		const out = () => {
+			clearTimeout(line.timer);
+			line.timer = undefined;
+			sendVoice({ role, text: line.text });
+		};
+		if (final) return out();
+		line.timer ??= setTimeout(out, VOICE_FLUSH_MS);
+	};
+	/**
+	 * Ends the call (one still connecting ends once omp answers): nobody can steer it any more. With
+	 * `attempt`, only that start's call. The call is forgotten once omp's stop settles, even if omp
+	 * never reports its end, so a failed stop can't block every later call.
+	 */
+	const hangUp = async (attempt?: string) => {
+		const current = call;
+		if (!current || (attempt && current.attempt !== attempt)) return;
+		current.cancelled = true;
+		if (!current.session) return;
+		try {
+			await current.session.stop();
+		} finally {
+			current.end();
+		}
+	};
+	const startVoice = async (seq: number, sdp: string, attempt: string) => {
+		if (!ctx?.startLive) return reply(seq, { error: "this omp can't run voice calls (update omp)" });
+		if (call) return reply(seq, { error: "a voice call is already running" });
+		const mine: Call = {
+			attempt,
+			session: null,
+			socket: ws,
+			cancelled: false,
+			end: (error?: Error) => {
+				if (call !== mine) return;
+				call = null;
+				for (const line of Object.values(lines)) {
+					clearTimeout(line.timer);
+					line.timer = undefined;
+				}
+				if (ws === mine.socket) sendVoice({ end: true, error: error?.message ?? "" });
+			},
+		};
+		call = mine;
+		try {
+			const session = await ctx.startLive({
+				sdpOffer: sdp,
+				onPhase: (phase) => call === mine && ws === mine.socket && sendVoice({ phase }),
+				onTranscript: (t) => call === mine && ws === mine.socket && sendTranscript(t.role, t.text, t.final),
+				onEnd: mine.end,
+			});
+			mine.session = session;
+			// Hung up while omp signaled, or the socket that asked went away: nobody can steer this call.
+			if (mine.cancelled || call !== mine || ws !== mine.socket) {
+				try {
+					await session.stop();
+				} finally {
+					mine.end();
+				}
+				return reply(seq, { error: "the voice call was hung up" });
+			}
+			reply(seq, { sdp: session.sdpAnswer });
+		} catch (error) {
+			mine.end(error instanceof Error ? error : new Error(String(error)));
+			reply(seq, { error: error instanceof Error ? error.message : String(error) });
+		}
+	};
+
 	const apply = async (msg: ServerMessage) => {
 		if (msg.t === "watch") {
 			watched = msg.on;
@@ -435,6 +530,11 @@ export default function ternMobile(pi: Pi): void {
 			return;
 		}
 		if (!ctx) return;
+		if (msg.t === "voice") return startVoice(msg.seq, String(msg.sdp ?? ""), String(msg.attempt ?? ""));
+		if (msg.t === "hangup") {
+			await hangUp(typeof msg.attempt === "string" ? msg.attempt : undefined).catch(() => {});
+			return reply(msg.seq, { ok: true });
+		}
 		if (msg.t === "stretch") {
 			const bridge = stretchBridge();
 			if (!bridge) return reply(msg.seq, { error: "stretch.ts is not loaded in this omp" });
@@ -554,6 +654,7 @@ export default function ternMobile(pi: Pi): void {
 		socket.onclose = () => {
 			ws = null;
 			watched = false;
+			void hangUp().catch(() => {});
 			if (!shutdown) setTimeout(connect, RETRY_MS).unref?.();
 		};
 		socket.onerror = () => socket.close();
@@ -576,7 +677,10 @@ export default function ternMobile(pi: Pi): void {
 		live.message = null;
 		if (live.sent) sendLive("", true);
 		live.sent = "";
-		if (!first) return flush(true);
+		if (!first) {
+			void hangUp().catch(() => {});
+			return flush(true);
+		}
 		c.setInterval(() => flush(false), POLL_MS);
 		c.ui.addAutocompleteProvider?.((current) => {
 			completer = current;
@@ -621,6 +725,7 @@ export default function ternMobile(pi: Pi): void {
 	pi.on("tool_approval_resolved", (e) => waiting.delete(e.toolCallId));
 	pi.on("session_shutdown", () => {
 		shutdown = true;
+		void hangUp().catch(() => {});
 		ws?.close();
 	});
 }

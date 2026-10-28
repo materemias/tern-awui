@@ -385,6 +385,20 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .btw-q { flex: 1; min-width: 0; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .btw-x { border: 0; background: none; color: var(--muted); font-size: 18px; line-height: 1; padding: 0 2px; }
 .btw.streaming .btw-tag { animation: blink 1.6s ease-in-out infinite; }
+.voice { margin-bottom: 8px; padding: 8px 10px 10px 12px; border: 1px solid color-mix(in srgb, var(--working) 45%, var(--line)); border-radius: 12px; background: var(--panel); font-size: 14px; }
+.voice-head { display: flex; gap: 8px; align-items: center; }
+.voice-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--working); }
+.voice-listening .voice-dot, .voice-connecting .voice-dot { animation: pulse 1.6s ease-out infinite; }
+.voice-working .voice-dot { background: var(--accent); }
+.voice-muted .voice-dot { background: var(--muted); }
+.voice-error .voice-dot { background: var(--blocked); }
+.voice-phase { font-weight: 600; }
+.voice-elsewhere { color: var(--muted); font-size: 12px; }
+.voice-end { width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--blocked); color: #fff; }
+.voice-end svg { width: 20px; height: 20px; }
+.voice-line { margin-top: 4px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.voice-user { color: var(--fg); }
+@media (prefers-reduced-motion: reduce) { .voice-dot { animation: none !important; } }
 .branch { font: 12px var(--mono); color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* omp figures: svg blocks paint with these theme variables; mermaid brings its own dark theme. */
 .figure { --border: var(--line); --surface: var(--raise); --success: var(--working); --warning: #e0a43a; --error: var(--blocked);

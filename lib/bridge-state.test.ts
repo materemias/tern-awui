@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { emptyState, listChanged, parseBridgeState, type BridgeState } from "./bridge-state";
+import { emptyState, foldVoice, listChanged, parseBridgeState, type BridgeState } from "./bridge-state";
 
 const fresh = emptyState(1000);
 // A snapshot as omp-extension/tern-mobile.ts sends it.
@@ -21,7 +21,7 @@ const snapshot = {
   leaf: "e012",
   protocol: 3,
   build: "0123456789abcdef",
-  caps: { models: true, tiers: false, jobs: true, queue: true, rewind: true, btw: true, complete: true, levels: true },
+  caps: { models: true, tiers: false, jobs: true, queue: true, rewind: true, btw: true, complete: true, levels: true, voice: true },
   stretch: {
     off: false,
     open: { "1792161451904.1": ["cache", "cache › key"] },
@@ -117,7 +117,23 @@ describe("parseBridgeState", () => {
 
   test("caps keep the known names; unnamed or non-true caps are unsupported, extras dropped", () => {
     const s = parseBridgeState({ ...snapshot, caps: { models: true, rewind: "yes", future: true } }, fresh, 1);
-    expect(s.caps).toEqual({ models: true, tiers: false, jobs: false, queue: false, rewind: false, btw: false, complete: false, levels: false });
+    expect(s.caps).toEqual({ models: true, tiers: false, jobs: false, queue: false, rewind: false, btw: false, complete: false, levels: false, voice: false });
+  });
+});
+
+describe("foldVoice", () => {
+  test("a call collects phases and each side's latest line, keeps its attempt, ends once, and the next call starts clean", () => {
+    const start = { phase: "connecting", user: "", assistant: "", ended: false, error: "", attempt: "a1" };
+    let v = foldVoice(start, { phase: "listening" });
+    v = foldVoice(v, { role: "user", text: "list the files" });
+    v = foldVoice(v, { role: "assistant", text: "Asking the agent." });
+    v = foldVoice(v, { role: "system", text: "ignored" });
+    v = foldVoice(v, { phase: "" });
+    expect(v).toEqual({ phase: "listening", user: "list the files", assistant: "Asking the agent.", ended: false, error: "", attempt: "a1" });
+    const ended = foldVoice(v, { end: true, error: "sideband closed" });
+    expect(ended).toEqual({ ...v, ended: true, error: "sideband closed" });
+    // An ended call is never resumed: whatever follows belongs to a new call, whose attempt is unknown.
+    expect(foldVoice(ended, { phase: "listening" })).toEqual({ phase: "listening", user: "", assistant: "", ended: false, error: "", attempt: "" });
   });
 });
 

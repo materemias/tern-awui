@@ -12,8 +12,8 @@ type Handler = (...args: unknown[]) => unknown;
 type Command = { handler: (args: string, ctx: { navigateTree(id: string, options?: { summarize?: boolean }): Promise<{ cancelled: boolean }> }) => Promise<void> };
 type SideTurn = { promptText: string; tools?: false; onTextDelta: (delta: string) => void };
 const reasoning: Model = { provider: "openai", id: "reasoner", reasoning: true, name: "Reasoner", contextWindow: 100000, input: ["text", "image"], cost: { input: 2, output: 8 } };
-// Bun has no omp pi-ai shim: fallback thinking works, but native levels discovery is absent.
-const capsWithoutShim = { models: true, tiers: true, jobs: true, queue: true, rewind: true, btw: true, complete: true, levels: false };
+// Bun has no omp pi-ai shim: fallback thinking works, but native levels discovery is absent; the fixture omp has no live mode.
+const capsWithoutShim = { models: true, tiers: true, jobs: true, queue: true, rewind: true, btw: true, complete: true, levels: false, voice: false };
 const cleanup: (() => void)[] = [];
 const originalEnv = { TERN_PANE: process.env.TERN_PANE, TERN_AWUI_BRIDGE: process.env.TERN_AWUI_BRIDGE, TERN_AWUI_TOKEN_FILE: process.env.TERN_AWUI_TOKEN_FILE, TERN_AWUI_CONFIG: process.env.TERN_AWUI_CONFIG };
 let now: number;
@@ -504,6 +504,106 @@ describe("omp extension bridge contract", () => {
 		f.ctx.runEphemeralTurn = async (options) => { options.onTextDelta("partial"); throw new Error("provider failed"); };
 		await f.bridge.request({ t: "btw", id: "side2", text: "oops" });
 		expect<unknown>(await f.bridge.inbox.next((m) => m.done)).toEqual({ t: "btw", id: "side2", text: "partial", done: true, error: "provider failed" });
+	});
+
+	type LiveOptions = { sdpOffer: string; onPhase(phase: string): void; onTranscript(t: { role: "user" | "assistant"; text: string; turn: number; final: boolean }): void; onEnd(error?: Error): void };
+	/** omp's `ctx.startLive`: records the options; `stop` ends the call as omp does, with one `onEnd`. */
+	function liveMode(f: ReturnType<typeof fixture>, fail?: Error) {
+		const live = { options: null as LiveOptions | null, stops: 0, stopped: Promise.withResolvers<void>() };
+		Object.assign(f.ctx, {
+			async startLive(options: LiveOptions) {
+				live.options = options;
+				if (fail) {
+					options.onEnd(fail);
+					throw fail;
+				}
+				return {
+					sdpAnswer: `answer to ${options.sdpOffer}`,
+					voice: "sol",
+					stop: async () => {
+						live.stops++;
+						live.stopped.resolve();
+						live.stopped = Promise.withResolvers<void>();
+						options.onEnd();
+					},
+				};
+			},
+		});
+		return live;
+	}
+
+	test("voice: omp's live call takes the phone's offer, relays its phase and lines, and ends once on hang-up", async () => {
+		const f = fixture();
+		const live = liveMode(f);
+		expect((await f.start()).caps).toEqual({ ...capsWithoutShim, voice: true });
+		expect(await f.bridge.request({ t: "voice", sdp: "v=0 offer" })).toMatchObject({ sdp: "answer to v=0 offer" });
+		expect(live.options?.sdpOffer).toBe("v=0 offer");
+		expect(await f.bridge.request({ t: "voice", sdp: "v=0 again" })).toMatchObject({ error: "a voice call is already running" });
+		const o = live.options!;
+		o.onPhase("listening");
+		expect<unknown>(await f.bridge.inbox.next((m) => m.t === "voice")).toEqual({ t: "voice", phase: "listening" });
+		// Streaming lines are throttled to the latest; a final line goes at once.
+		o.onTranscript({ role: "user", text: "list", turn: 1, final: false });
+		o.onTranscript({ role: "user", text: "list the files", turn: 1, final: true });
+		expect<unknown>(await f.bridge.inbox.next((m) => m.t === "voice")).toEqual({ t: "voice", role: "user", text: "list the files" });
+		expect(await f.bridge.request({ t: "hangup" })).toMatchObject({ ok: true });
+		expect(live.stops).toBe(1);
+		expect<unknown>(await f.bridge.inbox.next((m) => m.t === "voice")).toEqual({ t: "voice", end: true, error: "" });
+		// The call is over: the next offer starts a new one.
+		expect(await f.bridge.request({ t: "voice", sdp: "v=0 next" })).toMatchObject({ sdp: "answer to v=0 next" });
+	});
+
+	test("voice: a failed start ends once with omp's reason; a new session or a lost server hangs up", async () => {
+		const failing = fixture();
+		liveMode(failing, new Error("A live session is already active"));
+		await failing.start();
+		expect(await failing.bridge.request({ t: "voice", sdp: "v=0 offer" })).toMatchObject({ error: "A live session is already active" });
+		expect<unknown>(await failing.bridge.inbox.next((m) => m.t === "voice")).toEqual({ t: "voice", end: true, error: "A live session is already active" });
+
+		const f = fixture();
+		const live = liveMode(f);
+		await f.start();
+		await f.bridge.request({ t: "voice", sdp: "v=0 offer" });
+		f.state.sessionId = "session-456"; f.emit("session_start");
+		expect(live.stops).toBe(1);
+		await f.bridge.request({ t: "voice", sdp: "v=0 offer" });
+		const lost = live.stopped.promise;
+		f.bridge.connections[0].close();
+		await lost;
+		expect(live.stops).toBe(2);
+	});
+
+	test("voice: an omp without live mode refuses calls", async () => {
+		const f = fixture(); await f.start();
+		expect(await f.bridge.request({ t: "voice", sdp: "v=0 offer" })).toMatchObject({ error: "this omp can't run voice calls (update omp)" });
+	});
+
+	test("voice: a losing phone's automatic hang-up can't end the winner's call; a bare hang-up can", async () => {
+		const f = fixture();
+		const live = liveMode(f);
+		await f.start();
+		expect(await f.bridge.request({ t: "voice", sdp: "v=0 a", attempt: "phone-a" })).toMatchObject({ sdp: "answer to v=0 a" });
+		expect(await f.bridge.request({ t: "voice", sdp: "v=0 b", attempt: "phone-b" })).toMatchObject({ error: "a voice call is already running" });
+		// Phone B cleans up after its failed start, naming its own attempt.
+		expect(await f.bridge.request({ t: "hangup", attempt: "phone-b" })).toMatchObject({ ok: true });
+		expect(live.stops).toBe(0);
+		// Hang-up tapped on the other device's call (no attempt), or by the owner, ends it.
+		expect(await f.bridge.request({ t: "hangup" })).toMatchObject({ ok: true });
+		expect(live.stops).toBe(1);
+	});
+
+	test("voice: a stop that fails without omp reporting the end still frees the session for the next call", async () => {
+		const f = fixture();
+		Object.assign(f.ctx, {
+			async startLive(options: LiveOptions) {
+				return { sdpAnswer: `answer to ${options.sdpOffer}`, voice: "sol", stop: async () => { throw new Error("stop failed"); } };
+			},
+		});
+		await f.start();
+		await f.bridge.request({ t: "voice", sdp: "v=0 a", attempt: "a" });
+		expect(await f.bridge.request({ t: "hangup", attempt: "a" })).toMatchObject({ ok: true });
+		expect<unknown>(await f.bridge.inbox.next((m) => m.t === "voice")).toEqual({ t: "voice", end: true, error: "" });
+		expect(await f.bridge.request({ t: "voice", sdp: "v=0 b", attempt: "b" })).toMatchObject({ sdp: "answer to v=0 b" });
 	});
 
 	test("a side turn cannot stream its old session's answer after a session switch", async () => {

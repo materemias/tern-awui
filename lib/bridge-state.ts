@@ -5,8 +5,9 @@ import { arr, num, obj, str, type Obj } from "./json";
 /**
  * The bridge protocol this server speaks; omp-extension/tern-mobile.ts declares the same (a test
  * keeps them equal). 2: the extension reports its `build`. 3: it forwards ✦ presses (`deepen`).
+ * 4: it runs voice calls (`voice`, `hangup`).
  */
-export const PROTOCOL = 3;
+export const PROTOCOL = 4;
 
 /** `status`: blocked while an ask dialog or tool approval waits on the user; `since` when it last changed. */
 export type BridgeState = {
@@ -58,8 +59,32 @@ type Queued = { text: string; followUp: boolean };
 /** `since`: when the turn started (ms); `intent`: what its current tool call does, "" before the first. */
 export type Run = { since: number; intent: string };
 export type Job = { id: string; type: string; label: string; agent: string; since: number };
-const CAPS = ["models", "tiers", "jobs", "queue", "rewind", "btw", "complete", "levels"] as const;
+const CAPS = ["models", "tiers", "jobs", "queue", "rewind", "btw", "complete", "levels", "voice"] as const;
 export type Caps = Record<(typeof CAPS)[number], boolean>;
+
+/**
+ * A voice call the extension runs through omp's live mode, with its audio on a phone's WebRTC peer.
+ * `phase`: omp's live phase (`connecting`, `listening`, `working`, `muted`, `error`); `muted` asks
+ * the phone to silence its microphone. `user`/`assistant`: the latest line each side said.
+ * `ended`: the call is over (sent once, with the failure that ended it in `error`). `attempt`: the
+ * starting phone's id for the call, so that phone knows the call is its own ("" when unknown).
+ */
+export type Voice = { phase: string; user: string; assistant: string; ended: boolean; error: string; attempt: string };
+
+/** A transcript line goes to phones at most this long. */
+const VOICE_TEXT_MAX = 2000;
+/** The failure that ended a call goes to phones at most this long. */
+const VOICE_ERROR_MAX = 500;
+
+/** The call after one of the extension's `voice` messages: a phase, a transcript line, or the end. */
+export function foldVoice(before: Voice | null, msg: Obj): Voice {
+  const call = before && !before.ended ? before : { phase: "connecting", user: "", assistant: "", ended: false, error: "", attempt: "" };
+  if (msg.end === true) return { ...call, ended: true, error: str(msg.error).slice(0, VOICE_ERROR_MAX) };
+  const role = str(msg.role);
+  if (role === "user" || role === "assistant") return { ...call, [role]: str(msg.text).slice(-VOICE_TEXT_MAX) };
+  const phase = str(msg.phase);
+  return phase ? { ...call, phase } : call;
+}
 
 /** A connection that hasn't reported yet. */
 export function emptyState(now: number): BridgeState {

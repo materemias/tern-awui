@@ -9,7 +9,7 @@ afterAll(() => GlobalRegistrator.unregister());
 // Static imports would bind Preact to the environment before the DOM is registered.
 const { render } = await import("preact");
 const { act } = await import("preact/test-utils");
-const { goBack, origins, useExitGuard, useNow, useRoute, useStream, useWide } = await import("./hooks");
+const { goBack, origins, useExitGuard, useNow, useRoute, useStream, useWakeLock, useWide } = await import("./hooks");
 
 let root: HTMLElement;
 const restore: (() => void)[] = [];
@@ -408,7 +408,7 @@ describe("useStream", () => {
     property(navigator, "setAppBadge", badge);
     property(navigator, "clearAppBadge", clear);
     await act(() => render(<StreamHost block="5" />, root));
-    expect(snapshot()).toEqual({ state: null, chat: null, subagents: null, live: null, queued: [], run: null, context: null, btw: null, screen: null, draft: null, doc: null, online: false, stretch: null });
+    expect(snapshot()).toEqual({ state: null, chat: null, subagents: null, live: null, queued: [], run: null, context: null, btw: null, screen: null, draft: null, doc: null, online: false, stretch: null, voice: null });
     await act(() => FakeEventSource.last.open());
     expect(snapshot()).toMatchObject({ online: true });
     const current = state([item()], { badge: 2 });
@@ -696,6 +696,34 @@ test("clock ticks at its interval, reschedules when changed and stops on unmount
   expect(root.textContent).toBe(String(Date.now()));
   await act(() => render(null, root));
   expect(jest.getTimerCount()).toBe(0);
+});
+
+function LockHost({ on }: { on: boolean }) {
+  useWakeLock(on);
+  return null;
+}
+test("wake lock: held while on, taken again after the page returns, released when off", async () => {
+  const locks: { released: boolean; release: () => Promise<void> }[] = [];
+  const request = mock(async () => {
+    const lock = { released: false, release: async () => { lock.released = true; } };
+    locks.push(lock);
+    return lock;
+  });
+  property(navigator, "wakeLock", { request });
+  await act(() => render(<LockHost on={false} />, root));
+  expect(request).not.toHaveBeenCalled();
+  await act(async () => { render(<LockHost on />, root); await settle(); });
+  expect(request).toHaveBeenCalledTimes(1);
+  // The browser drops the lock while hidden; a held lock is not asked for twice.
+  await visibility("hidden");
+  locks[0].released = true;
+  await act(async () => { await visibility("visible"); await settle(); });
+  await act(async () => { await visibility("visible"); await settle(); });
+  expect(request).toHaveBeenCalledTimes(2);
+  await act(async () => { render(<LockHost on={false} />, root); await settle(); });
+  expect(locks[1].released).toBe(true);
+  await visibility("visible");
+  expect(request).toHaveBeenCalledTimes(2);
 });
 
 function ExitHost({ enabled = true }: { enabled?: boolean }) {

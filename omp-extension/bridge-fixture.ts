@@ -11,7 +11,7 @@ export type State = {
 	context: { tokens: number; window: number; percent: number }; models: CatalogModel[];
 	items: Completion[]; done: boolean;
 	protocol: number; build: string;
-	caps: Record<"models" | "tiers" | "jobs" | "queue" | "rewind" | "btw" | "complete" | "levels", boolean>;
+	caps: Record<"models" | "tiers" | "jobs" | "queue" | "rewind" | "btw" | "complete" | "levels" | "voice", boolean>;
 	stretch: { off: boolean; open: Record<string, string[]>; deepen?: boolean; running?: Record<string, unknown[]> } | null;
 };
 export type RpcFrame = {

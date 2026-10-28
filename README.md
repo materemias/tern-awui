@@ -27,6 +27,7 @@ It has no login of its own. You reach it over a private network you control, suc
 - **Stretchtext replies.** With [omp-stretch](https://github.com/materemias/omp-stretch), replies arrive as their gist and a tap grows the detail in place, in sync with the Tern pane. Tap ✦ on an open stretch to ask the model for more.
 - **Two-way control.** Send prompts, steer a running turn or queue a follow-up, stop the agent, answer `ask` questions with a tap, attach photos, and use omp's `/command`, `/skill:` and `@file` completions.
 - **The draft is shared.** Text typed on the phone appears in the Tern pane's prompt and the other way round, so you can start on one and finish on the other.
+- **Talk to omp.** The microphone button starts omp's live voice mode with the phone as its microphone and speaker: say what you want, the voice model hands coding work to the session as ordinary turns, and reads back the result. The screen stays on while you talk. Needs an omp newer than 18.13.3 and an OpenAI Codex sign-in in omp.
 - **Session controls.** Switch model, effort or Ctrl+P role, watch the context gauge, rewind or copy, ask a side question with `/btw`, and read running subagents' conversations.
 - **Notifications.** Optional push notifications when a session finishes or needs you, and an unread count on the app icon. Notifications dismiss when you open the session or start another turn, including on desktop, while the mobile app is active. Cleanup preserves newly arrived unread notifications. If the app is closed or suspended, dismissal waits until it resumes.
 - **Shells and files too.** Plain terminals show their screen with a key bar (Esc, ^C, arrows, Tab), and Tern notes and opened files are readable.
@@ -117,6 +118,7 @@ What it does protect against, and why, is in [how it works](docs/architecture.md
 - It is not a terminal emulator. Full-screen programs like vim or htop are only usable through the screen view and the key bar.
 - Sessions without the extension show as plain terminals.
 - The extension uses some omp internals; a new omp version can turn individual features off until the extension catches up.
+- Voice calls end when the session screen closes. Phones may also cut a call when the screen locks or the app goes to the background (iOS Safari does), and the call stays on the phone that started it.
 
 ## More
 

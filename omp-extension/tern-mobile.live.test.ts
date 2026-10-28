@@ -66,7 +66,8 @@ test.skipIf(!enabled)("real omp: bridge state, pi-ai capabilities, model catalog
 		expect(initial.protocol).toBe(PROTOCOL);
 		// omp's loader gives the extension its real path: the build is this file's.
 		expect(initial.build).toBe(buildId(readFileSync(resolve(import.meta.dir, "tern-mobile.ts"))));
-		expect(initial.caps).toEqual({ models: true, tiers: true, jobs: true, queue: true, rewind: true, btw: true, complete: false, levels: true });
+		// RPC mode runs no extension live calls (`ctx.startLive` is interactive-only).
+		expect(initial.caps).toEqual({ models: true, tiers: true, jobs: true, queue: true, rewind: true, btw: true, complete: false, levels: true, voice: false });
 		expect(bridge.connections[0].data.token).toBe("test-bridge-secret");
 		const realState = await request({ type: "get_state" });
 		expect(initial.model).toBe(`${realState.model.provider}/${realState.model.id}`);

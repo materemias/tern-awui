@@ -1,6 +1,6 @@
 // The app's hooks: the clock, the route and back navigation, the layout, and the server stream.
 import { useEffect, useState } from "preact/hooks";
-import type { Btw, ChatEntry, ContextUse, Doc, Item, Run, State, StretchState, Subagent } from "./api";
+import type { Btw, ChatEntry, ContextUse, Doc, Item, Run, State, StretchState, Subagent, Voice } from "./api";
 import { backStep, parseRoute, trackOrigin, type Route } from "./lib";
 import { applyStatePatch } from "../lib/state-patch";
 
@@ -147,6 +147,54 @@ export function useWide(): boolean {
 /** How long a hidden app keeps its stream, so a quick app switch doesn't reconnect. */
 const HIDDEN_GRACE_MS = 10_000;
 
+/** Streams stay open while hidden as long as something holds them: a voice call needs its phase with the screen off. */
+let holds = 0;
+const holdReleased = new Set<() => void>();
+/** Keeps the stream open while hidden until the returned release is called (once). */
+export function holdStream(): () => void {
+  holds++;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    holds--;
+    for (const fn of holdReleased) fn();
+  };
+}
+
+/**
+ * Keeps the screen on while `on` (Screen Wake Lock; nothing where the browser lacks it). The
+ * browser drops the lock whenever the page hides, so it is taken again when the page comes back.
+ */
+export function useWakeLock(on: boolean) {
+  useEffect(() => {
+    if (!on || !navigator.wakeLock) return;
+    let lock: WakeLockSentinel | null = null;
+    let taking = false;
+    let done = false;
+    const take = async () => {
+      if (done || taking || document.visibilityState !== "visible" || (lock && !lock.released)) return;
+      taking = true;
+      try {
+        const next = await navigator.wakeLock.request("screen");
+        if (done) void next.release().catch(() => {});
+        else lock = next;
+      } catch {
+        // Refused (battery saver, no permission): the call goes on with the screen's own timeout.
+      } finally {
+        taking = false;
+      }
+    };
+    void take();
+    document.addEventListener("visibilitychange", take);
+    return () => {
+      done = true;
+      document.removeEventListener("visibilitychange", take);
+      void lock?.release().catch(() => {});
+    };
+  }, [on]);
+}
+
 /**
  * One SSE connection: always the block list, plus the open block's chat or screen and draft, its
  * subagent list (`view` "subagents"), or one subagent's chat (`sub`).
@@ -169,6 +217,8 @@ export function useStream(block: string | null, view: View, sub: string | null =
   const [context, setContext] = useState<ContextUse | null>(null);
   /** The pane's open stretches as its omp (stretch.ts) reports them; null when it reports none. */
   const [stretch, setStretch] = useState<StretchState | null>(null);
+  /** The pane's voice call as omp reports it; `ended` once, then null on the next stream. */
+  const [voice, setVoice] = useState<Voice | null>(null);
   const [online, setOnline] = useState(false);
   // The gauge belongs to the block: switching chat and Raw on one block keeps it until the new stream resends it.
   useEffect(() => setContext(null), [block]);
@@ -179,6 +229,7 @@ export function useStream(block: string | null, view: View, sub: string | null =
     setLive(null);
     setQueued([]);
     setStretch(null);
+    setVoice(null);
     setRun(null);
     const qs = block ? `?block=${block}&view=${view}${sub ? `&sub=${encodeURIComponent(sub)}` : ""}` : "";
     let es: EventSource | null = null;
@@ -248,7 +299,8 @@ export function useStream(block: string | null, view: View, sub: string | null =
         notificationEpoch++;
         notificationState = null;
         setOnline(false);
-        if (src.readyState !== EventSource.CLOSED || es !== src || document.visibilityState !== "visible") return;
+        // Hidden pages let the stream go, unless a call holds it: then the phase must keep coming.
+        if (src.readyState !== EventSource.CLOSED || es !== src || (document.visibilityState !== "visible" && !holds)) return;
         clearTimeout(retryTimer);
         retryTimer = window.setTimeout(open, retryMs);
         retryMs = Math.min(retryMs * 2, 30_000);
@@ -297,6 +349,7 @@ export function useStream(block: string | null, view: View, sub: string | null =
       src.addEventListener("run", (e) => setRun(JSON.parse(e.data)));
       src.addEventListener("context", (e) => setContext(JSON.parse(e.data)));
       src.addEventListener("stretch", (e) => setStretch(JSON.parse(e.data)));
+      src.addEventListener("voice", (e) => setVoice(JSON.parse(e.data)));
       src.addEventListener("doc", (e) => setDoc(JSON.parse(e.data)));
       src.addEventListener("subagents", (e) => setSubagents(JSON.parse(e.data)));
     };
@@ -317,7 +370,7 @@ export function useStream(block: string | null, view: View, sub: string | null =
       if (document.visibilityState === "hidden") {
         notificationState = null;
         notificationEpoch++;
-        hideTimer = window.setTimeout(close, HIDDEN_GRACE_MS);
+        if (!holds) hideTimer = window.setTimeout(close, HIDDEN_GRACE_MS);
       } else {
         // Even a brief background interval invalidates the dismissal snapshot. Request a full one.
         es?.close();
@@ -325,6 +378,13 @@ export function useStream(block: string | null, view: View, sub: string | null =
         open();
       }
     };
+    // A call ending while hidden lets the stream go as hiding would have.
+    const onRelease = () => {
+      if (holds || document.visibilityState !== "hidden" || !es) return;
+      clearTimeout(hideTimer);
+      hideTimer = window.setTimeout(close, HIDDEN_GRACE_MS);
+    };
+    holdReleased.add(onRelease);
     if (document.visibilityState === "visible") open();
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
@@ -336,8 +396,9 @@ export function useStream(block: string | null, view: View, sub: string | null =
       clearTimeout(retryTimer);
       clearTimeout(hideTimer);
       document.removeEventListener("visibilitychange", onVisibility);
+      holdReleased.delete(onRelease);
       if ("serviceWorker" in navigator) navigator.serviceWorker.removeEventListener("message", onWorkerMessage);
     };
   }, [block, view, sub]);
-  return { state, chat, subagents, live, queued, run, context, btw, setBtw, screen, draft, doc, online, stretch };
+  return { state, chat, subagents, live, queued, run, context, btw, setBtw, screen, draft, doc, online, stretch, voice };
 }

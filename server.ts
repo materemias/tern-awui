@@ -23,7 +23,7 @@ import { compactAtPercent, type Compaction } from "./lib/compaction";
 import { forgetRepos, repoOf } from "./lib/git";
 import { queryRecaps, querySessionRecaps, recapMark, withRecaps } from "./lib/recaps";
 import { answerSteps, KEYS, promptImages, type PromptImage } from "./lib/input";
-import { emptyState, listChanged, parseBridgeState, PROTOCOL, STRETCH_BLOCK, type BridgeState, type Caps, type ContextUse, type Job } from "./lib/bridge-state";
+import { emptyState, foldVoice, listChanged, parseBridgeState, PROTOCOL, STRETCH_BLOCK, type BridgeState, type Caps, type ContextUse, type Job, type Voice } from "./lib/bridge-state";
 import { extensionCheck, offersCommand, sessionMismatch, type InstallStatus, type Mismatch } from "./lib/extension-check";
 import { configDir, docIcon, installedExtension, ompDataDir, ternNotesDir } from "./lib/paths";
 import { ensureToken, sameToken } from "./lib/auth";
@@ -48,6 +48,12 @@ const SCREEN_LINES = 160;
 /** Screen polls: shells echo typing, so they go faster than an omp's Raw screen. */
 const SCREEN_POLL_MS = { terminal: 450, agent: 1200 };
 const BRIDGE_REPLY_MS = 2000;
+/** omp signals a voice call to OpenAI and opens its control socket before it answers. */
+const VOICE_START_MS = 30_000;
+/** A voice call nobody watches (the phone closed without hanging up) ends after this long. */
+const VOICE_ORPHAN_MS = 30_000;
+/** A WebRTC offer is a few KB; anything far bigger isn't one. */
+const MAX_SDP = 64 * 1024;
 /** A finish is reported only if the session stays idle this long (no follow-up turn). */
 const DONE_SETTLE_MS = 3000;
 /** `TERN_AWUI_PROJECTS` gets this long to print its folders. */
@@ -258,6 +264,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     live: { text: string; done: boolean } | null;
     /** Whether this omp has `/restart`, asked once its extension turns out older (see `askRestart`). */
     restart: "unasked" | "asking" | boolean;
+    /** The voice call this omp runs for a phone (omp's live mode); null when there is none. */
+    voice: Voice | null;
   };
   const bridges = new Map<string, Bridge>();
   /** The phones watching each pane: draft, live text and btw events go to them as they happen. */
@@ -293,14 +301,42 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     const set = paneListeners.get(pane) ?? new Set();
     paneListeners.set(pane, set);
     set.add(fn);
+    clearTimeout(voiceOrphans.get(pane));
+    voiceOrphans.delete(pane);
     if (set.size === 1) tellWatched(pane);
     return () => {
       set.delete(fn);
       if (set.size === 0) {
         paneListeners.delete(pane);
         tellWatched(pane);
+        if (bridges.get(pane)?.voice) orphanVoice(pane);
       }
     };
+  }
+
+  /** Pending hang-ups of voice calls no phone watches, by pane. */
+  const voiceOrphans = new Map<string, Timer>();
+  /** A call whose phone went away (closed tab, lost network) would talk to nobody until omp's stop key. */
+  function orphanVoice(pane: string) {
+    clearTimeout(voiceOrphans.get(pane));
+    voiceOrphans.set(pane, setTimeout(() => {
+      voiceOrphans.delete(pane);
+      const b = bridges.get(pane);
+      if (b?.voice && !paneListeners.has(pane)) void bridgeRequest(b, { t: "hangup" });
+    }, VOICE_ORPHAN_MS));
+  }
+
+  /** The call's new state goes to the pane's phones; an ended call is forgotten once announced. */
+  function setVoice(pane: string, b: Bridge, voice: Voice) {
+    b.voice = voice.ended ? null : voice;
+    if (voice.ended) {
+      clearTimeout(voiceOrphans.get(pane));
+      voiceOrphans.delete(pane);
+    } else if (!paneListeners.has(pane) && !voiceOrphans.has(pane)) {
+      // The phone left before the call came up: nobody would end it.
+      orphanVoice(pane);
+    }
+    emit(pane, "voice", voice);
   }
 
   /** A command's outcome: null when omp took it, else why not. */
@@ -311,14 +347,14 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   const MODELS_TTL_MS = 5 * 60_000;
   let modelsCache: { at: number; value: unknown[] } | null = null;
 
-  /** Sends a command to an omp session; resolves with its reply, or null when it doesn't answer. */
-  function bridgeRequest(b: Bridge, msg: Obj): Promise<Obj | null> {
+  /** Sends a command to an omp session; resolves with its reply, or null when it doesn't answer in `timeoutMs`. */
+  function bridgeRequest(b: Bridge, msg: Obj, timeoutMs = BRIDGE_REPLY_MS): Promise<Obj | null> {
     const seq = ++bridgeSeq;
     const { promise, resolve } = Promise.withResolvers<Obj | null>();
     const timer = setTimeout(() => {
       b.waiting.delete(seq);
       resolve(null);
-    }, BRIDGE_REPLY_MS);
+    }, timeoutMs);
     b.waiting.set(seq, (reply) => {
       clearTimeout(timer);
       resolve(reply);
@@ -993,6 +1029,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
             void contextOf(b).then((context) => (bridges.get(block) ?? null) === b && onPane("context", context));
             // Always, null included: a reconnecting phone must drop state from an omp that restarted without stretch.ts.
             onPane("stretch", b?.state.stretch ?? null);
+            // Always, null included: a call that ended while the phone was away must not linger.
+            onPane("voice", b?.voice ?? null);
             // Opening a session on the phone is seeing its update.
             if (unseen.delete(block)) invalidateState();
           }
@@ -1207,9 +1245,9 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
 
     // Cross-site forms cannot set custom headers; this keeps the POSTs same-origin.
     if (req.headers.get("x-tern-mobile") !== "1") return json({ error: "missing header" }, 403);
-    const m = /^\/api\/blocks\/(\d+)\/(keys|type|submit|draft|answer|model|models|thinking|tier|focus|abort|btw|close|complete|completion|rewind|stretch)$/.exec(path);
+    const m = /^\/api\/blocks\/(\d+)\/(keys|type|submit|draft|answer|model|models|thinking|tier|focus|abort|btw|close|complete|completion|rewind|stretch|voice|hangup)$/.exec(path);
     // Commands with no arguments may omit the body; payload-bearing actions must send JSON.
-    const bodyless = req.body === null && /^(models|focus|abort|close)$/.test(m?.[2] ?? "");
+    const bodyless = req.body === null && /^(models|focus|abort|close|hangup)$/.test(m?.[2] ?? "");
     const raw: unknown = bodyless ? {} : await req.json().catch(() => null);
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return json({ error: "expected a JSON object" }, 400);
     const body = obj(raw);
@@ -1243,6 +1281,32 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           // Stops the running turn; without the bridge, Escape is omp's interrupt key.
           if (!bridge) return done(await sendKeys(block, ["Escape"]));
           return done(bridgeError(await bridgeRequest(bridge, { t: "abort" })));
+        case "voice": {
+          // The phone's WebRTC offer; omp's live mode signals it and answers. Audio then flows
+          // between the phone and OpenAI; phase and transcript come back as `voice` events.
+          const sdp = str(body.sdp);
+          if (!sdp.startsWith("v=") || sdp.length > MAX_SDP) return json({ error: "expected a WebRTC offer" }, 400);
+          if (!bridge) return json({ error: "voice needs an omp session connected to tern-mobile" }, 409);
+          if (bridge.state.caps?.voice !== true) return json({ error: "this omp can't run voice calls (update omp)" }, 409);
+          if (bridge.voice) return json({ error: "a voice call is already running" }, 409);
+          // The call is known from now on, before omp's first phase: the one-call guard, the orphan
+          // hang-up and the bridge-replacement hang-up all see it while omp is still signaling.
+          const attempt = str(body.attempt).slice(0, 64);
+          setVoice(block, bridge, { phase: "connecting", user: "", assistant: "", ended: false, error: "", attempt });
+          const r = await bridgeRequest(bridge, { t: "voice", sdp, attempt }, VOICE_START_MS);
+          const error = bridgeError(r, "omp did not start the call") ?? (typeof r?.sdp === "string" ? null : "omp sent no answer");
+          if (!error) return json({ sdp: r!.sdp });
+          // No answer in time: omp may still bring the call up, so end that start (and only that one).
+          if (!r) void bridgeRequest(bridge, { t: "hangup", attempt });
+          // Read again: the call may have changed while omp answered (TS keeps the pre-await narrowing).
+          const now = bridge.voice as Voice | null;
+          if (bridges.get(block) === bridge && now?.attempt === attempt) setVoice(block, bridge, { ...now, ended: true, error });
+          return done(error);
+        }
+        case "hangup":
+          if (!bridge) return json({ ok: true });
+          // With `attempt`, only that start's call: an automatic cleanup must not end a newer call.
+          return done(bridgeError(await bridgeRequest(bridge, { t: "hangup", ...(str(body.attempt) && { attempt: str(body.attempt).slice(0, 64) }) })));
         case "btw": {
           // A side question; the answer streams to this block's phones as `btw` events.
           const text = str(body.text).trim();
@@ -1393,6 +1457,11 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   /** Every bridge connection per pane; the newest is the pane's bridge. */
   const paneSockets = new Map<string, Set<ServerWebSocket<{ pane: string | null }>>>();
 
+  /** The pane's call is gone with its connection; phones hang up their side. */
+  function endVoice(pane: string, b: Bridge, reason: string) {
+    if (b.voice) setVoice(pane, b, { ...b.voice, ended: true, error: reason });
+  }
+
   /** A different session must not inherit the previous one's transient output or finish timer. */
   function resetPane(pane: string) {
     clearTimeout(doneTimers.get(pane));
@@ -1416,6 +1485,9 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     if (previous) {
       previous.ws.send(JSON.stringify({ t: "watch", on: false }));
       abandonRequests(previous);
+      // Only the pane's bridge reaches the phone: a call on the old connection can't be steered.
+      if (previous.voice) previous.ws.send(JSON.stringify({ t: "hangup", seq: 0 }));
+      endVoice(pane, previous, "another omp took over this pane");
       resetPane(pane);
     }
     bridges.set(pane, {
@@ -1424,6 +1496,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
       waiting: new Map(),
       live: null,
       restart: "unasked",
+      voice: null,
     });
     invalidateState();
     // A fresh connection starts unwatched; tell it if a phone already looks at this pane.
@@ -1444,6 +1517,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     if (!set?.size) paneSockets.delete(pane);
     if (bridges.get(pane)?.ws !== ws) return;
     abandonRequests(bridges.get(pane)!);
+    endVoice(pane, bridges.get(pane)!, "omp disconnected");
     resetPane(pane);
     bridges.delete(pane);
     const next = set?.size ? [...set].at(-1) : undefined;
@@ -1465,6 +1539,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     clearInterval(safety);
     for (const timer of doneTimers.values()) clearTimeout(timer);
     ternEvents?.kill();
+    for (const timer of voiceOrphans.values()) clearTimeout(timer);
     historyWatcher?.close();
     distWatcher?.close();
     for (const finish of [...openStreams]) finish();
@@ -1540,6 +1615,14 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
             emit(ws.data.pane, "btw", payload);
             return;
           }
+          if (msg.t === "voice" && ws.data.pane) {
+            const b = bridges.get(ws.data.pane);
+            if (!b || b.ws !== ws) return;
+            // An end with no call known (a start that failed before any phase) is nothing to announce.
+            if (msg.end === true && !b.voice) return;
+            setVoice(ws.data.pane, b, foldVoice(b.voice, msg));
+            return;
+          }
           if (msg.t === "live" && ws.data.pane) {
             const b = bridges.get(ws.data.pane);
             if (!b || b.ws !== ws) return;
@@ -1572,6 +1655,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           const changedSession = Boolean(before.sessionId) && before.sessionId !== b.state.sessionId;
           if (changedSession) {
             b.live = null;
+            // The extension hangs up the old session's call; phones hear it now.
+            endVoice(pane, b, "omp switched sessions");
             resetPane(pane);
           }
           if ((changedSession || status === "working") && unseen.delete(pane)) invalidateState();

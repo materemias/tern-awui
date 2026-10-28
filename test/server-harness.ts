@@ -171,6 +171,8 @@ export class Extension {
   silent = false;
   /** Whether this fake omp has `/restart`, as its autocomplete answers. */
   restart = false;
+  /** Answers a `voice` offer in place of the default SDP answer (a pending promise holds omp mid-signaling). */
+  answerVoice?: (msg: Message) => Message | Promise<Message>;
   snapshot: Message;
   constructor(private sandbox: Sandbox, pane = "1", model = "test/initial") {
     this.snapshot = { t: "state", pane, sessionId: sandbox.session, text: "", model, thinking: "medium", status: "working",
@@ -201,6 +203,12 @@ export class Extension {
       if (msg.t === "complete" && msg.text === "/restart") return reply({ prefix: "/restart", items: this.restart ? [{ value: "restart", label: "restart" }] : [] });
       if (msg.t === "complete") return reply({ prefix: "/he", items: [{ value: "/help", label: "help" }] });
       if (msg.t === "apply") return reply(msg.value === "bad" ? {} : { text: "/help " });
+      // Like omp's live mode: the offer gets an answer (or what `answerVoice` gives); a hang-up ends the call with one `end`.
+      if (msg.t === "voice") return void Promise.resolve(this.answerVoice?.(msg) ?? { sdp: `v=0 answer to ${msg.sdp}` }).then(reply);
+      if (msg.t === "hangup") {
+        reply({ ok: true });
+        return this.send({ t: "voice", end: true });
+      }
       this.send({ ...this.snapshot, seq: msg.seq });
     };
     await new Promise<void>((resolve, reject) => { this.ws.onopen = () => resolve(); this.ws.onerror = () => reject(new Error("bridge connection failed")); });

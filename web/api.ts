@@ -1,5 +1,5 @@
 export type { BtwHistoryRecord, BtwHistoryTurn } from "../lib/btw-history";
-export type { ContextUse, Run, StretchState } from "../lib/bridge-state";
+export type { ContextUse, Run, StretchState, Voice } from "../lib/bridge-state";
 
 // ---------- API shapes (mirror server.ts) ----------
 
@@ -45,6 +45,8 @@ export type Caps = {
   btw: boolean;
   complete: boolean;
   levels: boolean;
+  /** omp runs voice calls for the phone (`ctx.startLive`, omp after 18.13.3). */
+  voice: boolean;
 };
 export type Job = { id: string; type: string; label: string; agent: string; since: number };
 /** A session's subagent as `view=subagents` lists it; `running`: one of the session's jobs. */
@@ -119,9 +121,10 @@ export type Doc = { text: string; markdown: boolean; missing: boolean; clipped: 
 /** A model omp has credentials for, as the bridge lists it. */
 export type CatalogModel = { p: string; id: string; name: string; r: boolean; ctx: number; in: number; out: number; img: boolean };
 
-/** A JSON POST with the header the server requires of the app. */
-export function postJson(path: string, body: unknown): Promise<Response> {
+/** A JSON POST with the header the server requires of the app; `init` adds options such as `keepalive`. */
+export function postJson(path: string, body: unknown, init: RequestInit = {}): Promise<Response> {
   return fetch(path, {
+    ...init,
     method: "POST",
     headers: { "content-type": "application/json", "x-tern-mobile": "1" },
     body: JSON.stringify(body),

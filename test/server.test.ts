@@ -406,7 +406,7 @@ test("model catalog and model/thinking/tier commands correlate sequenced bridge 
 });
 
 test("reported caps reach the list and refuse rewind, models and tier when off", async () => {
-  const all = { models: true, tiers: true, jobs: true, queue: true, rewind: true, btw: true, complete: true, levels: true };
+  const all = { models: true, tiers: true, jobs: true, queue: true, rewind: true, btw: true, complete: true, levels: true, voice: true };
   agent.report({ protocol: 1, caps: { ...all, rewind: false, models: false, tiers: false } });
   // The list cache lives 15 s; seeing the caps at once means the change invalidated it.
   const live = obj(item(await until(async () => {
@@ -493,7 +493,7 @@ test("an older omp without /restart, or without autocomplete, gets no Reload", a
   await until(async () => item(await s.state(), 4).live === null, "pane 4 unbridged");
   const noCompletion = new Extension(s, "4");
   noCompletion.restart = true;
-  Object.assign(noCompletion.snapshot, { protocol: 1, caps: { models: true, tiers: true, jobs: true, queue: true, rewind: true, btw: true, complete: false, levels: true } });
+  Object.assign(noCompletion.snapshot, { protocol: 1, caps: { models: true, tiers: true, jobs: true, queue: true, rewind: true, btw: true, complete: false, levels: true, voice: false } });
   await noCompletion.connect();
   await until(async () => obj(item(await s.state(), 4).live).mismatch === "older", "older session without completion");
   // A probe would have gone out with that rebuild; anything the server sends later arrives after it.
