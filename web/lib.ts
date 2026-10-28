@@ -214,6 +214,17 @@ export function trackOrigin(origins: Map<string, string>, oldHash: string, newHa
 }
 
 /**
+ * A sideways move (a swipe to the next session or subagent) replaces its screen's history entry:
+ * the new screen counts as entered from wherever the old one was, so ‹ still pops to it.
+ */
+export function inheritOrigin(origins: Map<string, string>, oldHash: string, newHash: string): void {
+  const origin = origins.get(routeHash(parseRoute(oldHash)));
+  const key = routeHash(parseRoute(newHash));
+  if (origin === undefined) origins.delete(key);
+  else origins.set(key, origin);
+}
+
+/**
  * Where ‹ leads from `r`, and whether that is a history pop (the target is the screen `r` was
  * entered from) rather than a replace (a deep link, a notification, a jump from elsewhere), so
  * back never stacks a screen it would reopen. A session goes to the list, the subagent list to
@@ -284,6 +295,18 @@ export function listProjects(projects: Project[], needle: string, hideOld: boole
       ? [p.name, i.tag ?? "", i.title, i.agent?.lastPrompt ?? ""].join(" ").toLowerCase().includes(needle)
       : !isOld(i, now, selected);
   return projects.map((p) => ({ ...p, items: p.items.filter((i) => keep(p, i)) })).filter((p) => p.items.length);
+}
+
+/**
+ * The sessions a sideways swipe steps through: the list's omp rows in its order, without old ones
+ * while the list hides them and without collapsed projects' rows. Blocks in `keep` always stay (the
+ * open one and those a run of swipes passed), so a session opened from elsewhere (a notification,
+ * a collapsed project) still has neighbours, and swiping back still reaches it.
+ */
+export function swipeOrder(projects: Project[], o: { hideOld: boolean; collapsed: Set<string>; now: number; keep: Set<string> }): Item[] {
+  return projects.flatMap((p) =>
+    p.items.filter((i) => o.keep.has(i.block) || (i.agent && !o.collapsed.has(p.name) && !(o.hideOld && isOld(i, o.now, null)))),
+  );
 }
 
 /** A row's second line, whether it is omp's recap, and whether an idle row has gone stale (a day). */

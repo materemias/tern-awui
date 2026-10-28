@@ -1,7 +1,7 @@
 // The app's hooks: the clock, the route and back navigation, the layout, and the server stream.
 import { useEffect, useState } from "preact/hooks";
 import type { Btw, ChatEntry, ContextUse, Doc, Item, Run, State, StretchState, Subagent, Voice } from "./api";
-import { backStep, parseRoute, trackOrigin, type Route } from "./lib";
+import { backStep, inheritOrigin, parseRoute, trackOrigin, type Route } from "./lib";
 import { applyStatePatch } from "../lib/state-patch";
 
 /** The app icon counts updates not seen yet: finished turns and waits on you. */
@@ -79,7 +79,17 @@ export function useRoute(): Route {
   const [route, setRoute] = useState(() => parseRoute(location.hash));
   useEffect(() => {
     const on = (e: HashChangeEvent) => {
-      trackOrigin(origins, new URL(e.oldURL).hash, location.hash);
+      const old = new URL(e.oldURL).hash;
+      // Only the hash the swipe asked for counts as sideways: a notification landing mid-slide doesn't.
+      if (sideways === location.hash) {
+        inheritOrigin(origins, old, location.hash);
+        const from = parseRoute(old);
+        if (from.view === "session") swipeTrail.add(from.block);
+      } else {
+        trackOrigin(origins, old, location.hash);
+        swipeTrail.clear();
+      }
+      sideways = null;
       setRoute(parseRoute(location.hash));
     };
     addEventListener("hashchange", on);
@@ -96,6 +106,23 @@ export function goBack(route: Route) {
   const { target, pop } = backStep(origins, route);
   if (pop) history.back();
   else location.replace(target);
+}
+
+/** The hash a sideways move is on its way to. */
+let sideways: string | null = null;
+
+/**
+ * The sessions a run of swipes passed through, so the swipe order keeps them even when the list
+ * would hide them (an old session opened from a notification) and swiping back finds them. Any
+ * other move starts a new run.
+ */
+export const swipeTrail = new Set<string>();
+
+/** Moves sideways to `hash` (a swipe): replaces this screen's history entry, so back leads where it did. */
+export function goSideways(hash: string) {
+  if (hash === location.hash) return;
+  sideways = hash;
+  location.replace(hash);
 }
 
 /**

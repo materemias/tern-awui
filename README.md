@@ -29,6 +29,7 @@ It has no login of its own. You reach it over a private network you control, suc
 - **The draft is shared.** Text typed on the phone appears in the Tern pane's prompt and the other way round, so you can start on one and finish on the other.
 - **Talk to omp.** The microphone button starts omp's live voice mode with the phone as its microphone and speaker: say what you want, the voice model hands coding work to the session as ordinary turns, and reads back the result. The screen stays on while you talk. Needs an omp newer than 18.13.3 and an OpenAI Codex sign-in in omp.
 - **Session controls.** Switch model, effort or Ctrl+P role, watch the context gauge, rewind or copy, ask a side question with `/btw`, and read running subagents' conversations.
+- **Swipe between sessions.** Swipe left or right on an open session to reach the next or previous omp session in the list's order, or between a session's subagents. Turn the finger up or down mid-swipe to pick any session from a wheel, and lift to open it. Back still leads to the list. On a keyboard, Alt+← and Alt+→ switch at once.
 - **Notifications.** Optional push notifications when a session finishes or needs you, and an unread count on the app icon. Notifications dismiss when you open the session or start another turn, including on desktop, while the mobile app is active. Cleanup preserves newly arrived unread notifications. If the app is closed or suspended, dismissal waits until it resumes.
 - **Shells and files too.** Plain terminals show their screen with a key bar (Esc, ^C, arrows, Tab), and Tern notes and opened files are readable.
 
@@ -119,6 +120,7 @@ What it does protect against, and why, is in [how it works](docs/architecture.md
 - Sessions without the extension show as plain terminals.
 - The extension uses some omp internals; a new omp version can turn individual features off until the extension catches up.
 - Voice calls end when the session screen closes. Phones may also cut a call when the screen locks or the app goes to the background (iOS Safari does), and the call stays on the phone that started it.
+- Swiping between sessions follows the list's hidden-old and folded projects, but not a filter typed in the desktop sidebar. A swipe that starts on something that scrolls sideways (a wide code block or table), or within 24 px of the screen edge, scrolls or goes back instead.
 
 ## More
 

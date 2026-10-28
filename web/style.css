@@ -121,6 +121,37 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .turn-jump button { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border-radius: 50%; border: 1px solid var(--line); background: var(--raise); color: var(--muted); box-shadow: 0 2px 10px rgb(0 0 0 / .35); }
 .turn-jump svg { width: 18px; height: 18px; }
 .turn-jump button:hover, .turn-jump button:active { color: var(--fg); }
+/* Swiping sideways to the next session or subagent: the screen follows the finger over the
+   neighbour's name, which waits at the edge it comes in from; the count sits over the header. */
+.swipe { position: relative; overflow: clip; height: 100dvh; }
+/* No z-index: a stacking context here would put the sidebar over the image view on the desktop. DOM order paints it over the peek. */
+.swipe-page { position: relative; height: 100%; background: var(--bg); }
+.swipe-peek { position: absolute; inset: 0; display: flex; align-items: center; padding: 0 18px; background: var(--panel); }
+.swipe-peek.to-next { justify-content: flex-end; text-align: right; }
+.swipe-label { max-width: 60%; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.swipe-peek.to-next .swipe-label :is(.row-title, .row-meta) { justify-content: flex-end; }
+/* The wheel: every sibling in the gap the screen leaves (62% of the width, WHEEL_SHARE in swipe.tsx),
+   the highlighted one framed at mid-height, ▲/▼ at the edges where a held finger keeps stepping. */
+.swipe-wheel { position: absolute; top: 0; bottom: 0; width: 62%; text-align: left; overflow: hidden; }
+.swipe-peek.to-next .swipe-wheel { right: 0; }
+.swipe-peek.to-prev .swipe-wheel { left: 0; }
+.swipe-wheel-list { position: absolute; top: 50%; left: 0; right: 0; transition: transform .12s ease-out; }
+.swipe-wheel-row { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; padding: 0 14px; }
+.swipe-wheel-row .row-title { justify-content: flex-start; }
+/* The open session: lifting on it cancels. A rail, since a suffix would vanish in the title's ellipsis. */
+.swipe-wheel-row.here { box-shadow: inset 3px 0 var(--muted); }
+.swipe-wheel-frame { position: absolute; top: 50%; left: 6px; right: 6px; border: 2px solid var(--accent); border-radius: 10px; pointer-events: none; }
+.swipe-edge { position: absolute; left: 0; right: 0; display: grid; place-items: center; height: 64px; color: var(--muted); font-size: 13px; }
+.swipe-edge.up { top: 0; }
+.swipe-edge.down { bottom: 0; }
+.swipe-edge.on { color: var(--accent); }
+.swipe-count { position: absolute; top: calc(6px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); padding: 2px 10px; border-radius: 999px; background: var(--raise); border: 1px solid var(--line); color: var(--muted); font-size: 12px; pointer-events: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .swipe-in-next { animation: swipe-in-next .18s ease-out; }
+  .swipe-in-prev { animation: swipe-in-prev .18s ease-out; }
+}
+@keyframes swipe-in-next { from { transform: translateX(30%); opacity: .5; } }
+@keyframes swipe-in-prev { from { transform: translateX(-30%); opacity: .5; } }
 .empty { color: var(--muted); text-align: center; padding: 40px 0; }
 .msg { max-width: 100%; overflow-wrap: anywhere; }
 /* Tern-style prompt: full width, accent rail and chevron, no bubble. */

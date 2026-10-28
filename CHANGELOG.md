@@ -7,6 +7,7 @@
 - Voice calls: the microphone button in an omp session starts omp's live voice mode with the phone as microphone and speaker. Coding requests run as turns of that session, and the bar above the composer shows what omp is doing, the last thing each side said, mute and hang up. The screen stays on during a call. Needs an omp newer than 18.13.3; restart running omp sessions to load the updated extension.
 - omp's welcome mark stays at the top of an omp session once its first turn starts, and the chat follows right below it.
 - On touch screens, a paste button next to attach adds the image on the clipboard to the prompt, since Android's Paste menu offers only text. Chrome asks for clipboard access the first time.
+- Swipe left or right on an open session to move to the next or previous omp session in the list's order. The screen follows your finger, the neighbour's title and a position count show while you drag, and back still returns to the list. Turning the finger up or down mid-swipe opens a wheel of every session: each row of travel moves the highlight, holding near the top or bottom keeps stepping, and lifting opens the highlighted session. A subagent's chat swipes to the session's other subagents. On a keyboard, Alt+← / Alt+→ switches to the previous or next session at once, without the slide.
 
 ### Fixes
 

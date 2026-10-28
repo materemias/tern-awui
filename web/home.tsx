@@ -175,6 +175,11 @@ function ProjectSheet({ open, onPick, onClose }: { open: Set<string>; onPick: (d
 const COLLAPSED_KEY = "tern-mobile:collapsed-projects";
 const HIDE_OLD_KEY = "tern-mobile:hide-old";
 
+/** Whether this device's list hides sessions older than a day. */
+export const storedHideOld = () => localStorage.getItem(HIDE_OLD_KEY) === "on";
+/** The projects this device's list keeps folded. */
+export const storedCollapsed = () => new Set(parseStoredList(localStorage.getItem(COLLAPSED_KEY)));
+
 /**
  * The session list. `wide`: shown beside the open session, which `selected` marks. `rail`: minimized
  * to a column of session icons; `onRail` toggles that (desktop only).
@@ -201,7 +206,7 @@ export function Home({
   const needle = rail ? "" : q.trim().toLowerCase();
   // Hiding sessions untouched for a day, remembered on this device. Working, waiting, unseen and
   // open sessions always stay; so do blocks without a time (shells, notes) and filter matches.
-  const [hideOld, setHideOld] = useState(() => localStorage.getItem(HIDE_OLD_KEY) === "on");
+  const [hideOld, setHideOld] = useState(storedHideOld);
   function toggleOld() {
     localStorage.setItem(HIDE_OLD_KEY, hideOld ? "off" : "on");
     setHideOld(!hideOld);
@@ -216,7 +221,7 @@ export function Home({
 
   const [picker, setPicker] = useState(false);
   // Collapsed projects, remembered on this device.
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(parseStoredList(localStorage.getItem(COLLAPSED_KEY))));
+  const [collapsed, setCollapsed] = useState<Set<string>>(storedCollapsed);
   function toggleProject(name: string) {
     setCollapsed((prev) => {
       const next = toggled(prev, name);

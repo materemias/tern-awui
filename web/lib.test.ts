@@ -16,6 +16,7 @@ import {
   fitEdge,
   folderLabel,
   isAbove,
+  inheritOrigin,
   installNotice,
   isOld,
   jobsSummary,
@@ -35,6 +36,7 @@ import {
   sessionNotice,
   shellArg,
   searchModels,
+  swipeOrder,
   todoSummary,
   toggled,
   tokensShort,
@@ -421,6 +423,46 @@ describe("listProjects", () => {
     expect(blocks(listProjects(projects, "wip", false, NOW, null))).toEqual([["app", ["2"]]]);
     expect(blocks(listProjects(projects, "borg keys", false, NOW, null))).toEqual([["infra", ["3"]]]);
     expect(listProjects(projects, "/home/u", false, NOW, null)).toEqual([]);
+  });
+});
+
+describe("swipeOrder", () => {
+  const old = NOW - OLD_MS - 1;
+  const projects: Project[] = [
+    { name: "app", items: [item({ block: "1", agent: agent() }), item({ block: "2" }), item({ block: "3", agent: agent(), since: old })] },
+    { name: "infra", items: [item({ block: "4", agent: agent() })] },
+  ];
+  const opts = { hideOld: false, collapsed: new Set<string>(), now: NOW, keep: new Set(["1"]) };
+  const order = (o: typeof opts) => swipeOrder(projects, o).map((i) => i.block);
+  test("omp rows in list order across projects, shells skipped", () => {
+    expect(order(opts)).toEqual(["1", "3", "4"]);
+  });
+  test("hidden old rows and collapsed projects drop out", () => {
+    expect(order({ ...opts, hideOld: true, collapsed: new Set(["infra"]) })).toEqual(["1"]);
+  });
+  test("kept blocks stay: a shell, a row in a collapsed project, an old one swiped past", () => {
+    expect(order({ ...opts, keep: new Set(["2"]) })).toEqual(["1", "2", "3", "4"]);
+    expect(order({ ...opts, collapsed: new Set(["infra"]), keep: new Set(["4"]) })).toEqual(["1", "3", "4"]);
+    expect(order({ ...opts, hideOld: true, keep: new Set(["4", "3"]) })).toEqual(["1", "3", "4"]);
+  });
+});
+
+describe("inheritOrigin", () => {
+  test("a swipe from a session opened from the list still pops back to it", () => {
+    const origins = new Map<string, string>();
+    trackOrigin(origins, "#/", "#/b/1");
+    inheritOrigin(origins, "#/b/1", "#/b/2");
+    expect(backStep(origins, { view: "session", block: "2" })).toEqual({ target: "#/", pop: true });
+  });
+  test("a subagent swiped to from one opened via the list returns to the list", () => {
+    const origins = new Map<string, string>([["#/b/1/sub/a", "#/b/1/sub"]]);
+    inheritOrigin(origins, "#/b/1/sub/a", "#/b/1/sub/b");
+    expect(backStep(origins, { view: "subagent", block: "1", name: "b" })).toEqual({ target: "#/b/1/sub", pop: true });
+  });
+  test("a deep-linked screen passes on no origin, so back replaces", () => {
+    const origins = new Map<string, string>([["#/b/2", "#/b/9"]]);
+    inheritOrigin(origins, "#/b/1", "#/b/2");
+    expect(backStep(origins, { view: "session", block: "2" })).toEqual({ target: "#/", pop: false });
   });
 });
 

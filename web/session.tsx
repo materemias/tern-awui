@@ -1,17 +1,18 @@
 // An open session (chat, raw screen or note, with the composer) and its subagent screens.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { highlightFile } from "./highlight";
-import { post, type Run } from "./api";
-import { age, backStep, can, elapsed, isNote, type Route } from "./lib";
+import { post, type Item, type Run } from "./api";
+import { age, backStep, can, elapsed, isNote, routeHash, swipeOrder, type Route } from "./lib";
 import { Chat, Markdown, StretchContext, type StretchSync } from "./chat";
 import { liveText, withOpen } from "./stretch";
 import { screenHtml } from "./markdown";
 import { Dot, PiMark } from "./parts";
 import { ExtensionNotice } from "./extension";
 import { JobsStrip, SubagentChat, SubagentList } from "./subagents";
-import { Title } from "./home";
+import { storedCollapsed, storedHideOld, Title } from "./home";
 import { Composer } from "./composer";
-import { goBack, origins, useNow, useStream, type View } from "./hooks";
+import { goBack, origins, swipeTrail, useNow, useStream, type View } from "./hooks";
+import { SwipeNav, type Siblings } from "./swipe";
 
 export function Session({ block }: { block: string }) {
   const [view, setView] = useState<View>("chat");
@@ -90,7 +91,19 @@ export function Session({ block }: { block: string }) {
 
   const shownState = item?.status ?? undefined;
   const working = shownState === "working";
+  // The sessions a sideways swipe and its wheel step through, read when a gesture starts: the
+  // list's order as this device shows it, plus this session and any a run of swipes passed.
+  const siblings = (): Siblings => {
+    const order = state
+      ? swipeOrder(state.projects, { hideOld: storedHideOld(), collapsed: storedCollapsed(), now: Date.now(), keep: new Set([...swipeTrail, block]) })
+      : [];
+    return {
+      items: order.map((i) => ({ href: routeHash({ view: "session", block: i.block }), label: <SessionLabel item={i} /> })),
+      index: order.findIndex((i) => i.block === block),
+    };
+  };
   return (
+    <SwipeNav siblings={siblings}>
     <div class="screen">
       <header class="bar session-bar">
         <a
@@ -241,6 +254,20 @@ export function Session({ block }: { block: string }) {
         />
       )}
     </div>
+    </SwipeNav>
+  );
+}
+
+/** A sibling session as a swipe's gap and wheel show it: its title, status and project. */
+function SessionLabel({ item }: { item: Item }) {
+  return (
+    <>
+      <Title item={item} />
+      <div class="row-meta">
+        <Dot state={item.status ?? undefined} />
+        <span class="muted small">{item.project}</span>
+      </div>
+    </>
   );
 }
 
@@ -321,12 +348,60 @@ function FileText({ text, path }: { text: string; path: string }) {
   return <pre class="term">{text}</pre>;
 }
 
-/** A session's subagent list, or one subagent's chat; both read-only. */
+/**
+ * Each session's subagent names in the order its subagent list last showed them. Swipes between
+ * subagent chats keep that order while the list re-sorts as running ones finish; subagents started
+ * since are added at the end.
+ */
+const subagentOrder = new Map<string, string[]>();
+
+/** A session's subagent list, or one subagent's chat; both read-only. A chat swipes to its siblings. */
 export function SubagentScreen({ route }: { route: Extract<Route, { view: "subagents" | "subagent" }> }) {
   const sub = route.view === "subagent" ? route.name : null;
   const { state, chat, subagents, online } = useStream(route.block, sub ? "chat" : "subagents", sub);
   const item = state?.projects.flatMap((p) => p.items).find((i) => i.block === route.block);
   const now = useNow(5000);
+  const [names, setNames] = useState(() => subagentOrder.get(route.block) ?? null);
+  useEffect(() => {
+    if (subagents) subagentOrder.set(route.block, subagents.map((s) => s.name));
+  }, [subagents, route.block]);
+  // Each chat asks once for subagents the order doesn't have yet (opened by a link or a reload, or
+  // started since the list was seen); those it has keep their places.
+  useEffect(() => {
+    if (!sub) return;
+    let current = true;
+    fetch(`/api/blocks/${route.block}/subagents`, { signal: AbortSignal.timeout(5000) })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { subagents?: unknown } | null) => {
+        if (!current || !Array.isArray(d?.subagents)) return;
+        const known = subagentOrder.get(route.block) ?? [];
+        const fresh = d.subagents.map((s: { name?: unknown } | null) => s?.name).filter((n): n is string => typeof n === "string" && !known.includes(n));
+        if (!fresh.length) return;
+        const list = [...known, ...fresh];
+        subagentOrder.set(route.block, list);
+        setNames(list);
+      })
+      .catch(() => {});
+    return () => void (current = false);
+  }, [sub, route.block]);
   const screen = { block: route.block, item, online, now, backHref: backStep(origins, route).target, onBack: () => goBack(route) };
-  return sub ? <SubagentChat {...screen} name={sub} entries={chat} /> : <SubagentList {...screen} list={subagents} />;
+  if (!sub) return <SubagentList {...screen} list={subagents} />;
+  const order = names ?? [];
+  const siblings = (): Siblings => ({
+    items: order.map((name) => ({
+      href: routeHash({ view: "subagent", block: route.block, name }),
+      label: (
+        <div class="row-title">
+          <span class="sub-mark">⑂</span>
+          <span class="title">{name}</span>
+        </div>
+      ),
+    })),
+    index: order.indexOf(sub),
+  });
+  return (
+    <SwipeNav siblings={siblings}>
+      <SubagentChat {...screen} name={sub} entries={chat} />
+    </SwipeNav>
+  );
 }
