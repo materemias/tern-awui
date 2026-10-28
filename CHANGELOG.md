@@ -10,6 +10,7 @@
 ### Fixes
 
 - On touch screens, tapping the π in an empty omp session plays its stomp and wiggle, which before only hover set off.
+- The ↑ and ↓ prompt buttons show only once you scroll up from the end of the chat.
 
 ## 0.8.0 (2026-10-27)
 

@@ -52,6 +52,8 @@ export function Session({ block }: { block: string }) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const glide = useRef<Glide | null>(null);
+  // The ↑/↓ prompt jumps show only once the reader has scrolled up from the end.
+  const [atEnd, setAtEnd] = useState(true);
   const now = useNow(5000);
 
   useLayoutEffect(() => {
@@ -66,6 +68,7 @@ export function Session({ block }: { block: string }) {
     if (!el) return;
     const follow = () => {
       if (pinned.current && !gliding(glide.current, el)) el.scrollTop = el.scrollHeight;
+      setAtEnd(nearEnd(el));
     };
     const sizes = new ResizeObserver(follow);
     const watch = () => {
@@ -149,10 +152,11 @@ export function Session({ block }: { block: string }) {
           ref={scroller}
           onScroll={(e) => {
             const el = e.currentTarget;
+            setAtEnd(nearEnd(el));
             // Mid-glide the position says nothing about following: jumpTurn decided that.
             if (gliding(glide.current, el)) return;
             glide.current = null;
-            pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+            pinned.current = nearEnd(el);
           }}
         >
           {isOmp && view === "screen" && (
@@ -208,7 +212,7 @@ export function Session({ block }: { block: string }) {
           {working && item && <WorkingRow run={run} since={item.since} />}
           {item && <JobsStrip block={block} jobs={item.live?.jobs ?? []} subagents={item.agent?.subagents ?? 0} now={now} />}
         </div>
-        {!item?.doc && chat && view === "chat" && (
+        {!item?.doc && chat && view === "chat" && !atEnd && (
           <div class="turn-jump">
             <button title="Previous prompt" aria-label="Previous prompt" onClick={() => jumpTurn(scroller.current, -1, glide, pinned)}>
               <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -273,6 +277,13 @@ const JUMP_GAP = 8;
 type Glide = { top: number; at: number };
 /** A glide not arrived after this long counts as over (a hand on the screen stopped it). */
 const GLIDE_MAX_MS = 1500;
+
+/** Within this many pixels of the end, a reader counts as at the end and is kept there. */
+const END_SLACK = 80;
+
+function nearEnd(scroller: HTMLElement): boolean {
+  return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < END_SLACK;
+}
 
 function gliding(glide: Glide | null, scroller: HTMLElement): glide is Glide {
   return !!glide && Math.abs(scroller.scrollTop - glide.top) > 2 && performance.now() - glide.at < GLIDE_MAX_MS;
