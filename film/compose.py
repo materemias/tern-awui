@@ -1,12 +1,14 @@
 # /// script
 # dependencies = ["pillow"]
 # ///
-"""Turns a take (film/take.ts) into docs/handover.mp4 and docs/handover.gif, styled after Apple's
-product pages: a white page with an eyebrow and a large headline over a light
-gray stage card holding three midnight-titanium devices, a display showing the Tern window, a laptop
-showing the desktop browser and a phone showing the phone browser, all live. A camera flies
-between them: it pulls back to frame where the task was and where it goes, then pushes in.
-Pointers and taps are drawn in.
+"""Turns a take into docs/<name>.mp4 and docs/<name>.gif, styled after Apple's product pages.
+
+The handover take (film/take.ts, layout "stage"): a white page with an eyebrow and a large headline
+over a light gray stage card holding three midnight-titanium devices, a display showing the Tern
+window, a laptop showing the desktop browser and a phone showing the phone browser, all live. A
+camera flies between them: it pulls back to frame where the task was and where it goes, then
+pushes in. The phone take (film/take-phone.ts, layout "phone"): the phone alone on the right of the
+card, its headline on the left. Pointers, taps and dragging fingers are drawn in.
 
     uv run film/compose.py [WORK]   (default /tmp/tern-awui-film)
 
@@ -32,7 +34,6 @@ DOCS = Path(__file__).resolve().parent.parent / "docs"
 CACHE = Path.home() / ".cache" / "tern-awui-film"
 INTER = "https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip"
 FPS = 30
-W, H = 1600, 900
 SS = 2  # device chrome is drawn this many times larger, then reduced, for smooth edges
 
 WHITE = (255, 255, 255)
@@ -40,7 +41,6 @@ INK = (29, 29, 31)
 GRAY = (110, 110, 115)
 CARD = (245, 245, 247)
 BLUE = (0, 113, 227)
-CARD_BOX = (60, 156, 1540, 840)
 CARD_RADIUS = 36
 INTRO_MS = 1100
 TEXT_IN_MS = 520
@@ -68,10 +68,17 @@ def font(kind: str, size: float) -> ImageFont.FreeTypeFont:
 
 timeline = json.loads((WORK / "timeline.json").read_text())
 frames, events = timeline["frames"], timeline["events"]
-tern_crop = timeline["ternCrop"]
+NAME = timeline.get("name", "handover")
+PHONE_ONLY = timeline.get("layout", "stage") == "phone"
+tern_crop = timeline.get("ternCrop")
 TRANSITION_MS = timeline["transitionMs"]
 scenes = [e for e in events if e["kind"] == "scene"]
 captions = [e for e in events if e["kind"] == "caption"]
+# The phone alone is tall: a squarer canvas gives it more height, and its text sits beside it.
+W, H = (1280, 960) if PHONE_ONLY else (1600, 900)
+CARD_BOX = (40, 40, 1240, 920) if PHONE_ONLY else (60, 156, 1540, 840)
+# GIF width: the phone's text must stay readable, and its mostly still frames compress well.
+GIF_WIDTH = 1280 if PHONE_ONLY else 960
 
 
 def ease(k: float) -> float:
@@ -309,9 +316,13 @@ class Device:
         return image
 
 
-# The stage: the display at the back left, the laptop in the middle, the phone on the right.
-devices = {"tern": Device("tern", 0, 520), "web": Device("web", 730, 370)}
-devices["phone"] = Device("phone", 730 + devices["web"].size[0] * devices["web"].world + 70, 340)
+# The stage: the display at the back left, the laptop in the middle, the phone on the right. The
+# phone take has the phone alone.
+if PHONE_ONLY:
+    devices = {"phone": Device("phone", 0, 340)}
+else:
+    devices = {"tern": Device("tern", 0, 520), "web": Device("web", 730, 370)}
+    devices["phone"] = Device("phone", 730 + devices["web"].size[0] * devices["web"].world + 70, 340)
 
 card_w, card_h = CARD_BOX[2] - CARD_BOX[0], CARD_BOX[3] - CARD_BOX[1]
 
@@ -333,7 +344,11 @@ def union(rects):
 
 
 def shot_for(scene: str) -> tuple[float, float, float]:
-    """A scene is a device, `phone:reply` (the lower half of the phone's screen, close), or `wide`."""
+    """A scene is a device, `phone:reply` (the lower half of the phone's screen, close), or `wide`.
+    The phone take has one shot: the phone filling the card's height, its middle at 70 % of the width."""
+    if PHONE_ONLY:
+        cx, cy, zoom = framing(devices["phone"].body_world(), 0.95)
+        return (cx - 0.2 * card_w / zoom, cy, zoom)
     if scene == "wide":
         # Lower than the middle, leaving room above for the outro's link and room below for shadows.
         return framing(union([d.body_world() for d in devices.values()]), 0.86, drop=24)
@@ -350,7 +365,7 @@ def camera(t: float) -> tuple[float, float, float]:
     """Flies from the last shot to the current one: out to frame both, then in."""
     i = max(i for i, s in enumerate(scenes) if s["t"] <= t) if t >= scenes[0]["t"] else 0
     to = shot_for(scenes[i]["scene"])
-    if i == 0:
+    if i == 0 or PHONE_ONLY:
         k = ease_out((t - scenes[0]["t"]) / INTRO_MS)
         return (to[0], to[1], to[2] * (0.92 + 0.08 * k))
     a, b = scenes[i - 1]["scene"], scenes[i]["scene"]
@@ -412,6 +427,20 @@ def marks(card: Image.Image, cam, device: Device, t: float):
                 q = (k - touch) / (1 - touch)
                 r = (16 + 26 * ease_out(q)) * size
                 draw.ellipse((px - r, py - r, px + r, py + r), outline=(255, 255, 255, round(170 * (1 - q))), width=3)
+        # A finger on the glass: a soft dot with a short fading trail while it drags, fading out after it lifts.
+        finger = latest(events, t, mine("touch"))
+        if finger and (finger["phase"] != "up" or t - finger["t"] < 300):
+            fade = 1.0 if finger["phase"] != "up" else 1 - (t - finger["t"]) / 300
+            # The trail: the last 220 ms of the drag as dots that shrink and fade with age.
+            for e in events:
+                if e["kind"] == "touch" and e["phase"] != "up" and t - 220 < e["t"] < t:
+                    age = (t - e["t"]) / 220
+                    ex, ey = at(e["x"], e["y"])
+                    er = (14 - 8 * age) * size
+                    draw.ellipse((ex - er, ey - er, ex + er, ey + er), fill=(255, 255, 255, round(70 * (1 - age) * fade)))
+            px, py = at(finger["x"], finger["y"])
+            r = 18 * size
+            draw.ellipse((px - r, py - r, px + r, py + r), fill=(255, 255, 255, round(110 * fade)), outline=(255, 255, 255, round(190 * fade)), width=2)
         return
     move = latest(events, t, mine("move"))
     if not move:
@@ -459,12 +488,40 @@ def render_card(t: float, cam, alpha: float) -> Image.Image:
 PAGE = Image.new("RGB", (W, H), WHITE)
 CARD_MASK = rounded_mask((card_w, card_h), CARD_RADIUS)
 EYEBROW = font("display", 23)
-HEADLINE = font("display", 66)
+HEADLINE = font("display", 54 if PHONE_ONLY else 66)
 PILL_FONT = font("text", 19)
+
+
+def phone_left() -> float:
+    """Where the phone's left edge sits on the page: the side text keeps clear of it."""
+    x, y, _, _ = devices["phone"].body_world()
+    return CARD_BOX[0] + to_card(shot_for("phone"), x, y)[0]
+
+
+TEXT_X = CARD_BOX[0] + 72
+
+
+def wrap(d: ImageDraw.ImageDraw, text: str, width: float) -> list[str]:
+    lines = [""]
+    for word in text.split():
+        line = f"{lines[-1]} {word}".strip()
+        if lines[-1] and d.textlength(line, font=HEADLINE) > width:
+            lines.append(word)
+        else:
+            lines[-1] = line
+    return lines
 
 
 def text_layer(image: Image.Image, cap: dict, alpha: float, dy: float, eyebrow_alpha: float):
     d = ImageDraw.Draw(image, "RGBA")
+    if PHONE_ONLY:
+        # Beside the phone, left-aligned and wrapped, the block's middle a little above the card's.
+        lines = wrap(d, cap["headline"], phone_left() - 56 - TEXT_X)
+        top = H / 2 - 40 - len(lines) * 64 / 2
+        d.text((TEXT_X, top - 34), cap["eyebrow"], font=EYEBROW, fill=(*GRAY, round(255 * eyebrow_alpha)), anchor="ls")
+        for n, line in enumerate(lines):
+            d.text((TEXT_X, top + 12 + n * 64 + dy), line, font=HEADLINE, fill=(*INK, round(255 * alpha)), anchor="lt")
+        return
     d.text((W / 2, 52), cap["eyebrow"], font=EYEBROW, fill=(*INK, round(255 * eyebrow_alpha)), anchor="mm")
     d.text((W / 2, 106 + dy), cap["headline"], font=HEADLINE, fill=(*INK, round(255 * alpha)), anchor="mm")
 
@@ -488,15 +545,16 @@ def headline(image: Image.Image, t: float):
 
 def outro_pill(image: Image.Image, t: float):
     last = scenes[-1]
-    if last["scene"] != "wide" or len(scenes) < 2 or t < last["t"] + TRANSITION_MS * 0.7:
+    if last["scene"] not in ("wide", "end") or len(scenes) < 2 or t < last["t"] + TRANSITION_MS * 0.7:
         return
     q = ease_out((t - last["t"] - TRANSITION_MS * 0.7) / 600)
     d = ImageDraw.Draw(image, "RGBA")
     label = "github.com/materemias/tern-awui"
     w = d.textlength(label, font=PILL_FONT) + 56
-    cy = CARD_BOX[1] + 46 + 10 * (1 - q)
-    d.rounded_rectangle((W / 2 - w / 2, cy - 23, W / 2 + w / 2, cy + 23), radius=23, fill=(*BLUE, round(255 * q)))
-    d.text((W / 2, cy), label, font=PILL_FONT, fill=(255, 255, 255, round(255 * q)), anchor="mm")
+    # Over the stage's devices; under the phone take's headline.
+    cx, cy = (TEXT_X + w / 2, H / 2 + 170 + 10 * (1 - q)) if PHONE_ONLY else (W / 2, CARD_BOX[1] + 46 + 10 * (1 - q))
+    d.rounded_rectangle((cx - w / 2, cy - 23, cx + w / 2, cy + 23), radius=23, fill=(*BLUE, round(255 * q)))
+    d.text((cx, cy), label, font=PILL_FONT, fill=(255, 255, 255, round(255 * q)), anchor="mm")
 
 
 START = scenes[0]["t"]
@@ -527,7 +585,7 @@ if __name__ == "__main__":
     frames_in = ["-framerate", str(FPS), "-i", str(OUT / "%05d.png")]
     ffmpeg = ["ffmpeg", "-loglevel", "error", "-y"]
     subprocess.run(
-        [*ffmpeg, *frames_in, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "slow", "-movflags", "+faststart", str(DOCS / "handover.mp4")],
+        [*ffmpeg, *frames_in, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "slow", "-movflags", "+faststart", str(DOCS / f"{NAME}.mp4")],
         check=True,
     )
     subprocess.run(
@@ -535,12 +593,12 @@ if __name__ == "__main__":
             *ffmpeg,
             *frames_in,
             "-filter_complex",
-            "[0]fps=12,scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle",
-            str(DOCS / "handover.gif"),
+            f"[0]fps=12,scale={GIF_WIDTH}:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle",
+            str(DOCS / f"{NAME}.gif"),
         ],
         check=True,
     )
     # The camera moves change every pixel, so the GIF is large; gifsicle, when installed, trims it.
     if shutil.which("gifsicle"):
-        subprocess.run(["gifsicle", "-O3", "--lossy=40", "--batch", str(DOCS / "handover.gif")], check=True)
-    print(f"{COUNT} frames, {COUNT / FPS:.1f} s -> {DOCS / 'handover.gif'}, {DOCS / 'handover.mp4'}")
+        subprocess.run(["gifsicle", "-O3", "--lossy=40", "--batch", str(DOCS / f"{NAME}.gif")], check=True)
+    print(f"{COUNT} frames, {COUNT / FPS:.1f} s -> {DOCS / f'{NAME}.gif'}, {DOCS / f'{NAME}.mp4'}")

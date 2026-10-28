@@ -1,42 +1,16 @@
-// Stands in for Anthropic's Messages API during a take: answers each turn with the STEPS entry its
-// last message calls for, streamed, so the film shows omp running real tools on fixed replies.
-//   bun film/fake-model.ts [port] [log]
+// Stands in for Anthropic's Messages API during a take: answers each request with the step the
+// take's script module picks for it (its `pick`), streamed, so the film shows omp running real
+// tools on fixed replies.
+//   bun film/fake-model.ts [port] [log] [script module]
 import { appendFileSync } from "node:fs";
-import { ASK_TERN, DEEPEN_REPLY, DRAFT_PHONE, DRAFT_TERN, PAST, STEPS, type Step } from "./script";
+import { resolve } from "node:path";
+import type { Request as ModelRequest, Step } from "./steps";
 
 const port = Number(process.argv[2] ?? 4598);
+// The take names its script on the command line, so the module is only known at run time.
+const { pick }: { pick: (body: ModelRequest) => Step } = await import(resolve(process.argv[4] ?? `${import.meta.dir}/script.ts`));
 const log = process.argv[3];
 const CHUNK = 5;
-
-type Block = { type: string; text?: string; tool_use_id?: string };
-type Message = { role: string; content: string | Block[] };
-
-const DEEPEN: Step = { text: DEEPEN_REPLY };
-
-function pick(body: { tools?: { name: string }[]; messages?: Message[] }): Step {
-  // An omp-stretch ✦ press is a side request whose last message asks for more on one section.
-  if (JSON.stringify(body.messages?.at(-1) ?? "").includes("pressed ✦ to ask")) return DEEPEN;
-  // The other projects' sessions, prompted before the take: their title and their one reply.
-  const past = PAST.find((p) => JSON.stringify(body.messages ?? "").includes(p.prompt));
-  // omp's own side requests: the session title (asked with or without the agent's tools).
-  if (!body.tools?.some((t) => t.name === "ask") || JSON.stringify(body.messages?.at(-1) ?? "").includes("<title-request>")) {
-    return past ? { text: past.title } : STEPS.title;
-  }
-  if (past) return { text: past.reply };
-  // The turn's user messages since the last reply: omp-stretch adds its notes after the prompt.
-  const messages = body.messages ?? [];
-  const turn = messages.slice(messages.findLastIndex((m) => m.role === "assistant") + 1);
-  const blocks = turn.flatMap((m) => (typeof m.content === "string" ? [{ type: "text", text: m.content }] : m.content));
-  const result = blocks.find((b) => b.type === "tool_result")?.tool_use_id;
-  if (result === "toolu_read") return STEPS.plan;
-  if (result === "toolu_ask") return STEPS.test;
-  if (result === "toolu_test") return STEPS.done;
-  const text = blocks.map((b) => b.text ?? "").join("\n");
-  if (text.includes(DRAFT_PHONE)) return STEPS.pr;
-  if (text.includes(DRAFT_TERN)) return STEPS.ask;
-  if (text.includes(ASK_TERN)) return STEPS.read;
-  return STEPS.title;
-}
 
 const sse = (type: string, data: object) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`;
 const pieces = (s: string) => Array.from({ length: Math.ceil(s.length / CHUNK) }, (_, i) => s.slice(i * CHUNK, (i + 1) * CHUNK));
@@ -76,11 +50,11 @@ Bun.serve({
     const chunks = events(step);
     const stream = new ReadableStream({
       async start(controller) {
-        // A pause before the first word, as a model's would; a ✦ answer thinks longer, so the twinkle shows.
-        await Bun.sleep(step === STEPS.title ? 0 : step === DEEPEN ? 2200 : 700);
+        // A pause before the first word, as a model's would.
+        await Bun.sleep(step.pause ?? 700);
         for (const c of chunks) {
           controller.enqueue(new TextEncoder().encode(c));
-          await Bun.sleep(step === DEEPEN ? 45 : 22);
+          await Bun.sleep(step.pace ?? 22);
         }
         controller.close();
       },

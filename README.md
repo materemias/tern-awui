@@ -4,6 +4,10 @@ A web app for following and steering the [omp](https://github.com/can1357/oh-my-
 
 I built it for how I work. Tern stays open on the desktop with its panes, tern-awui sits next to it in a browser tab, and the same app is installed on my Android phone as a PWA. When I step away, I can still see which agent finished, which one is waiting for an answer, and reply. It's a companion to Tern, not a replacement: a project-based, focused view of the sessions.
 
+![tern-awui on a phone: a session waiting on an ask is answered with one tap, the running turn is steered, a swipe moves to the next session and the session wheel picks another, a screenshot opens full size, and the eye hides sessions older than a day](docs/phone.gif)
+
+The same task can move between screens: started in Tern, finished in a desktop browser, answered on the phone and sent from Tern again.
+
 ![One omp task handed over: a prompt typed in a Tern pane, finished and sent from a desktop browser, an ask answered on the phone, the reply's stretches opened and deepened there and shown open in Tern, a reply started on the phone and sent from the Tern pane](docs/handover.gif)
 
 <details>

@@ -14,6 +14,10 @@
 - On touch screens, tapping the π in an empty omp session plays its stomp and wiggle, which before only hover set off.
 - The ↑ and ↓ prompt buttons show only once you scroll up from the end of the chat.
 
+### Docs
+
+- A second film at the top of the README shows the app on a phone: answering a waiting session, steering a running turn, swiping between sessions and the session wheel, a screenshot full size, and hiding sessions older than a day.
+
 ## 0.8.0 (2026-10-27)
 
 ### Fixes
