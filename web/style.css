@@ -191,8 +191,18 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 /* Code blocks as cards; fenced ones show their language in the corner. */
 .md pre { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; overflow-x: auto; }
 .md pre[data-lang] { padding-top: 22px; }
-.md pre[data-lang]::before { content: attr(data-lang); position: absolute; top: 5px; right: 10px; font: 10.5px var(--mono); color: var(--muted); }
+.md pre[data-lang]::before { content: attr(data-lang); position: absolute; top: 5px; left: 12px; font: 10.5px var(--mono); color: var(--muted); }
 .md pre code { background: none; padding: 0; color: inherit; }
+/* Copy on each code block and quote (Markdown in chat.tsx). The label is CSS, so a copied quote
+   doesn't carry it; the code card holds the button still while its code scrolls sideways. */
+.block-copy { border: 0; border-radius: 5px; background: none; color: var(--muted); font: 10.5px var(--mono); padding: 3px 7px; }
+.block-copy::after { content: "Copy"; }
+.block-copy.copied::after { content: "Copied"; }
+.block-copy:hover, .block-copy:active { color: var(--fg); background: var(--raise); }
+.code-card { position: relative; margin: 1em 0; }
+.code-card > pre { margin: 0; padding-top: 22px; }
+.code-card > .block-copy { position: absolute; top: 2px; right: 3px; }
+.md blockquote > .block-copy { float: right; margin: 0 0 2px 8px; }
 /* Tables as cards: no inner grid, row rules, small caps header, faint zebra; wide ones scroll. */
 .md table { border-collapse: separate; border-spacing: 0; display: block; width: max-content; max-width: 100%; overflow-x: auto; font-size: 13px; line-height: 1.4; margin: .5em 0 .8em; border: 1px solid var(--line); border-radius: 10px; hyphens: manual; }
 .md th, .md td { border: 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent); padding: 7px 10px; min-width: 7ch; vertical-align: top; text-align: left; }

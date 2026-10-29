@@ -65,6 +65,36 @@ async function drawMermaid(root: HTMLElement) {
   }
 }
 
+/**
+ * Copy on each code block and quote under `root`. The button's label is CSS (`::after`), so a
+ * quote's `innerText` doesn't carry it. A code block goes in a card that holds the button still
+ * while the code scrolls sideways; mermaid and svg figures get none.
+ */
+function addCopyButtons(root: HTMLElement) {
+  const button = () => Object.assign(document.createElement("button"), { type: "button", className: "block-copy", ariaLabel: "Copy" });
+  for (const pre of root.querySelectorAll("pre")) {
+    if (pre.closest(".figure")) continue;
+    const card = document.createElement("div");
+    card.className = "code-card";
+    pre.replaceWith(card);
+    card.append(pre, button());
+  }
+  for (const quote of root.querySelectorAll("blockquote")) quote.prepend(button());
+}
+
+/** A tap on a block's Copy: its text goes on the clipboard, and the button says so for a moment. */
+function copyBlock(e: MouseEvent): boolean {
+  const button = (e.target as Element | null)?.closest?.(".block-copy");
+  const block = button?.parentElement;
+  if (!button || !block) return false;
+  const text = block.classList.contains("code-card") ? (block.querySelector("pre")?.textContent ?? "").replace(/\n+$/, "") : block.innerText.trim();
+  void navigator.clipboard.writeText(text).then(() => {
+    button.classList.add("copied");
+    setTimeout(() => button.classList.remove("copied"), 1200);
+  });
+  return true;
+}
+
 export function Markdown({
   text,
   class: cls,
@@ -89,11 +119,14 @@ export function Markdown({
   const lang = useMemo(() => langOf(text), [text]);
   useEffect(() => {
     if (!ref.current) return;
+    addCopyButtons(ref.current);
     drawCharts(ref.current);
     if (mermaid) drawMermaid(ref.current).catch(() => {});
     if (highlight) highlightFences(ref.current).catch(() => {});
   }, [html]);
-  return <div ref={ref} class={cls} lang={lang} onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />;
+  return (
+    <div ref={ref} class={cls} lang={lang} onClick={(e) => copyBlock(e) || onClick?.(e)} dangerouslySetInnerHTML={{ __html: html }} />
+  );
 }
 
 /**
