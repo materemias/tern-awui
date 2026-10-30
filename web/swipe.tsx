@@ -144,6 +144,9 @@ export function SwipeNav({ siblings, children }: { siblings: () => Siblings; chi
     let holding: -1 | 0 | 1 = 0;
     let holdTimer: number | undefined;
     let holdMs = HOLD_FIRST_MS;
+    // The edge the wheel opened at stays inert until the finger leaves it: a sideways swipe low on
+    // the screen drifts into the bottom zone, and stepping from there would buzz down the whole list.
+    let inert: -1 | 0 | 1 = 0;
     const pick = (at: number | null) => {
       picking = at;
       setPicked(at);
@@ -155,9 +158,14 @@ export function SwipeNav({ siblings, children }: { siblings: () => Siblings; chi
       pick(at);
       navigator.vibrate?.(8);
     };
-    const holdAt = (y: number) => {
+    const zoneAt = (y: number): -1 | 0 | 1 => {
       const r = box.getBoundingClientRect();
-      const dir = y < r.top + HOLD_ZONE ? -1 : y > r.bottom - HOLD_ZONE ? 1 : 0;
+      return y < r.top + HOLD_ZONE ? -1 : y > r.bottom - HOLD_ZONE ? 1 : 0;
+    };
+    const holdAt = (y: number) => {
+      let dir = zoneAt(y);
+      if (dir !== inert) inert = 0;
+      else dir = 0;
       if (dir === holding) return;
       holding = dir;
       setHold(dir);
@@ -243,8 +251,8 @@ export function SwipeNav({ siblings, children }: { siblings: () => Siblings; chi
         pick(sibs.index + dir);
         el.style.transition = "transform .18s ease-out";
         el.style.transform = `translateX(${-dir * WHEEL_SHARE * 100}%)`;
-        // A wheel opened with the finger already at an edge starts stepping without another move.
-        holdAt(t.clientY);
+        // A finger already at an edge has to leave it and come back to keep stepping.
+        inert = zoneAt(t.clientY);
       }
     };
     const onEnd = (e: TouchEvent) => {

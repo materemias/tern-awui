@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- A sideways swipe low on the screen no longer buzzes on and on: a session wheel that a drifting finger opens no longer steps by itself from the edge it opened at.
+
 ### Docs
 
 - The phone film shows a voice call and the black screen.
