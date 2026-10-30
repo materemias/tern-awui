@@ -2,22 +2,25 @@
 
 ## Unreleased
 
+## 0.9.0 (2026-10-30)
+
 ### Features
 
-- Voice calls: the microphone button in an omp session starts omp's live voice mode with the phone as microphone and speaker. Coding requests run as turns of that session, and the bar above the composer shows what omp is doing, the last thing each side said, mute and hang up. The screen stays on during a call, and the bar's moon button turns it black so the phone can go in a pocket with the microphone still on (Android silences it while the screen is off); holding a finger still for a second brings the call back. Needs an omp newer than 18.13.3; restart running omp sessions to load the updated extension.
-- omp's welcome mark stays at the top of an omp session once its first turn starts, and the chat follows right below it.
-- On touch screens, the image button opens a small menu: **Photo or file** opens the picker, and **Paste from clipboard** adds the image on the clipboard to the prompt, since Android's Paste menu offers only text. Chrome asks for clipboard access the first time. On the desktop the button still opens the picker directly, and Ctrl+V pastes images.
-- Swipe left or right on an open session to move to the next or previous omp session in the list's order. The screen follows your finger, the neighbour's title and a position count show while you drag, and back still returns to the list. Turning the finger up or down mid-swipe opens a wheel of every session: each row of travel moves the highlight, holding near the top or bottom keeps stepping, and lifting opens the highlighted session. A subagent's chat swipes to the session's other subagents. On a keyboard, Alt+← / Alt+→ switches to the previous or next session at once, without the slide.
-- Code blocks and quotes in chat, side answers and opened Markdown files have their own Copy button, so one block goes to the clipboard without selecting it by hand.
+- The microphone button starts a voice call with the omp session (needs omp newer than 18.13.3).
+- During a call, the moon button blacks out the screen so the microphone keeps working in a pocket.
+- omp's welcome mark stays at the top of a session once its first turn starts.
+- On touch screens, the image button can paste an image from the clipboard.
+- Swipe sideways on an open session or subagent to reach the next one, or turn the finger mid-swipe to pick from a wheel.
+- Code blocks and quotes have their own Copy button.
 
 ### Fixes
 
-- On touch screens, tapping the π in an empty omp session plays its stomp and wiggle, which before only hover set off.
-- The ↑ and ↓ prompt buttons show only once you scroll up from the end of the chat.
+- Tapping the π in an empty omp session plays its animation on touch screens.
+- The ↑ and ↓ prompt buttons only show once you scroll up from the end of the chat.
 
 ### Docs
 
-- A second film at the top of the README shows the app on a phone: answering a waiting session, steering a running turn, swiping between sessions and the session wheel, a screenshot full size, and hiding sessions older than a day.
+- The README has a second film showing the app on a phone.
 
 ## 0.8.0 (2026-10-27)
 
