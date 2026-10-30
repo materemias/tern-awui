@@ -199,20 +199,99 @@ export function useVoiceCall(block: string, voice: Voice | null, setError: (erro
   return { state, muted, toggleMute: () => setMuted((m) => !m), start, hangup };
 }
 
-/** The call above the composer: what omp is doing, the last thing each side said, mute and hang up. */
+/** How long a finger must rest on the black screen to bring the call back: a brush in a pocket doesn't. */
+export const WAKE_HOLD_MS = 1000;
+/** How far the resting finger may drift before the hold no longer counts. */
+const WAKE_SLOP_PX = 20;
+/** How long the dim hint stays after the screen goes black or is touched. */
+const HINT_MS = 3000;
+
+/**
+ * Pocket mode: the screen stays on but shows only black, so the microphone keeps working (Android
+ * silences a page's microphone while the screen is off) and touches in a pocket do nothing. Holding
+ * a finger still for `WAKE_HOLD_MS` brings the call back. Full screen hides the system bars, and an
+ * edge swipe there reveals them instead of going back (which would leave the session and end the call).
+ */
+function Pocket({ label, onWake }: { label: string; onWake: () => void }) {
+  const [hint, setHint] = useState(true);
+  const hold = useRef<{ timer: number; x: number; y: number } | null>(null);
+  const hintTimer = useRef(0);
+  const showHint = () => {
+    setHint(true);
+    clearTimeout(hintTimer.current);
+    hintTimer.current = window.setTimeout(() => setHint(false), HINT_MS);
+  };
+  const release = () => {
+    if (hold.current) clearTimeout(hold.current.timer);
+    hold.current = null;
+  };
+  useEffect(() => {
+    showHint();
+    let entered = false;
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen({ navigationUI: "hide" }).then(() => (entered = true), () => {});
+    }
+    return () => {
+      release();
+      clearTimeout(hintTimer.current);
+      if (entered && document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    };
+  }, []);
+  return (
+    <div
+      class="pocket"
+      role="button"
+      aria-label="Black screen: hold to show the call"
+      // The session's sideways swipe must not see these touches: it would leave the session and end the call.
+      onTouchStart={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
+      onPointerDown={(e) => {
+        showHint();
+        release();
+        hold.current = { timer: window.setTimeout(onWake, WAKE_HOLD_MS), x: e.clientX, y: e.clientY };
+      }}
+      onPointerMove={(e) => {
+        if (hold.current && Math.hypot(e.clientX - hold.current.x, e.clientY - hold.current.y) > WAKE_SLOP_PX) release();
+      }}
+      onPointerUp={release}
+      onPointerCancel={release}
+    >
+      <div class={`pocket-hint${hint ? " on" : ""}`}>
+        {label}
+        <br />
+        Hold to show the call
+      </div>
+    </div>
+  );
+}
+
+/** The call above the composer: what omp is doing, the last thing each side said, mute, black screen and hang up. */
 export function VoiceBar({ voice, call }: { voice: Voice | null; call: ReturnType<typeof useVoiceCall> }) {
+  const [pocket, setPocket] = useState(false);
   const active = voice && !voice.ended ? voice : null;
   const mine = call.state !== "idle";
+  // Each call starts lit: the black screen belongs to the call it was turned on in.
+  useEffect(() => {
+    if (!mine) setPocket(false);
+  }, [mine]);
   if (!mine && !active) return null;
   const phase = active?.phase ?? "connecting";
   const muted = mine && (call.muted || phase === "muted");
+  const label = muted ? "Muted" : (PHASE_LABEL[phase] ?? phase);
   return (
     <div class={`voice voice-${muted ? "muted" : phase}`}>
       <div class="voice-head">
         <span class="voice-dot" />
-        <span class="voice-phase">{muted ? "Muted" : (PHASE_LABEL[phase] ?? phase)}</span>
+        <span class="voice-phase">{label}</span>
         {!mine && <span class="voice-elsewhere">on another device</span>}
         <span class="spacer" />
+        {mine && (
+          <button type="button" class="icon-btn" onClick={() => setPocket(true)} aria-label="Black screen (microphone stays on)" title="Black screen (microphone stays on)">
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M15.5 12.6A6.5 6.5 0 0 1 7.4 4.5a6.5 6.5 0 1 0 8.1 8.1Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+            </svg>
+          </button>
+        )}
         {mine && (
           <button type="button" class={`icon-btn${call.muted ? " on" : ""}`} onClick={call.toggleMute} aria-label={call.muted ? "Unmute" : "Mute"} aria-pressed={call.muted}>
             <MicIcon off={call.muted} />
@@ -229,6 +308,7 @@ export function VoiceBar({ voice, call }: { voice: Voice | null; call: ReturnTyp
           </svg>
         </button>
       </div>
+      {mine && pocket && <Pocket label={label} onWake={() => setPocket(false)} />}
       {active?.user && (
         <div class="voice-line voice-user">
           <span class="user-mark">›</span> {active.user}

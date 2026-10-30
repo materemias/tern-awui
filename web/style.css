@@ -445,6 +445,10 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .voice-end svg { width: 20px; height: 20px; }
 .voice-line { margin-top: 4px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .voice-user { color: var(--fg); }
+/* Pocket mode: pure black (OLED pixels off) over everything, touches kept from the page; the hint fades out. */
+.pocket { position: fixed; inset: 0; z-index: 40; background: #000; touch-action: none; user-select: none; -webkit-user-select: none; display: grid; place-items: center; }
+.pocket-hint { color: #555; font-size: 14px; text-align: center; line-height: 1.6; opacity: 0; transition: opacity .6s; }
+.pocket-hint.on { opacity: 1; transition: opacity .15s; }
 @media (prefers-reduced-motion: reduce) { .voice-dot { animation: none !important; } }
 .branch { font: 12px var(--mono); color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* omp figures: svg blocks paint with these theme variables; mermaid brings its own dark theme. */

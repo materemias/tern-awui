@@ -8,7 +8,7 @@ afterAll(() => GlobalRegistrator.unregister());
 // Static imports would bind Preact to the environment before the DOM is registered.
 const { render } = await import("preact");
 const { act } = await import("preact/test-utils");
-const { useVoiceCall } = await import("./voice");
+const { useVoiceCall, VoiceBar, WAKE_HOLD_MS } = await import("./voice");
 
 const restore: (() => void)[] = [];
 function property(target: object, key: PropertyKey, value: unknown) {
@@ -159,4 +159,31 @@ test("only this call's reports end it: another call's end is ignored, and a reco
   await show({ voice: null });
   expect(state()).toBe("idle");
   expect(track.stop).toHaveBeenCalled();
+});
+
+test("black screen: brushes and short taps leave it dark, a still hold brings the call back, and the session swipe never sees its touches", async () => {
+  const bar = (state: "idle" | "on") => <VoiceBar voice={call({})} call={{ state, muted: false, toggleMute() {}, start: async () => {}, hangup() {} }} />;
+  const pocket = () => root.querySelector(".pocket");
+  const pointer = (type: string, x = 100, y = 100) => act(() => void pocket()!.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: x, clientY: y })));
+  await act(() => render(bar("on"), root));
+  await act(() => root.querySelector<HTMLButtonElement>('[aria-label="Black screen (microphone stays on)"]')!.click());
+  const swiped = mock(() => {});
+  root.addEventListener("touchstart", swiped);
+  pocket()!.dispatchEvent(new Event("touchstart", { bubbles: true }));
+  expect(swiped).not.toHaveBeenCalled();
+  // A tap, then a hold that drifts like fabric: still dark.
+  await pointer("pointerdown");
+  await pointer("pointerup");
+  await pointer("pointerdown");
+  await pointer("pointermove", 140, 100);
+  await act(() => Bun.sleep(WAKE_HOLD_MS + 50));
+  expect(pocket()).not.toBeNull();
+  await pointer("pointerdown");
+  await act(() => Bun.sleep(WAKE_HOLD_MS + 50));
+  expect(pocket()).toBeNull();
+  // Dark again, then the call ends: the next call starts lit.
+  await act(() => root.querySelector<HTMLButtonElement>('[aria-label="Black screen (microphone stays on)"]')!.click());
+  await act(() => render(bar("idle"), root));
+  await act(() => render(bar("on"), root));
+  expect(pocket()).toBeNull();
 });
