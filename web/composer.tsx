@@ -93,6 +93,8 @@ export function Composer({
   // Shells (no agent) open with the key bar shown: fzf and history need the arrows and Enter.
   const [keysOpen, setKeysOpen] = useState<boolean | null>(null);
   const [sheet, setSheet] = useState(false);
+  /** The image button's menu: picker or clipboard, on touch screens that can read the clipboard. */
+  const [imageMenu, setImageMenu] = useState(false);
   const sessionId = item?.agent?.sessionId ?? null;
   const [history, setHistory] = useState<{ block: string; sessionId: string | null; records: BtwHistoryRecord[] } | null>(null);
   const activeBlock = useRef<string | null>(block);
@@ -429,6 +431,8 @@ export function Composer({
   const empty = text.trim() === "" && !pasted.length;
   // While the agent runs and nothing is typed, the send button stops the turn instead.
   const stoppable = working && empty && !terminal && !!a;
+  // Phones: Android's text menu offers Paste only for text, so the image button offers the clipboard.
+  const clipboardImages = "ontouchstart" in window && !!navigator.clipboard?.read;
 
   return (
     <div class="composer-wrap">
@@ -563,22 +567,53 @@ export function Composer({
           {a && !terminal && (
             <>
               <input ref={picker} type="file" accept="image/*" multiple hidden onChange={onPick} />
-              <button type="button" class="icon-btn" disabled={sending} onClick={() => picker.current?.click()} aria-label="Attach image">
-                <svg viewBox="0 0 20 20" aria-hidden="true">
-                  <rect x="2.5" y="4" width="15" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.4" />
-                  <circle cx="7" cy="8.5" r="1.4" fill="currentColor" />
-                  <path d="m3 14.5 4.5-4 3 2.5 3-3 3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
-                </svg>
-              </button>
-              {"ontouchstart" in window && !!navigator.clipboard?.read && (
-                <button type="button" class="icon-btn" disabled={sending} onClick={() => void pasteClipboard()} aria-label="Paste image">
+              <span class="image-btn">
+                <button
+                  type="button"
+                  class={`icon-btn${imageMenu ? " on" : ""}`}
+                  disabled={sending}
+                  // Desktop pastes with Ctrl+V, so the button goes straight to the picker there.
+                  onClick={() => (clipboardImages ? setImageMenu(!imageMenu) : picker.current?.click())}
+                  aria-label="Attach image"
+                  aria-haspopup={clipboardImages ? "menu" : undefined}
+                  aria-expanded={clipboardImages ? imageMenu : undefined}
+                >
                   <svg viewBox="0 0 20 20" aria-hidden="true">
-                    <rect x="4" y="4" width="12" height="13.5" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.4" />
-                    <rect x="7.5" y="2.5" width="5" height="3" rx="1" fill="currentColor" />
-                    <path d="m5.5 15.5 3-3 2 1.8 2-2 2 2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+                    <rect x="2.5" y="4" width="15" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.4" />
+                    <circle cx="7" cy="8.5" r="1.4" fill="currentColor" />
+                    <path d="m3 14.5 4.5-4 3 2.5 3-3 3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
                   </svg>
                 </button>
-              )}
+                {imageMenu && (
+                  <>
+                    <div class="menu-scrim" onClick={() => setImageMenu(false)} />
+                    <div class="image-menu" role="menu">
+                      <button
+                        type="button"
+                        class="sheet-row"
+                        role="menuitem"
+                        onClick={() => {
+                          setImageMenu(false);
+                          picker.current?.click();
+                        }}
+                      >
+                        Photo or file
+                      </button>
+                      <button
+                        type="button"
+                        class="sheet-row"
+                        role="menuitem"
+                        onClick={() => {
+                          setImageMenu(false);
+                          void pasteClipboard();
+                        }}
+                      >
+                        Paste from clipboard
+                      </button>
+                    </div>
+                  </>
+                )}
+              </span>
             </>
           )}
           <button

@@ -301,6 +301,12 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .send { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; border: 0; background: #2f5fd0; color: #fff; transition: background .15s, opacity .15s; }
 .send svg { width: 18px; height: 18px; }
 .send.idle { background: var(--raise); color: var(--muted); }
+/* The image button's menu on phones: two rows above the button; a tap anywhere else closes it. */
+.image-btn { position: relative; }
+.menu-scrim { position: fixed; inset: 0; z-index: 10; }
+.image-menu { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 11; display: flex; flex-direction: column; min-width: 200px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); box-shadow: 0 8px 28px rgb(0 0 0 / .45); }
+.image-menu .sheet-row { color: var(--fg); font-size: 15px; white-space: nowrap; }
+.image-menu .sheet-row:active { background: var(--raise); }
 .send:disabled { opacity: .5; }
 
 .sheet-backdrop { position: fixed; inset: 0; background: rgb(0 0 0 / .5); display: flex; align-items: flex-end; z-index: 10; }

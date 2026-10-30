@@ -464,16 +464,30 @@ describe("pasted images", () => {
     expect([...root.querySelectorAll("button")].some((b) => b.getAttribute("aria-label") === "Attach image")).toBe(false);
   });
 
-  test("Paste image on a touch screen adds the clipboard's images and says when there are none", async () => {
+  test("on a touch screen the image button's menu picks a file or adds the clipboard's images", async () => {
     replace(window, "ontouchstart", null);
     let items: ClipboardItem[] = [];
     replace(navigator, "clipboard", { read: async () => items });
     await show();
-    await click(button("Paste image"));
+    const picker = node('input[type="file"]') as HTMLInputElement;
+    let opened = 0;
+    picker.click = () => void opened++;
+    await click(button("Attach image"));
+    expect(opened).toBe(0);
+    await click(node(".menu-scrim"));
+    expect(root.querySelector(".image-menu")).toBeNull();
+    const row = (label: string) => [...root.querySelectorAll<HTMLElement>(".image-menu button")].find((b) => b.textContent === label)!;
+    await click(button("Attach image"));
+    await click(row("Photo or file"));
+    expect(opened).toBe(1);
+    expect(root.querySelector(".image-menu")).toBeNull();
+    await click(button("Attach image"));
+    await click(row("Paste from clipboard"));
     expect(node(".error").textContent).toBe("no image on the clipboard");
     const entry = (types: string[], blob: Blob) => ({ types, getType: async () => blob }) as unknown as ClipboardItem;
     items = [entry(["text/plain"], new Blob(["hi"])), entry(["image/png", "image/jpeg"], new Blob(["shot"], { type: "image/png" }))];
-    await click(button("Paste image"));
+    await click(button("Attach image"));
+    await click(row("Paste from clipboard"));
     expect(root.querySelectorAll(".pasted-item")).toHaveLength(1);
     await click(button("Send"));
     expect(calls("submit")).toEqual([{ text: "", images: [{ data: btoa("shot"), mimeType: "image/png" }], followUp: false }]);
