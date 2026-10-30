@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Docs
+
+- The phone film shows a voice call and the black screen.
+
 ## 0.9.0 (2026-10-30)
 
 ### Features

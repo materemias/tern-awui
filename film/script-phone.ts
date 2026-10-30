@@ -30,6 +30,9 @@ export const SESSIONS: Session[] = [
       { text: "Opening the cart on a phone-sized viewport.", tool: { id: "toolu_cart", name: "read", input: { i: "Looking at the cart", path: "shots/cart.png" } } },
       { tool: { id: "toolu_pay", name: "read", input: { i: "Looking at the payment step", path: "shots/pay.png" } } },
       { text: "Both screens fit a phone. The total sits above the fold now, and **Pay** is within thumb reach." },
+      // The voice call's request (fake-live.ts), handed to the session as a turn.
+      { tool: { id: "toolu_total", name: "bash", input: { i: "Comparing the two totals", command: "echo 'cart: €91.00  payment: €91.00'" } } },
+      { text: "Both screens show **€91.00**, so the totals match." },
     ],
   },
   {

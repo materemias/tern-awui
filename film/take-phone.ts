@@ -1,6 +1,8 @@
 // Films one take of the app on a phone, away from the desk: six real omps with the tern-mobile
 // extension in a real Tern window (not filmed), a real tern-awui server, and the app in a headless
-// Chromium phone, answered by fake-model.ts from script-phone.ts. compose.py renders the timeline.
+// Chromium phone, answered by fake-model.ts from script-phone.ts. The voice call is scripted:
+// fake-live.ts stands in for omp's live mode and a stub WebRTC peer for the phone's. compose.py
+// renders the timeline.
 //   bun film/take-phone.ts [WORK]   (default /tmp/tern-awui-film-phone)
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -38,6 +40,7 @@ const rig = await setUp({
   script: join(import.meta.dir, "script-phone.ts"),
   stretch: false,
   folders: SESSIONS.map((s) => ({ name: s.project })),
+  extension: join(import.meta.dir, "fake-live.ts"),
 });
 
 /** Stops the shooting loops if the take fails midway, before the browsers close under them. */
@@ -75,6 +78,24 @@ try {
     writeFileSync(file, text);
   }
   const phone = await rig.open(PHONE, true);
+  // No microphone or OpenAI in a take: a peer that offers at once and takes any answer, and a silent track.
+  await phone.addInitScript(() => {
+    class FilmPeer extends EventTarget {
+      iceGatheringState = "complete";
+      connectionState = "new";
+      localDescription: RTCSessionDescriptionInit | null = null;
+      onconnectionstatechange = null;
+      ontrack = null;
+      addTrack() {}
+      createDataChannel() {}
+      async createOffer() { return { type: "offer", sdp: "v=0 film offer" }; }
+      async setLocalDescription(d: RTCSessionDescriptionInit) { this.localDescription = d; }
+      async setRemoteDescription() {}
+      close() {}
+    }
+    Object.defineProperty(window, "RTCPeerConnection", { value: FilmPeer });
+    navigator.mediaDevices.getUserMedia = async () => new AudioContext().createMediaStreamDestination().stream;
+  });
   const row = (title: string) => phone.locator(".row").filter({ hasText: title }).first();
   await phone.locator(".row").nth(SESSIONS.length - 1).waitFor({ timeout: 20_000 });
   await row("Fix checkout tax").locator(".dot").waitFor();
@@ -165,17 +186,30 @@ try {
   await opened("Review the new cart");
   await sleep(1600);
 
-  // A screenshot full size, the next one a swipe away, and a tap to close.
-  caption("Up close", "Screenshots open full size.");
-  await tap(phone.locator(".thumb").first());
-  await phone.locator(".lightbox").waitFor();
-  await sleep(1800);
-  await touch("down", 330, 420);
-  await drag(Array.from({ length: 12 }, (_, i) => [330 - (i + 1) * 22, 420] as [number, number]));
-  await touch("up", 66, 420);
-  await sleep(2000);
-  await tap(phone.locator(".lightbox-page img").nth(1));
-  await sleep(1200);
+  // A voice call: the request runs as a turn of the session, and the voice reads back the answer.
+  caption("Hands free", "Talk to the session.");
+  await sleep(900);
+  await tap(phone.getByRole("button", { name: "Talk to omp" }));
+  const bar = phone.locator(".voice");
+  await bar.locator(".voice-phase", { hasText: "Listening" }).waitFor({ timeout: 8000 });
+  await bar.locator(".voice-user", { hasText: "same total?" }).waitFor({ timeout: 10_000 });
+  await phone.locator(".assistant", { hasText: "totals match" }).first().waitFor({ timeout: 15_000 });
+  await bar.locator(".voice-line:not(.voice-user)", { hasText: "ninety-one euros." }).waitFor({ timeout: 10_000 });
+  await sleep(2400);
+
+  // On a bike: the screen goes black with the microphone still on, and a held finger brings it back.
+  caption("On the go", "Black screen. The mic stays on.");
+  await tap(phone.getByRole("button", { name: "Black screen (microphone stays on)" }));
+  await phone.locator(".pocket").waitFor();
+  await sleep(2600);
+  await touch("down", PHONE.width / 2, PHONE.height / 2);
+  await sleep(1300);
+  await touch("up", PHONE.width / 2, PHONE.height / 2);
+  await phone.locator(".pocket").waitFor({ state: "detached", timeout: 3000 });
+  await sleep(1000);
+  await tap(bar.locator(".voice-end"));
+  await bar.waitFor({ state: "detached", timeout: 5000 });
+  await sleep(1000);
 
   // Back to the list, and the eye hides what's older than a day: nothing left waits on you.
   await tap(phone.locator(".back"));
@@ -183,7 +217,9 @@ try {
   caption("Stay focused", "Hide what's older than a day.");
   await sleep(1200);
   await tap(phone.locator(".hide-old"));
-  await until(async () => (await phone.locator(".row").count()) === SESSIONS.filter((s) => !s.daysAgo).length, "the old sessions hidden", 5000);
+  // The storefront session is old no more: the call just ran a turn in it.
+  const recent = SESSIONS.filter((s) => !s.daysAgo).length + 1;
+  await until(async () => (await phone.locator(".row").count()) === recent, "the old sessions hidden", 5000);
   await sleep(2600);
   caption("tern-awui", "Away from the desk. Still in charge.");
   await sleep(600);

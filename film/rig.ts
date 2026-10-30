@@ -5,7 +5,7 @@
 // for the whole take, often while the camera is on one, a few times a second while it only shows
 // small, and writes the frames, pointer moves, taps, touches, captions and scene changes to
 // WORK/timeline.json for compose.py.
-import { copyFileSync, existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { BrowserContext, CDPSession, Locator, Page } from "playwright-core";
@@ -46,8 +46,9 @@ export const sleep = (ms: number) => Bun.sleep(ms);
 /**
  * Builds the scratch HOME in `work` (only a folder an earlier take made is cleared), starts the fake
  * model on `script` (a module exporting `pick`), the Tern daemon and window, and the server.
+ * `extension`: what omp loads as tern-mobile (default the real one; the phone take wraps it).
  */
-export async function setUp(o: { work: string; script: string; folders: Folder[]; stretch: boolean }) {
+export async function setUp(o: { work: string; script: string; folders: Folder[]; stretch: boolean; extension?: string }) {
   const work = resolve(o.work);
   const sentinel = join(work, ".tern-awui-film");
   if (existsSync(work)) {
@@ -65,7 +66,8 @@ export async function setUp(o: { work: string; script: string; folders: Folder[]
     join(agent, "config.yml"),
     `setupVersion: 2\nmodelRoles:\n  default: anthropic/claude-opus-5-5\nsymbolPreset: nerd\nhideThinkingBlock: true\nstartup:\n  changelogMode: "off"\nmarketplace:\n  autoUpdate: "off"\n`,
   );
-  symlinkSync(join(REPO, "omp-extension/tern-mobile.ts"), join(agent, "extensions/tern-mobile.ts"));
+  // A re-export, not a symlink: the module's own relative imports resolve from where it really is.
+  writeFileSync(join(agent, "extensions/tern-mobile.ts"), `export { default } from ${JSON.stringify(o.extension ?? join(REPO, "omp-extension/tern-mobile.ts"))};\n`);
   // omp-stretch writes replies as stretches; a take that opens or deepens them loads it.
   let stretchFlag = "";
   const config = join(work, "tern-config");
