@@ -6,6 +6,12 @@ I built it for how I work. Tern stays open on the desktop with its panes, tern-a
 
 ![tern-awui on a phone: a session waiting on an ask is answered with one tap, the running turn is steered, a swipe moves to the next session and the session wheel picks another, a voice call asks that session a question and reads back its answer, the screen goes black with the microphone on and comes back, and the eye hides sessions older than a day](docs/phone.gif)
 
+tern-awui runs no agents of its own. Every session it shows is an omp running in a Tern pane on your desktop, so the desktop and the phone work on the same sessions together:
+
+- **Whatever is open in Tern continues on the phone.** Read the reply, answer its question, steer the turn or send the next prompt, and the Tern pane shows it too.
+- **A session started on the phone opens a Tern tab on the desktop.** **+ omp** picks a project folder and starts omp there in a new tab, waiting for you when you sit back down.
+- **Both screens drive the same omp.** Drafts, answers, model changes and rewinds go to the omp in its Tern pane, so the two never disagree.
+
 The same task can move between screens: started in Tern, finished in a desktop browser, answered on the phone and sent from Tern again.
 
 ![One omp task handed over: a prompt typed in a Tern pane, finished and sent from a desktop browser, an ask answered on the phone, the reply's stretches opened and deepened there and shown open in Tern, a reply started on the phone and sent from the Tern pane](docs/handover.gif)
@@ -33,6 +39,7 @@ It has no login of its own. You reach it over a private network you control, suc
 - **The draft is shared.** Text typed on the phone appears in the Tern pane's prompt and the other way round, so you can start on one and finish on the other.
 - **Talk to omp.** The microphone button starts omp's live voice mode with the phone as its microphone and speaker: say what you want, the voice model hands coding work to the session as ordinary turns, and reads back the result. The screen stays on while you talk, and the moon button turns it black for the pocket (cycling, walking) with the microphone still on; hold a finger on it for a second to bring the call back. Needs an omp newer than 18.13.3 and an OpenAI Codex sign-in in omp.
 - **Session controls.** Switch model, effort or Ctrl+P role, watch the context gauge, rewind or copy, ask a side question with `/btw`, and read running subagents' conversations.
+- **Activities.** A checklist button in the session header opens a panel on the right with the agent's newest todo list, its running subagents and background jobs, and all its subagents. It slides over the session on a phone and docks beside the transcript on a desktop.
 - **Swipe between sessions.** Swipe left or right on an open session to reach the next or previous omp session in the list's order, or between a session's subagents. Turn the finger up or down mid-swipe to pick any session from a wheel, and lift to open it. Back still leads to the list. On a keyboard, Alt+← and Alt+→ switch at once.
 - **Notifications.** Optional push notifications when a session finishes or needs you, and an unread count on the app icon. Notifications dismiss when you open the session or start another turn, including on desktop, while the mobile app is active. Cleanup preserves newly arrived unread notifications. If the app is closed or suspended, dismissal waits until it resumes.
 - **Shells and files too.** Plain terminals show their screen with a key bar (Esc, ^C, arrows, Tab), and Tern notes and opened files are readable.
@@ -42,7 +49,6 @@ It has no login of its own. You reach it over a private network you control, suc
 - **Close** a session from the web, and its pane closes in Tern.
 - **+ omp** opens a new omp tab in Tern in any project folder and jumps to it.
 - **The monitor button** in a session's header focuses that pane in the Tern window on the desktop.
-- Drafts, model changes, answers and rewinds happen in the real omp session in its Tern pane, so the desktop and the web never disagree.
 
 ## Requirements
 
