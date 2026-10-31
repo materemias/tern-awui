@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features
+
+- An Activities panel on the right of a session shows the agent's newest todo list, its running jobs and its subagents.
+
 ### Fixes
 
 - A sideways swipe low on the screen no longer buzzes on and on: a session wheel that a drifting finger opens no longer steps by itself from the edge it opened at.
@@ -9,6 +13,7 @@
 ### Docs
 
 - The phone film shows a voice call and the black screen.
+- The README explains up front that the desktop and the phone share the same Tern sessions: what's open in Tern continues on the phone, and a session started on the phone opens a Tern tab.
 
 ## 0.9.0 (2026-10-30)
 

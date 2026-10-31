@@ -595,6 +595,34 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .sub-mark { flex: none; color: var(--muted); }
 .sub-parent { overflow: hidden; text-overflow: ellipsis; }
 
+/* Activities: a session's newest todo list, running jobs and its subagents. The header's toggle
+   carries the running jobs' count. A phone's panel slides in over the session from the right; the
+   desktop's docks beside it (below, in the wide layout). */
+.acts-count { position: absolute; top: 2px; right: 1px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 999px; background: var(--working); color: var(--bg); font: 600 10px/15px var(--mono); text-align: center; pointer-events: none; }
+.acts-backdrop { position: fixed; inset: 0; z-index: 12; background: rgb(0 0 0 / .5); }
+.acts { display: flex; flex-direction: column; min-width: 0; background: var(--panel); }
+.acts.overlay { position: fixed; top: 0; right: 0; bottom: 0; z-index: 12; width: min(88vw, 380px); border-left: 1px solid var(--line); box-shadow: -12px 0 40px rgb(0 0 0 / .4); padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) 0; }
+.acts-head { display: flex; align-items: center; gap: 8px; padding: 10px 8px 10px 16px; border-bottom: 1px solid var(--line); }
+.acts-title { flex: 1; font-weight: 600; }
+.acts-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 16px; }
+.acts-section { display: flex; flex-direction: column; gap: 6px; }
+.acts-label { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.acts .todo { margin-top: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .acts.overlay { animation: acts-in .18s ease-out; }
+  .acts-backdrop { animation: acts-fade .18s ease-out; }
+}
+@keyframes acts-in { from { transform: translateX(100%); } }
+@keyframes acts-fade { from { opacity: 0; } }
+@media (min-width: 1000px) {
+  /* The open screen and the docked panel share the main column: the transcript, composer and header
+     keep their reading column inside what the panel leaves. */
+  .desk-main { display: flex; }
+  .desk-main > * { flex: 1; min-width: 0; }
+  .desk-main > .acts.docked { flex: none; width: 340px; height: 100dvh; border-left: 1px solid var(--line); }
+  .acts.docked .acts-head { padding-top: calc(10px + env(safe-area-inset-top)); }
+}
+
 /* Project headers fold their sessions away; the choice is remembered per device. */
 .group-head { cursor: pointer; user-select: none; }
 .group-head .chev { color: var(--muted); width: 1em; flex: none; }

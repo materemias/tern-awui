@@ -11,8 +11,9 @@ import { ExtensionNotice } from "./extension";
 import { JobsStrip, SubagentChat, SubagentList } from "./subagents";
 import { storedCollapsed, storedHideOld, Title } from "./home";
 import { Composer } from "./composer";
-import { goBack, origins, swipeTrail, useNow, useStream, type View } from "./hooks";
+import { goBack, origins, swipeTrail, useNow, useStream, useWide, type View } from "./hooks";
 import { SwipeNav, type Siblings } from "./swipe";
+import { Activities, ActivitiesButton, latestTodo, useActivitiesOpen } from "./activities";
 
 export function Session({ block }: { block: string }) {
   const [view, setView] = useState<View>("chat");
@@ -56,6 +57,14 @@ export function Session({ block }: { block: string }) {
   // The ↑/↓ prompt jumps show only once the reader has scrolled up from the end.
   const [atEnd, setAtEnd] = useState(true);
   const now = useNow(5000);
+  const wide = useWide();
+  const [actsOpen, setActsOpen] = useActivitiesOpen(wide);
+  const todo = useMemo(() => latestTodo(chat), [chat]);
+  const jobCount = item?.live?.jobs.length ?? 0;
+  const busy = jobCount > 0 || (item?.agent?.subagents ?? 0) > 0 || todo !== null;
+  // The panel belongs to omp sessions; before the list arrives the desktop keeps its column, so
+  // the transcript doesn't jump sideways once it does.
+  const actsShown = actsOpen && (state ? isOmp : wide);
 
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -103,6 +112,7 @@ export function Session({ block }: { block: string }) {
     };
   };
   return (
+    <>
     <SwipeNav siblings={siblings}>
     <div class="screen">
       <header class="bar session-bar">
@@ -131,6 +141,7 @@ export function Session({ block }: { block: string }) {
             {!online && <span class="c-blocked">offline</span>}
           </div>
         </div>
+        {isOmp && busy && <ActivitiesButton open={actsShown} jobs={jobCount} onToggle={() => setActsOpen(!actsShown)} />}
         <button class="icon-btn" title="Show this pane on the desktop" aria-label="Show this pane on the desktop" onClick={() => post(`/api/blocks/${block}/focus`, {})}>
           {/* A monitor with an arrow out of its corner, like an "open elsewhere" link: show this pane at the desk. */}
           <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -255,6 +266,9 @@ export function Session({ block }: { block: string }) {
       )}
     </div>
     </SwipeNav>
+    {/* Outside SwipeNav: a touch in the panel never starts a session swipe. */}
+    {actsShown && <Activities block={block} item={item} todo={todo} now={now} overlay={!wide} onClose={() => setActsOpen(false)} />}
+    </>
   );
 }
 

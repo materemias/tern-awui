@@ -28,35 +28,46 @@ export function JobsStrip({ block, jobs, subagents, now }: { block: string; jobs
   if (!jobs.length) return null;
   return (
     <div class="jobs">
-      {jobs.map((j) => {
-        const agent = isAgentJob(j);
-        const body = (
-          <>
-            <span class="job-mark">{agent ? "⑂" : "⧗"}</span>
-            <span class="job-name">{j.agent || j.id}</span>
-            {j.label && j.label !== (j.agent || j.id) && <span class="job-label">{j.label}</span>}
-            <span class="job-age">{age(j.since, now)}</span>
-          </>
-        );
-        return agent && SUBAGENT_NAME.test(j.agent) ? (
-          <a key={j.id} class="job job-agent job-open" href={routeHash({ view: "subagent", block, name: j.agent })}>
-            {body}
-            <span class="job-go">›</span>
-          </a>
-        ) : (
-          <div key={j.id} class={`job${agent ? " job-agent" : ""}`}>
-            {body}
-          </div>
-        );
-      })}
-      {running && subagents > 0 && (
-        <a class="subagents-link" href={routeHash({ view: "subagents", block })}>
-          <span class="job-mark">⑂</span>
-          <span>Subagents ({subagents})</span>
-          <span class="job-go">›</span>
-        </a>
-      )}
+      {jobs.map((j) => (
+        <JobRow key={j.id} block={block} job={j} now={now} />
+      ))}
+      {running && subagents > 0 && <SubagentsLink block={block} count={subagents} />}
     </div>
+  );
+}
+
+/**
+ * One running background job: a subagent with a readable name opens its chat, anything else is a
+ * plain row. `onOpen` runs as the subagent link is followed.
+ */
+export function JobRow({ block, job: j, now, onOpen }: { block: string; job: Job; now: number; onOpen?: () => void }) {
+  const agent = isAgentJob(j);
+  const body = (
+    <>
+      <span class="job-mark">{agent ? "⑂" : "⧗"}</span>
+      <span class="job-name">{j.agent || j.id}</span>
+      {j.label && j.label !== (j.agent || j.id) && <span class="job-label">{j.label}</span>}
+      <span class="job-age">{age(j.since, now)}</span>
+    </>
+  );
+  return agent && SUBAGENT_NAME.test(j.agent) ? (
+    <a class="job job-agent job-open" href={routeHash({ view: "subagent", block, name: j.agent })} onClick={onOpen}>
+      {body}
+      <span class="job-go">›</span>
+    </a>
+  ) : (
+    <div class={`job${agent ? " job-agent" : ""}`}>{body}</div>
+  );
+}
+
+/** "Subagents (N)": the session's subagent list, finished ones too. `onOpen` runs as it is followed. */
+export function SubagentsLink({ block, count, onOpen }: { block: string; count: number; onOpen?: () => void }) {
+  return (
+    <a class="subagents-link" href={routeHash({ view: "subagents", block })} onClick={onOpen}>
+      <span class="job-mark">⑂</span>
+      <span>Subagents ({count})</span>
+      <span class="job-go">›</span>
+    </a>
   );
 }
 
