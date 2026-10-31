@@ -4,6 +4,7 @@
 // dist/ is not touched: the demo's code never reaches the production bundle.
 import { chmodSync, copyFileSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { CSP } from "./server";
 
 const root = import.meta.dir;
 const out = join(root, "dist-demo");
@@ -17,6 +18,14 @@ function swap(text: string, from: string, to: string, file: string): string {
 
 const BANNER =
   '<div class="demo-line">Demo: sample data, nothing leaves your browser · <a href="https://github.com/materemias/tern-awui" target="_blank" rel="noopener">tern-awui</a></div>';
+
+/**
+ * The server's policy as a meta tag: a demo reply echoes the prompt, so its markdown must not load
+ * remote images either. A meta policy ignores frame-ancestors (and warns about it), so it goes.
+ */
+const META_CSP = CSP.split("; ")
+  .filter((d) => !d.startsWith("frame-ancestors "))
+  .join("; ");
 
 try {
   const result = await Bun.build({
@@ -35,6 +44,8 @@ try {
   let html = readFileSync(join(root, "web", "index.html"), "utf8");
   // No service worker in the demo, so nothing to install as an app either; the manifest's paths are root-absolute.
   html = swap(html, '    <link rel="manifest" href="/manifest.webmanifest" />\n', "", "index.html");
+  // First in <head>, so it covers everything the page loads.
+  html = swap(html, '<meta charset="utf-8" />\n', `<meta charset="utf-8" />\n    <meta http-equiv="Content-Security-Policy" content="${META_CSP}" />\n`, "index.html");
   html = swap(html, '<script type="module" src="/app.js">', '<script type="module" src="./demo.js">', "index.html");
   html = swap(html, '<link rel="stylesheet" href="/style.css" />', '<link rel="stylesheet" href="./style.css" />\n    <link rel="stylesheet" href="./demo.css" />', "index.html");
   html = swap(html, 'href="/', 'href="./', "index.html");

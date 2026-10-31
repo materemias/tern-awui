@@ -107,7 +107,7 @@ export class DemoServer {
   /** Opens a stream: everything the server would send first, then updates until the returned close. */
   connect(sink: Sink): () => void {
     const s = sink.block ? this.find(sink.block) : undefined;
-    const pane = !!s && sink.sub === null && sink.view !== "subagents";
+    const pane = !!s && this.isPane(s, sink);
     // Opening a session on the phone is seeing its update.
     const seen = pane && s.item.unseen !== null;
     if (seen) s.item.unseen = null;
@@ -168,9 +168,14 @@ export class DemoServer {
         this.sessions = this.sessions.filter((x) => x !== s);
         this.emitState();
         return ok;
-      case "submit":
+      case "submit": {
         if (!s.item.agent) return json({ error: "no bridge" }, 409);
+        // Refused before the empty-prompt check: an image-only send is not an empty one.
+        if (Array.isArray(body.images) && body.images.length) return json({ error: `Sending images ${NOT_IN_DEMO}` }, 409);
         if (!text.trim()) return json({ error: "empty prompt" }, 400);
+        // omp is waiting on the question; a prompt now would leave it unanswered.
+        const ask = s.chat.findLast((e) => e.role === "ask");
+        if (ask?.role === "ask" && ask.answer === null) return json({ error: "Answer the question first" }, 409);
         if (s.draft) {
           // omp's editor empties as the prompt goes, and the draft follows it.
           s.draft = "";
@@ -185,6 +190,7 @@ export class DemoServer {
           }
         } else this.startTurn(s, text);
         return ok;
+      }
       case "answer":
         return this.answer(s, body);
       case "abort":
@@ -245,9 +251,14 @@ export class DemoServer {
     for (const sink of this.sinks) sink.send("state", state);
   }
 
-  /** To the session's own streams (not its subagent screens), as the server relays omp's events. */
+  /** Whether `sink` is the session's own stream (its chat or screen), not one of its subagent screens. */
+  private isPane(s: Session, sink: Sink): boolean {
+    return sink.block === s.item.block && sink.sub === null && sink.view !== "subagents";
+  }
+
+  /** To the session's own streams, as the server relays omp's events. */
   private toPane(s: Session, event: string, data: unknown) {
-    for (const sink of this.sinks) if (sink.block === s.item.block && sink.sub === null && sink.view !== "subagents") sink.send(event, data);
+    for (const sink of this.sinks) if (this.isPane(s, sink)) sink.send(event, data);
   }
 
   private emitDetail(s: Session) {
@@ -282,7 +293,7 @@ export class DemoServer {
 
   /** Whether a phone has the session's chat open: then a finished turn is seen at once. */
   private watched(s: Session): boolean {
-    for (const sink of this.sinks) if (sink.block === s.item.block && sink.sub === null && sink.view !== "subagents") return true;
+    for (const sink of this.sinks) if (this.isPane(s, sink)) return true;
     return false;
   }
 
@@ -359,6 +370,7 @@ export class DemoServer {
     const next = s.queued.shift();
     if (!next) return;
     this.toPane(s, "queued", s.queued);
+    // Steer or follow-up, the demo runs it as the next turn: `followUp` only marks it in the queue.
     this.startTurn(s, next.text);
   }
 

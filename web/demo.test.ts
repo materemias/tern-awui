@@ -93,4 +93,18 @@ describe("demo backend", () => {
     // A second answer finds no open question.
     expect((await post(server, "/api/blocks/12/answer", { id: "ask-12", answers: [{ option: 0, picks: [] }] })).status).toBe(409);
   });
+
+  test("a prompt waits for the open ask to be answered; images aren't taken", async () => {
+    const clock = new ManualClock();
+    const server = new DemoServer(clock);
+    const { last } = open(server, clock, "12");
+    const asked = await post(server, "/api/blocks/12/submit", { text: "never mind" });
+    expect(asked.status).toBe(409);
+    expect(await asked.json()).toEqual({ error: "Answer the question first" });
+    expect(last("chat").entries.findLast((e) => e.role === "user")?.text).not.toBe("never mind");
+    // An image-only send is refused as an image send, not as an empty prompt.
+    const image = await post(server, "/api/blocks/22/submit", { text: "", images: [{ data: "AAAA", mimeType: "image/png" }] });
+    expect(image.status).toBe(409);
+    expect(await image.json()).toEqual({ error: "Sending images isn't in the demo" });
+  });
 });
