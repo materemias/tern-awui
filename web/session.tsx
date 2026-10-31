@@ -1,7 +1,7 @@
 // An open session (chat, raw screen or note, with the composer) and its subagent screens.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { highlightFile } from "./highlight";
-import { post, type Item, type Run } from "./api";
+import { post, type Item, type Run, type TodoPhase } from "./api";
 import { age, backStep, can, elapsed, isNote, routeHash, swipeOrder, type Route } from "./lib";
 import { Chat, Markdown, StretchContext, type StretchSync } from "./chat";
 import { liveText, withOpen } from "./stretch";
@@ -59,7 +59,15 @@ export function Session({ block }: { block: string }) {
   const now = useNow(5000);
   const wide = useWide();
   const [actsOpen, setActsOpen] = useActivitiesOpen(wide);
-  const todo = useMemo(() => latestTodo(chat), [chat]);
+  const actsButton = useRef<HTMLButtonElement>(null);
+  const fresh = useMemo(() => latestTodo(chat), [chat]);
+  // The Raw view streams the screen, not the chat: the todo the chat last showed stays until the
+  // block or its omp session changes.
+  const kept = useRef<{ key: string; todo: TodoPhase[] | null }>({ key: "", todo: null });
+  const keptKey = `${block}:${item?.agent?.sessionId ?? ""}`;
+  if (kept.current.key !== keptKey) kept.current = { key: keptKey, todo: null };
+  if (chat) kept.current.todo = fresh;
+  const todo = kept.current.todo;
   const jobCount = item?.live?.jobs.length ?? 0;
   const busy = jobCount > 0 || (item?.agent?.subagents ?? 0) > 0 || todo !== null;
   // The panel belongs to omp sessions; before the list arrives the desktop keeps its column, so
@@ -141,7 +149,7 @@ export function Session({ block }: { block: string }) {
             {!online && <span class="c-blocked">offline</span>}
           </div>
         </div>
-        {isOmp && busy && <ActivitiesButton open={actsShown} jobs={jobCount} onToggle={() => setActsOpen(!actsShown)} />}
+        {isOmp && busy && <ActivitiesButton open={actsShown} jobs={jobCount} onToggle={() => setActsOpen(!actsShown)} buttonRef={actsButton} />}
         <button class="icon-btn" title="Show this pane on the desktop" aria-label="Show this pane on the desktop" onClick={() => post(`/api/blocks/${block}/focus`, {})}>
           {/* A monitor with an arrow out of its corner, like an "open elsewhere" link: show this pane at the desk. */}
           <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -267,7 +275,7 @@ export function Session({ block }: { block: string }) {
     </div>
     </SwipeNav>
     {/* Outside SwipeNav: a touch in the panel never starts a session swipe. */}
-    {actsShown && <Activities block={block} item={item} todo={todo} now={now} overlay={!wide} onClose={() => setActsOpen(false)} />}
+    {actsShown && <Activities block={block} item={item} todo={todo} now={now} overlay={!wide} opener={actsButton} onClose={() => setActsOpen(false)} />}
     </>
   );
 }

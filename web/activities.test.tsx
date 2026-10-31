@@ -123,6 +123,44 @@ test("Subagents (N) shows with no running job; on a phone, a followed link, the 
   expect(panel()!.closest(".swipe")).toBeNull();
 });
 
+test("on a phone, Tab and Shift+Tab cycle inside the sheet, and closing it hands focus back to the button", async () => {
+  await open(busyItem([], 2));
+  await click(button());
+  const close = panel()!.querySelector<HTMLElement>('[aria-label="Close activities"]')!;
+  const link = panel()!.querySelector<HTMLElement>(".subagents-link")!;
+  expect(document.activeElement).toBe(close);
+  const tab = (shiftKey = false) => {
+    const e = new KeyboardEvent("keydown", { key: "Tab", shiftKey, bubbles: true, cancelable: true });
+    document.dispatchEvent(e);
+    return e.defaultPrevented;
+  };
+  expect(tab(true)).toBe(true);
+  expect(document.activeElement).toBe(link);
+  expect(tab()).toBe(true);
+  expect(document.activeElement).toBe(close);
+  // Between the first and last stop, the browser moves focus as usual.
+  expect(tab()).toBe(false);
+  await act(() => void document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  expect(panel()).toBeNull();
+  expect(document.activeElement).toBe(button());
+});
+
+test("the todo list stays through the Raw view, and goes with the omp session", async () => {
+  await open(item(), [said("hi"), todo("Step")]);
+  await click(root.querySelector('[aria-label="Keys"]'));
+  await click([...root.querySelectorAll(".keys button")].find((b) => b.textContent === "Raw") ?? null);
+  expect(FakeEventSource.last.url).toBe("/api/stream?block=5&view=screen");
+  await act(() => FakeEventSource.last.emit("state", state([item()])));
+  await act(() => FakeEventSource.last.emit("screen", { text: "raw capture", html: false }));
+  await click(button());
+  expect(panel()!.querySelector(".todo-current")!.textContent).toBe("Step");
+  await click(panel()!.querySelector('[aria-label="Close activities"]'));
+  const restarted = item();
+  restarted.agent!.sessionId = "other";
+  await act(() => FakeEventSource.last.emit("state", state([restarted])));
+  expect(button()).toBeNull();
+});
+
 test("on the desktop the panel docks, stays open across sessions and says when nothing goes on", async () => {
   wide = true;
   await open(busyItem([job("ViewA")], 1));
@@ -130,6 +168,10 @@ test("on the desktop the panel docks, stays open across sessions and says when n
   expect(panel()!.classList.contains("docked")).toBe(true);
   expect(root.querySelector(".acts-backdrop")).toBeNull();
   expect(localStorage.getItem("tern-awui.activities")).toBe("on");
+  // A column beside the transcript, not a dialog: Tab leaves it as usual.
+  const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+  document.dispatchEvent(tab);
+  expect(tab.defaultPrevented).toBe(false);
   // Following a subagent link leaves the desktop's column open.
   await click(panel()!.querySelector("a.job"));
   expect(panel()).not.toBeNull();
