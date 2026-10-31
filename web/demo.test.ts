@@ -1,0 +1,96 @@
+import { describe, expect, test } from "bun:test";
+import type { ChatEntry, Run, State } from "./api";
+import { DemoServer, demoEventSource, type Clock } from "./demo-backend";
+
+/** A clock the test moves by hand: timers run in time order as `advance` passes them. */
+class ManualClock implements Clock {
+  private t = 1_800_000_000_000;
+  private timers: { at: number; seq: number; fn: () => void }[] = [];
+  private seq = 0;
+  now() {
+    return this.t;
+  }
+  after(ms: number, fn: () => void) {
+    const timer = { at: this.t + ms, seq: this.seq++, fn };
+    this.timers.push(timer);
+    return () => void (this.timers = this.timers.filter((x) => x !== timer));
+  }
+  advance(ms: number) {
+    const end = this.t + ms;
+    for (;;) {
+      const next = this.timers.filter((x) => x.at <= end).sort((a, b) => a.at - b.at || a.seq - b.seq)[0];
+      if (!next) break;
+      this.timers = this.timers.filter((x) => x !== next);
+      this.t = next.at;
+      next.fn();
+    }
+    this.t = end;
+  }
+}
+
+const post = (server: DemoServer, path: string, body: unknown) =>
+  server.fetch(new URL(path, "http://demo.test"), { method: "POST", body: JSON.stringify(body) });
+
+/** The stream's events the tests read, as the demo sends them. */
+type Events = { state: State; chat: { entries: ChatEntry[] }; live: { text: string; done: boolean }; run: Run | null; draft: { live: boolean; text: string } };
+
+/** Opens the app's stream for `block` through the demo's EventSource and records what it delivers. */
+function open(server: DemoServer, clock: ManualClock, block: string) {
+  const ES = demoEventSource(server);
+  const es = new ES(`/api/stream?block=${block}&view=chat`);
+  const events: { type: keyof Events; data: unknown }[] = [];
+  for (const type of ["state", "chat", "live", "run", "draft"] as const) es.addEventListener(type, (e) => events.push({ type, data: JSON.parse(e.data) }));
+  clock.advance(0);
+  // The payloads come from the demo's own server, typed as it sends them; the assertions check them.
+  const all = <K extends keyof Events>(type: K) => events.filter((e) => e.type === type).map((e) => e.data as Events[K]);
+  return { all, last: <K extends keyof Events>(type: K) => all(type).at(-1)! };
+}
+
+describe("demo backend", () => {
+  test("answers the app's state request with the sample sessions", async () => {
+    const server = new DemoServer(new ManualClock());
+    const state: State = await (await server.fetch(new URL("http://demo.test/api/state"))).json();
+    expect(state.projects.map((p) => p.name)).toEqual(["tern-awui", "trading-bot", "dotfiles"]);
+    const items = state.projects.flatMap((p) => p.items);
+    expect(items.map((i) => i.status)).toEqual(["working", "blocked", null, "idle", "idle", "idle"]);
+    expect(state.counts).toEqual({ working: 1, blocked: 1, idle: 3 });
+  });
+
+  test("a submitted prompt streams its reply as live text, then lands in the chat", async () => {
+    const clock = new ManualClock();
+    const server = new DemoServer(clock);
+    const { all, last } = open(server, clock, "22");
+    expect(last("chat").entries.at(-1)?.role).toBe("turn");
+
+    const r = await post(server, "/api/blocks/22/submit", { text: "use limit orders", images: [] });
+    expect(r.ok).toBe(true);
+    expect(last("chat").entries.at(-1)).toMatchObject({ role: "user", text: "use limit orders" });
+    expect(last("state").projects[1].items[1].status).toBe("working");
+
+    clock.advance(60_000);
+    const live = all("live");
+    expect(live.length).toBeGreaterThan(3);
+    // Each update grows the one before it, and the last is the finished reply.
+    for (let i = 1; i < live.length - 1; i++) expect(live[i].text.startsWith(live[i - 1].text)).toBe(true);
+    const done = live.at(-1)!;
+    expect(done.done).toBe(true);
+    expect(done.text).toContain("use limit orders");
+    const entries = last("chat").entries;
+    expect(entries.findLast((e) => e.role === "assistant")).toMatchObject({ text: done.text });
+    expect(last("run")).toBeNull();
+    // Watched while it finished: the turn counts as seen.
+    expect(last("state").projects[1].items[1]).toMatchObject({ status: "idle", unseen: null });
+  });
+
+  test("answering the open ask resolves it and starts a turn", async () => {
+    const clock = new ManualClock();
+    const server = new DemoServer(clock);
+    const { last } = open(server, clock, "12");
+    expect(await (await post(server, "/api/blocks/12/answer", { id: "ask-12", answers: [{ option: 1, picks: [] }] })).json()).toEqual({ ok: true });
+    expect(last("chat").entries.find((e) => e.role === "ask")).toMatchObject({ answer: "Hand-rolled" });
+    clock.advance(60_000);
+    expect(last("chat").entries.findLast((e) => e.role === "assistant")).toMatchObject({ text: expect.stringContaining("Hand-rolled") });
+    // A second answer finds no open question.
+    expect((await post(server, "/api/blocks/12/answer", { id: "ask-12", answers: [{ option: 0, picks: [] }] })).status).toBe(409);
+  });
+});

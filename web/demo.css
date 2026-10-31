@@ -1,0 +1,16 @@
+/* The static demo only (build-demo.ts): a thin line on top says it is one; the app's full-height
+   screens give up that line's height, and the line takes over the notch's inset. */
+:root { --demo-h: calc(22px + env(safe-area-inset-top)); }
+.demo-line {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 20; height: var(--demo-h);
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: env(safe-area-inset-top) 12px 0; overflow: hidden; white-space: nowrap;
+  font-size: 12px; color: var(--muted); background: var(--bg); border-bottom: 1px solid var(--line);
+}
+.demo-line a { color: var(--accent); text-decoration: none; }
+#app { padding-top: var(--demo-h); }
+.screen, .swipe, .desk { height: calc(100dvh - var(--demo-h)); }
+.bar { padding-top: 10px; }
+.acts.overlay { top: var(--demo-h); padding-top: 0; }
+.desk-main > .acts.docked { height: calc(100dvh - var(--demo-h)); }
+.acts.docked .acts-head { padding-top: 10px; }
