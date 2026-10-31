@@ -64,7 +64,7 @@ const MAX_TEXT = 1_000_000;
 /** A phone's id for one prompt it sends (a UUID): a resend after a failed send carries the same one. */
 const SEND_ID = /^[A-Za-z0-9-]{1,64}$/;
 /** Only this origin's scripts, styles and images (plus data:/blob:): agent markdown can't make the app fetch a URL that leaks data. */
-const CSP = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
+export const CSP = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
 
 export type ServerOptions = {
   /** Configuration (TERN_AWUI_*, omp and Tern locations) and the environment of tern, omp and the projects command. */
@@ -866,6 +866,23 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     return transcriptImages.attach({ entries: chat.entries.map((e) => ({ ...e })) });
   }
 
+  /** Each shared parse's keys, serialised once for every stream that sends it. */
+  const parsedKeys = new WeakMap<{ entries: ChatEntry[] }, ChatKeys>();
+  /**
+   * A shared parse (none: an empty chat) with its images attached, and the keys a stream compares
+   * it by. Only entries that got images are serialised again: their hashes can change between
+   * deliveries; every other entry is the parse's own, unchanged.
+   */
+  async function chatToSend(parsed: { entries: ChatEntry[] } | null): Promise<{ chat: { entries: ChatEntry[] }; keys: ChatKeys }> {
+    if (!parsed) return { chat: { entries: [] }, keys: { rest: "{}", entries: [] } };
+    let shared = parsedKeys.get(parsed);
+    if (!shared) parsedKeys.set(parsed, (shared = chatKeys(parsed)));
+    const base = shared;
+    const chat = await withImages(parsed);
+    const entries = chat.entries.map((e, i) => (e.role === "assistant" && e.imageSources ? JSON.stringify(e) : base.entries[i]));
+    return { chat, keys: { rest: JSON.stringify({ ...chat, entries: undefined }), entries } };
+  }
+
   async function readChat(sessionId: string, limit: number): Promise<{ entries: ChatEntry[] } | null> {
     const chat = await parseSessionChat(sessionId, limit);
     return chat && withImages(chat);
@@ -1057,8 +1074,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           let lastDetail = "";
           /** The chat this stream sent last; after the first full `chat`, only what changed goes (`chatpatch`). */
           let lastChat: ChatKeys | null = null;
-          const sendChat = (chat: { entries: ChatEntry[] }) => {
-            const keys = chatKeys(chat);
+          const sendChat = ({ chat, keys }: { chat: { entries: ChatEntry[] }; keys: ChatKeys }) => {
             const update = chatUpdate(chat, keys, lastChat);
             lastChat = keys;
             if (update) send(update[0], update[1]);
@@ -1122,9 +1138,9 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
                 const etag = st ? `${file}:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}` : "none";
                 if (etag !== lastDetail) {
                   // No bridge speaks for a subagent: its file's last entry is its leaf.
-                  const chat = file ? await withImages(await sharedRead(`chat:${file}`, etag, () => readChatFile(file, "", 80))) : { entries: [] };
+                  const sent = await chatToSend(file ? await sharedRead(`chat:${file}`, etag, () => readChatFile(file, "", 80)) : null);
                   lastDetail = etag;
-                  sendChat(chat);
+                  sendChat(sent);
                 }
               }
             } else if (item?.doc) {
@@ -1146,10 +1162,9 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
               if (etag !== lastDetail) {
                 const sessionId = item.agent.sessionId;
                 // Keyed by session: sessions without a transcript yet all have no path.
-                const parsed = await sharedRead(`chat:session:${sessionId}`, etag, () => parseSessionChat(sessionId, 80));
-                const chat = parsed ? await withImages(parsed) : { entries: [] };
+                const sent = await chatToSend(await sharedRead(`chat:session:${sessionId}`, etag, () => parseSessionChat(sessionId, 80)));
                 lastDetail = etag;
-                sendChat(chat);
+                sendChat(sent);
               }
             } else {
               follow(null);
