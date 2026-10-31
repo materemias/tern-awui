@@ -5,10 +5,13 @@
 ### Features
 
 - An Activities panel on the right of a session shows the agent's newest todo list, its running jobs and its subagents.
+- After its first load, an open chat receives only the entries that changed, so following a working turn uses far less mobile data.
+- A static demo of the app with sample sessions runs in any browser without Tern or omp (`bun run build:demo`, deployed to GitHub Pages).
 
 ### Fixes
 
 - A sideways swipe low on the screen no longer buzzes on and on: a session wheel that a drifting finger opens no longer steps by itself from the edge it opened at.
+- Resending an image or follow-up prompt after a failed send no longer runs it twice when the first send had gone through. omp sessions need `/restart` to load the updated extension.
 
 ### Docs
 
