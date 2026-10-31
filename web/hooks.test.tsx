@@ -456,6 +456,21 @@ describe("useStream", () => {
     expect(FakeEventSource.all.at(-2)!.readyState).toBe(FakeEventSource.CLOSED);
   });
 
+  test("a chat patch rebuilds the window and clears finished live text; one the page can't apply reconnects for a full chat", async () => {
+    await act(() => render(<StreamHost block="5" />, root));
+    const said = (text: string, ts: number): ChatEntry => ({ role: "assistant", text, ts });
+    await emit("chat", { entries: [said("Oldest", 1), said("Middle", 2)] });
+    await emit("live", { text: "Newest", done: false });
+    await emit("live", { text: "", done: true });
+    await emit("chatpatch", { base: 2, drop: 1, keep: 1, add: [said("Newest", 3)] });
+    expect(snapshot()).toMatchObject({ chat: [said("Middle", 2), said("Newest", 3)], live: null });
+    const before = FakeEventSource.all.length;
+    await emit("chatpatch", { base: 5, drop: 0, keep: 5, add: [] });
+    expect(FakeEventSource.all.length).toBe(before + 1);
+    expect(FakeEventSource.all.at(-2)!.readyState).toBe(FakeEventSource.CLOSED);
+    expect(snapshot()).toMatchObject({ chat: [said("Middle", 2), said("Newest", 3)] });
+  });
+
   test("live text stays until the finished transcript arrives, but not for an unrelated chat update", async () => {
     await act(() => render(<StreamHost block="5" />, root));
     await emit("state", state([]));

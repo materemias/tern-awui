@@ -6,6 +6,7 @@ import { Transcript, call, HASH } from "./fixtures";
 import { arr, obj, type Obj as Message } from "../lib/json";
 import { startServer, type ServerHandle, type ServerOptions } from "../server";
 import { applyStatePatch } from "../lib/state-patch";
+import { applyChatPatch } from "../lib/chat-patch";
 
 const DEFAULT_SERVER = `${import.meta.dir}/../server.ts`;
 
@@ -228,6 +229,8 @@ export class Events {
   events: { event: string; data: unknown }[] = [];
   /** The list as the stream last left it: the first `state`, then each `patch` applied. */
   list: unknown = null;
+  /** The chat as the stream last left it: the first `chat`, then each `chatpatch` applied. */
+  chat: { entries: unknown[] } | null = null;
   abort = new AbortController();
   reading?: Promise<void>;
   async open(s: Sandbox, query = "") {
@@ -256,7 +259,16 @@ export class Events {
               this.events.push({ event: "state", data: next });
               continue;
             }
+            // Likewise `chatpatch` after the first full chat: tests read the result as `chat`; the patch itself stays visible.
+            if (event === "chatpatch") {
+              const next = this.chat && applyChatPatch(this.chat, parsed);
+              if (!next) throw new Error("chatpatch without the chat it was made against");
+              this.chat = next;
+              this.events.push({ event, data: parsed }, { event: "chat", data: next });
+              continue;
+            }
             if (event === "state") this.list = parsed;
+            if (event === "chat") this.chat = parsed;
             this.events.push({ event, data: parsed });
           }
         }

@@ -3,6 +3,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { Btw, ChatEntry, ContextUse, Doc, Item, Run, State, StretchState, Subagent, Voice } from "./api";
 import { backStep, inheritOrigin, parseRoute, trackOrigin, type Route } from "./lib";
 import { applyStatePatch } from "../lib/state-patch";
+import { applyChatPatch } from "../lib/chat-patch";
 
 /** The app icon counts updates not seen yet: finished turns and waits on you. */
 function setBadge(count: number) {
@@ -353,10 +354,21 @@ export function useStream(block: string | null, view: View, sub: string | null =
         src.close();
         if (es === src) open();
       });
-      src.addEventListener("chat", (e) => {
-        setChat(JSON.parse(e.data)?.entries ?? []);
+      // Likewise the first `chat` is the whole window; after it `chatpatch` carries what changed.
+      let heldChat: { entries: ChatEntry[] } | null = null;
+      const takeChat = (c: { entries: ChatEntry[] }) => {
+        heldChat = c;
+        setChat(c.entries);
         // The finished message is in the transcript now: it replaces the live copy without a gap.
         if (liveEnded) setLive(null);
+      };
+      src.addEventListener("chat", (e) => takeChat({ entries: JSON.parse(e.data)?.entries ?? [] }));
+      src.addEventListener("chatpatch", (e) => {
+        const next = heldChat && applyChatPatch(heldChat, JSON.parse(e.data));
+        if (next) return takeChat(next);
+        // A patch for a chat this page doesn't hold: reconnect for a full copy.
+        src.close();
+        if (es === src) open();
       });
       src.addEventListener("live", (e) => {
         const d: { text: string; done: boolean } = JSON.parse(e.data);

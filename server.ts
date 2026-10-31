@@ -29,6 +29,7 @@ import { configDir, docIcon, installedExtension, ompDataDir, ternNotesDir } from
 import { ensureToken, sameToken } from "./lib/auth";
 import { recentProjects } from "./lib/projects";
 import { rowKeys, statePatch } from "./lib/state-patch";
+import { chatKeys, chatUpdate, type ChatKeys } from "./lib/chat-patch";
 import { vapidSubject } from "./lib/push";
 import { writePrivateFile } from "./lib/private-file";
 
@@ -1054,6 +1055,14 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
             followed?.watcher.close();
             followed = null;
             // A check can resume after the phone left; cleanup already ran, so take nothing new.
+          /** The chat this stream sent last; after the first full `chat`, only what changed goes (`chatpatch`). */
+          let lastChat: ChatKeys | null = null;
+          const sendChat = (chat: { entries: ChatEntry[] }) => {
+            const keys = chatKeys(chat);
+            const update = chatUpdate(chat, keys, lastChat);
+            lastChat = keys;
+            if (update) send(update[0], update[1]);
+          };
             if (!path || stop) return;
             const name = basename(path);
             try {
@@ -1100,7 +1109,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
                   // No bridge speaks for a subagent: its file's last entry is its leaf.
                   const chat = file ? await withImages(await sharedRead(`chat:${file}`, etag, () => readChatFile(file, "", 80))) : { entries: [] };
                   lastDetail = etag;
-                  send("chat", chat);
+                  sendChat(chat);
                 }
               }
             } else if (item?.doc) {
@@ -1123,9 +1132,9 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
                 const sessionId = item.agent.sessionId;
                 // Keyed by session: sessions without a transcript yet all have no path.
                 const parsed = await sharedRead(`chat:session:${sessionId}`, etag, () => parseSessionChat(sessionId, 80));
-                const chat = parsed && (await withImages(parsed));
+                const chat = parsed ? await withImages(parsed) : { entries: [] };
                 lastDetail = etag;
-                send("chat", chat);
+                sendChat(chat);
               }
             } else {
               follow(null);
