@@ -85,6 +85,45 @@ test("session header, transcript, live text and queued steer/follow-up marks", a
   expect(root.querySelectorAll(".msg.assistant").length).toBe(1);
 });
 
+test("the working row shows the newest todo list's progress, and a tap leads to that list", async () => {
+  const list = (ts: number, ...phases: [string, string][][]) => ({
+    role: "tools",
+    calls: [{ name: "todo", intent: "Planning" }],
+    images: [],
+    todo: phases.map((tasks, i) => ({ name: `Phase ${i}`, tasks: tasks.map(([content, status]) => ({ content, status })) })),
+    ts,
+  });
+  const chip = () => root.querySelector<HTMLElement>(".working-todo");
+  await open(item({ status: "working" }));
+  await emit("chat", { entries: [{ role: "assistant", text: "No plan yet", ts: 1 }] });
+  expect(chip()).toBeNull();
+  const old = list(2, [["Old step", "in_progress"]]);
+  const newest = list(3, [["Done one", "completed"], ["Later", "pending"]], [["Now this", "in_progress"], ["Last", "pending"]]);
+  await emit("chat", { entries: [old, newest] });
+  expect(chip()!.textContent).toBe("1/4·Now this");
+  expect(root.querySelector(".working-intent")!.textContent).toBe("Working…");
+
+  // Folded by hand, the newest list opens again, and the chat glides to it.
+  const target = root.querySelector<HTMLElement>(".todo[data-newest]")!;
+  await click(".todo[data-newest]");
+  expect(target.querySelector(".todo-task")).toBeNull();
+  const scroll = root.querySelector<HTMLElement>(".scroll")!;
+  Object.defineProperties(scroll, { scrollHeight: { configurable: true, value: 2000 }, clientHeight: { configurable: true, value: 400 } });
+  target.getBoundingClientRect = () => ({ top: 300 }) as DOMRect;
+  const glides: ScrollToOptions[] = [];
+  scroll.scrollTo = ((options: ScrollToOptions) => void glides.push(options)) as typeof scroll.scrollTo;
+  await click(".working-todo");
+  expect(glides).toEqual([{ top: 292, behavior: "smooth" }]);
+  expect(target.querySelectorAll(".todo-task").length).toBe(4);
+  expect(root.querySelectorAll(".todo")[0].querySelector(".todo-task")).toBeNull();
+
+  // Without a task in progress the next pending one shows; once all are done, the chip goes.
+  await emit("chat", { entries: [list(4, [["Done one", "completed"], ["Next", "pending"]])] });
+  expect(chip()!.textContent).toBe("1/2·Next");
+  await emit("chat", { entries: [list(5, [["Done one", "completed"], ["Done two", "completed"]])] });
+  expect(chip()).toBeNull();
+});
+
 test("unknown block loads, then reports it disappeared", async () => {
   await open();
   expect(root.querySelector(".row-title")!.textContent).toBe("5");

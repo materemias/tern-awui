@@ -4,7 +4,8 @@
 
 ### Features
 
-- An Activities panel on the right of a session shows the agent's newest todo list, its running jobs and its subagents.
+- While a session works, its working row shows the todo list's progress and current task, like `2/5 · Add the light palette`; a tap scrolls to the list.
+- **Subagents (N)** under the chat stays after every subagent has finished.
 - After its first load, an open chat receives only the entries that changed, so following a working turn uses far less mobile data.
 - A static demo of the app with sample sessions runs in any browser without Tern or omp (`bun run build:demo`, deployed to GitHub Pages).
 

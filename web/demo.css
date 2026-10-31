@@ -11,6 +11,3 @@
 #app { padding-top: var(--demo-h); }
 .screen, .swipe, .desk { height: calc(100dvh - var(--demo-h)); }
 .bar { padding-top: 10px; }
-.acts.overlay { top: var(--demo-h); padding-top: 0; }
-.desk-main > .acts.docked { height: calc(100dvh - var(--demo-h)); }
-.acts.docked .acts-head { padding-top: 10px; }

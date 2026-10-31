@@ -115,7 +115,7 @@ export function demoSessions(now: number): DemoSession[] {
   const t = (minutesAgo: number) => now - minutesAgo * MIN;
   const job: Job = { id: "job-css", type: "task", label: "Audit the CSS colours for the dark theme", agent: "CssAudit", since: t(1.5) };
   return [
-    // Working, with a todo list and a running subagent: what the Activities panel is for.
+    // Working, with a todo list and a running subagent: the working row's todo progress and the jobs strip.
     {
       item: omp("11", "tern-awui", "Add a light theme", {
         tag: "ui",
@@ -206,7 +206,7 @@ export function demoSessions(now: number): DemoSession[] {
         "~/code/tern-awui main",
         "❯ git log --oneline -5",
         "9821e31 docs: macOS is tested",
-        "4be07aa feat(web): activities panel",
+        "4be07aa feat(web): todo progress in the working row",
         "1f3c2d9 fix(stream): resend the run after a reconnect",
         "a77e014 feat(home): open a recent project",
         "0c9d5b2 chore: bun 1.4.3",

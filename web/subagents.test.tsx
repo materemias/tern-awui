@@ -130,11 +130,14 @@ describe("JobsStrip", () => {
     expect(root.querySelector(".subagents-link")!.textContent).toContain("Subagents (3)");
   });
 
-  test("once every subagent finished, the entry goes too; a background shell alone gets no entry", async () => {
+  test("Subagents (N) stays once every subagent finished; a background shell alone gets no entry", async () => {
     await act(() => render(<JobsStrip block="5" jobs={[]} subagents={2} now={NOW} />, root));
-    expect(root.innerHTML).toBe("");
-    await act(() => render(<JobsStrip block="5" jobs={[job("", "bash")]} subagents={2} now={NOW} />, root));
+    expect(root.querySelectorAll(".jobs > *").length).toBe(1);
+    expect(root.querySelector(".subagents-link")!.textContent).toContain("Subagents (2)");
+    await act(() => render(<JobsStrip block="5" jobs={[job("", "bash")]} subagents={0} now={NOW} />, root));
     expect(texts("div.job .job-name")).toEqual(["j-bash"]);
     expect(root.querySelector(".subagents-link")).toBeNull();
+    await act(() => render(<JobsStrip block="5" jobs={[]} subagents={0} now={NOW} />, root));
+    expect(root.innerHTML).toBe("");
   });
 });

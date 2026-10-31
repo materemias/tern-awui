@@ -171,6 +171,7 @@ const TODO_MARK: Record<string, string> = { completed: "✓", in_progress: "▸"
 /**
  * omp's todo list as a `todo` call left it. The newest one in the chat shows every task; older
  * ones show one progress line (tap for the list), so a long session isn't a wall of checklists.
+ * The newest carries `data-newest`, where the working row's todo progress leads.
  */
 export function Todo({ phases, full }: { phases: TodoPhase[]; full: boolean }) {
   // Follows `full` (a newer list collapses this one) until the user taps it.
@@ -180,6 +181,7 @@ export function Todo({ phases, full }: { phases: TodoPhase[]; full: boolean }) {
   return (
     <div
       class="todo"
+      data-newest={full || undefined}
       onClick={(e) => {
         e.stopPropagation();
         setToggled(!open);

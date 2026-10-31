@@ -1,8 +1,8 @@
 // An open session (chat, raw screen or note, with the composer) and its subagent screens.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { highlightFile } from "./highlight";
-import { post, type Item, type Run, type TodoPhase } from "./api";
-import { age, backStep, can, elapsed, isNote, routeHash, swipeOrder, type Route } from "./lib";
+import { post, type ChatEntry, type Item, type Run, type TodoPhase } from "./api";
+import { age, backStep, can, elapsed, isNote, routeHash, swipeOrder, todoSummary, type Route } from "./lib";
 import { Chat, Markdown, StretchContext, type StretchSync } from "./chat";
 import { liveText, withOpen } from "./stretch";
 import { screenHtml } from "./markdown";
@@ -11,9 +11,8 @@ import { ExtensionNotice } from "./extension";
 import { JobsStrip, SubagentChat, SubagentList } from "./subagents";
 import { storedCollapsed, storedHideOld, Title } from "./home";
 import { Composer } from "./composer";
-import { goBack, origins, swipeTrail, useNow, useStream, useWide, type View } from "./hooks";
+import { goBack, origins, swipeTrail, useNow, useStream, type View } from "./hooks";
 import { SwipeNav, type Siblings } from "./swipe";
-import { Activities, ActivitiesButton, latestTodo, useActivitiesOpen } from "./activities";
 
 export function Session({ block }: { block: string }) {
   const [view, setView] = useState<View>("chat");
@@ -57,22 +56,8 @@ export function Session({ block }: { block: string }) {
   // The ↑/↓ prompt jumps show only once the reader has scrolled up from the end.
   const [atEnd, setAtEnd] = useState(true);
   const now = useNow(5000);
-  const wide = useWide();
-  const [actsOpen, setActsOpen] = useActivitiesOpen(wide);
-  const actsButton = useRef<HTMLButtonElement>(null);
-  const fresh = useMemo(() => latestTodo(chat), [chat]);
-  // The Raw view streams the screen, not the chat: the todo the chat last showed stays until the
-  // block or its omp session changes.
-  const kept = useRef<{ key: string; todo: TodoPhase[] | null }>({ key: "", todo: null });
-  const keptKey = `${block}:${item?.agent?.sessionId ?? ""}`;
-  if (kept.current.key !== keptKey) kept.current = { key: keptKey, todo: null };
-  if (chat) kept.current.todo = fresh;
-  const todo = kept.current.todo;
-  const jobCount = item?.live?.jobs.length ?? 0;
-  const busy = jobCount > 0 || (item?.agent?.subagents ?? 0) > 0 || todo !== null;
-  // The panel belongs to omp sessions; before the list arrives the desktop keeps its column, so
-  // the transcript doesn't jump sideways once it does.
-  const actsShown = actsOpen && (state ? isOmp : wide);
+  // Only the working row reads it, while the session works.
+  const todo = useMemo(() => newestTodo(chat), [chat]);
 
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -120,7 +105,6 @@ export function Session({ block }: { block: string }) {
     };
   };
   return (
-    <>
     <SwipeNav siblings={siblings}>
     <div class="screen">
       <header class="bar session-bar">
@@ -149,7 +133,6 @@ export function Session({ block }: { block: string }) {
             {!online && <span class="c-blocked">offline</span>}
           </div>
         </div>
-        {isOmp && busy && <ActivitiesButton open={actsShown} jobs={jobCount} onToggle={() => setActsOpen(!actsShown)} buttonRef={actsButton} />}
         <button class="icon-btn" title="Show this pane on the desktop" aria-label="Show this pane on the desktop" onClick={() => post(`/api/blocks/${block}/focus`, {})}>
           {/* A monitor with an arrow out of its corner, like an "open elsewhere" link: show this pane at the desk. */}
           <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -241,7 +224,7 @@ export function Session({ block }: { block: string }) {
             <div class="empty">Loading…</div>
           )}
           {doc?.clipped && <div class="muted small">Showing the first 512 KB.</div>}
-          {working && item && <WorkingRow run={run} since={item.since} />}
+          {working && item && <WorkingRow run={run} since={item.since} todo={todo} onTodo={() => jumpTodo(scroller.current, glide, pinned)} />}
           {item && <JobsStrip block={block} jobs={item.live?.jobs ?? []} subagents={item.agent?.subagents ?? 0} now={now} />}
         </div>
         {!item?.doc && chat && view === "chat" && !atEnd && (
@@ -274,9 +257,6 @@ export function Session({ block }: { block: string }) {
       )}
     </div>
     </SwipeNav>
-    {/* Outside SwipeNav: a touch in the panel never starts a session swipe. */}
-    {actsShown && <Activities block={block} item={item} todo={todo} now={now} overlay={!wide} opener={actsButton} onClose={() => setActsOpen(false)} />}
-    </>
   );
 }
 
@@ -301,14 +281,29 @@ function replayOmp(e: { currentTarget: HTMLElement }) {
   el.classList.add("tap");
 }
 
+/** The newest todo list in a chat, or null when it has none. */
+function newestTodo(chat: ChatEntry[] | null): TodoPhase[] | null {
+  if (!chat) return null;
+  for (let i = chat.length - 1; i >= 0; i--) {
+    const e = chat[i];
+    if (e.role === "tools" && e.todo) return e.todo;
+  }
+  return null;
+}
+
 /**
  * omp's working row: a spinner, the turn's running time and what its current tool call is doing,
  * swept by a highlight. Without the turn's report (older extension) it counts from the status change.
+ * With an unfinished todo list it ends in the list's progress and the task under way (else the next
+ * one); a tap there leads to the list (`onTodo`).
  */
-function WorkingRow({ run, since }: { run: Run | null; since: number }) {
+function WorkingRow({ run, since, todo, onTodo }: { run: Run | null; since: number; todo: TodoPhase[] | null; onTodo: () => void }) {
   const start = run?.since ?? since;
   // Tenths tick under a minute, as in omp; whole seconds after.
   const now = useNow(Date.now() - start < 60_000 ? 100 : 1000);
+  const tasks = todo?.flatMap((p) => p.tasks) ?? [];
+  const step = tasks.find((t) => t.status === "in_progress") ?? tasks.find((t) => t.status === "pending") ?? tasks.find((t) => t.status !== "completed");
+  const { done, total } = todoSummary(todo ?? []);
   return (
     // No live region: a clock ticking ten times a second would flood screen readers.
     <div class="working-row">
@@ -316,8 +311,29 @@ function WorkingRow({ run, since }: { run: Run | null; since: number }) {
       <span class="working-time">{elapsed(now - start)}</span>
       <span aria-hidden="true">·</span>
       <span class="working-intent">{run?.intent || "Working…"}</span>
+      {step && (
+        <button type="button" class="working-todo" title="Show the todo list" onClick={onTodo}>
+          <span class="working-todo-count">
+            {done}/{total}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span class="working-todo-task">{step.content}</span>
+        </button>
+      )}
     </div>
   );
+}
+
+/** Glides `scroller` to the chat's newest todo list, opening it if a tap had folded it. */
+function jumpTodo(scroller: HTMLElement | null, glide: { current: Glide | null }, pinned: { current: boolean }) {
+  const list = scroller?.querySelector<HTMLElement>(".todo[data-newest]");
+  if (!scroller || !list) return;
+  if (!list.querySelector(".todo-phase")) list.click();
+  const max = scroller.scrollHeight - scroller.clientHeight;
+  const top = Math.min(max, Math.max(0, list.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - JUMP_GAP));
+  glide.current = { top, at: performance.now() };
+  pinned.current = top >= max - 2;
+  scroller.scrollTo({ top, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 }
 
 /** Air left above a prompt jumped to. */
