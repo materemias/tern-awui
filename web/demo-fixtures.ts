@@ -94,24 +94,27 @@ export const ASK_QUESTIONS: AskQuestion[] = [
   },
 ];
 
-const ORDER_TABLE = `Here's how the three order types compare on the venues you trade:
+const DRIVER_TABLE = `Here's how the three SQLite drivers compare for the API server:
 
-| Type | Fills | Fee (taker / maker) | Slippage risk |
+| Driver | Runtime | Sync API | Prepared statement cache |
 | --- | --- | --- | --- |
-| Market | Immediately | 0.05% / — | High in thin books |
-| Limit | When price is reached | — / 0.02% | None, but may not fill |
-| Stop-limit | After the trigger, as a limit | — / 0.02% | Gaps can skip the limit |
+| \`bun:sqlite\` | Bun only | Yes | Built in |
+| \`better-sqlite3\` | Node (native addon) | Yes | Manual |
+| \`@libsql/client\` | Node, Bun, edge | No, async | Per client |
 
-For the mean-reversion entries a **post-only limit** is the better default: it never pays the taker fee and the strategy is rarely in a hurry. The order helper would look like this:
+Since the server already runs on Bun, **\`bun:sqlite\`** is the simplest choice: no native build step and no extra dependency. The session store would look like this:
 
 \`\`\`ts
-export async function placeEntry(venue: Venue, side: "buy" | "sell", qty: number, price: number) {
-  // Post-only: rejected instead of crossing the book, so it always rests as a maker order.
-  return venue.order({ side, qty, price, type: "limit", postOnly: true, timeInForce: "GTC" });
-}
+import { Database } from "bun:sqlite";
+
+const db = new Database("data/sessions.db", { create: true });
+db.run("PRAGMA journal_mode = WAL");
+const get = db.query<{ data: string }, [string]>("SELECT data FROM sessions WHERE id = ?");
+
+export const loadSession = (id: string) => get.get(id)?.data ?? null;
 \`\`\`
 
-Exits stay as market orders: when the stop is hit, getting out matters more than the fee.`;
+Switch to \`@libsql/client\` only if the server has to run on an edge runtime.`;
 
 export function demoSessions(now: number): DemoSession[] {
   const t = (minutesAgo: number) => now - minutesAgo * MIN;
@@ -222,25 +225,25 @@ export function demoSessions(now: number): DemoSession[] {
     },
     // Idle with omp's recap.
     {
-      item: omp("21", "trading-bot", "Backtest mean reversion", {
+      item: omp("21", "api-server", "Speed up the test suite", {
         since: t(25),
         unseen: "done",
-        cwd: `${HOME}/code/trading-bot`,
+        cwd: `${HOME}/code/api-server`,
         agent: demoAgent("demo-21", {
-          lastPrompt: "backtest the mean-reversion strategy on the last 90 days",
-          recap: "Backtested mean reversion over 90 days: Sharpe 1.4, max drawdown 6.2%. Fees eat a third of the edge; maker-only entries are next.",
+          lastPrompt: "the test suite takes four minutes, find out why",
+          recap: "The suite went from 4 min to 50 s: tests now share one database per worker instead of migrating a fresh one per test. Two flaky tests remain.",
           lastActivity: t(25),
         }),
       }),
       chat: [
-        user("u21a", "backtest the mean-reversion strategy on the last 90 days", t(41)),
-        tools(t(40), ["bash", "Fetching 90 days of 5m candles"], ["bash", "Running the backtest"], ["read", "Reading results/summary.json"]),
+        user("u21a", "the test suite takes four minutes, find out why", t(41)),
+        tools(t(40), ["bash", "Timing bun test per file"], ["read", "Reading test/setup.ts"], ["edit", "Sharing one database per worker"], ["bash", "Running bun test"]),
         assistant(
-          "The backtest finished.\n\n- **Sharpe:** 1.4\n- **Max drawdown:** 6.2%\n- **Trades:** 312, 58% winners\n\nFees take about a third of the gross edge, since every entry pays the taker fee. Switching entries to maker-only limit orders is the cheapest improvement.",
+          "The suite now runs in 50 s instead of 4 minutes.\n\n- **Cause:** `test/setup.ts` ran every migration for each of the 412 tests.\n- **Fix:** each worker migrates one database once, and every test runs inside a transaction that rolls back.\n- **Left over:** `orders.test.ts` and `webhooks.test.ts` fail about one run in ten, because they depend on the clock.",
           t(26),
         ),
         turn(15 * MIN, t(26)),
-        { role: "recap", text: "Backtested mean reversion over 90 days: Sharpe 1.4, max drawdown 6.2%. Fees eat a third of the edge; maker-only entries are next.", ts: t(25) },
+        { role: "recap", text: "The suite went from 4 min to 50 s: tests now share one database per worker instead of migrating a fresh one per test. Two flaky tests remain.", ts: t(25) },
       ],
       screen: "",
       subagents: [],
@@ -249,15 +252,15 @@ export function demoSessions(now: number): DemoSession[] {
     },
     // Idle with a markdown reply: a table and a code block.
     {
-      item: omp("22", "trading-bot", "Compare order types", {
+      item: omp("22", "api-server", "Pick a SQLite driver", {
         since: t(52),
-        cwd: `${HOME}/code/trading-bot`,
-        agent: demoAgent("demo-22", { lastPrompt: "which order type should entries use?", lastActivity: t(52) }),
+        cwd: `${HOME}/code/api-server`,
+        agent: demoAgent("demo-22", { lastPrompt: "which sqlite driver should the session store use?", lastActivity: t(52) }),
       }),
       chat: [
-        user("u22a", "which order type should entries use?", t(55)),
-        tools(t(54), ["read", "Reading src/venues/*.ts"], ["grep", "Finding fee schedules"]),
-        assistant(ORDER_TABLE, t(52)),
+        user("u22a", "which sqlite driver should the session store use?", t(55)),
+        tools(t(54), ["read", "Reading package.json"], ["grep", "Finding database imports"]),
+        assistant(DRIVER_TABLE, t(52)),
         turn(3 * MIN, t(52)),
       ],
       screen: "",
@@ -285,12 +288,12 @@ export function demoSessions(now: number): DemoSession[] {
       tokens: 15_000,
     },
     {
-      item: omp("13", "tern-awui", "Fix the swipe wheel", {
+      item: omp("14", "tern-awui", "Fix the swipe wheel", {
         since: t(2 * DAY),
-        agent: demoAgent("demo-13", { lastPrompt: "the session wheel keeps stepping on its own near the edge", lastActivity: t(2 * DAY) }),
+        agent: demoAgent("demo-14", { lastPrompt: "the session wheel keeps stepping on its own near the edge", lastActivity: t(2 * DAY) }),
       }),
       chat: [
-        user("u13a", "the session wheel keeps stepping on its own near the edge", t(2 * DAY + 6)),
+        user("u14a", "the session wheel keeps stepping on its own near the edge", t(2 * DAY + 6)),
         tools(t(2 * DAY + 5), ["read", "Reading web/swipe.tsx"], ["edit", "Ignoring the edge the wheel opened at"]),
         assistant("The wheel opened at the screen edge and read the finger resting there as a request to step. It now waits until the finger moves away from that edge first.", t(2 * DAY)),
         turn(6 * MIN, t(2 * DAY)),

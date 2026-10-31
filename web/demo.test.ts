@@ -52,8 +52,10 @@ describe("demo backend", () => {
     const clock = new ManualClock();
     const server = new DemoServer(clock);
     const state: State = await (await server.fetch(new URL("http://demo.test/api/state"))).json();
-    expect(state.projects.map((p) => p.name)).toEqual(["tern-awui", "trading-bot", "dotfiles"]);
+    expect(state.projects.map((p) => p.name)).toEqual(["tern-awui", "api-server", "dotfiles"]);
     const items = state.projects.flatMap((p) => p.items);
+    // Each row opens its own session: a shared block id would show another row's content.
+    expect(new Set(items.map((i) => i.block)).size).toBe(items.length);
     expect(items.map((i) => i.status)).toEqual(["working", "blocked", null, "idle", "idle", "idle", "idle"]);
     expect(state.counts).toEqual({ working: 1, blocked: 1, idle: 4 });
     // The list's eye has something to hide: two sessions are older than a day.
@@ -66,9 +68,9 @@ describe("demo backend", () => {
     const { all, last } = open(server, clock, "22");
     expect(last("chat").entries.at(-1)?.role).toBe("turn");
 
-    const r = await post(server, "/api/blocks/22/submit", { text: "use limit orders", images: [] });
+    const r = await post(server, "/api/blocks/22/submit", { text: "use bun:sqlite", images: [] });
     expect(r.ok).toBe(true);
-    expect(last("chat").entries.at(-1)).toMatchObject({ role: "user", text: "use limit orders" });
+    expect(last("chat").entries.at(-1)).toMatchObject({ role: "user", text: "use bun:sqlite" });
     expect(last("state").projects[1].items[1].status).toBe("working");
 
     clock.advance(60_000);
@@ -78,7 +80,7 @@ describe("demo backend", () => {
     for (let i = 1; i < live.length - 1; i++) expect(live[i].text.startsWith(live[i - 1].text)).toBe(true);
     const done = live.at(-1)!;
     expect(done.done).toBe(true);
-    expect(done.text).toContain("use limit orders");
+    expect(done.text).toContain("use bun:sqlite");
     const entries = last("chat").entries;
     expect(entries.findLast((e) => e.role === "assistant")).toMatchObject({ text: done.text });
     expect(last("run")).toBeNull();
