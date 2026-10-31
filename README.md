@@ -2,6 +2,8 @@
 
 A web app for following and steering the [omp](https://github.com/can1357/oh-my-pi) agents running in [Tern](https://stencil.so/tern), from a phone or another browser.
 
+**[Try the demo](https://materemias.github.io/tern-awui/)**: the real app in your browser with sample sessions. It needs no Tern or omp, and nothing leaves the browser.
+
 I built it for how I work. Tern stays open on the desktop with its panes, tern-awui sits next to it in a browser tab, and the same app is installed on my Android phone as a PWA. When I step away, I can still see which agent finished, which one is waiting for an answer, and reply. It's a companion to Tern, not a replacement: a project-based, focused view of the sessions.
 
 ![tern-awui on a phone: a session waiting on an ask is answered with one tap, the running turn is steered, a swipe moves to the next session and the session wheel picks another, a voice call asks that session a question and reads back its answer, the screen goes black with the microphone on and comes back, and the eye hides sessions older than a day](docs/phone.gif)

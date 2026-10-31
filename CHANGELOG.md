@@ -17,6 +17,7 @@
 
 - The phone film shows a voice call and the black screen.
 - The README explains up front that the desktop and the phone share the same Tern sessions: what's open in Tern continues on the phone, and a session started on the phone opens a Tern tab.
+- The README links to the live demo on GitHub Pages.
 
 ## 0.9.0 (2026-10-30)
 
