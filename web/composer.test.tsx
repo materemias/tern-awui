@@ -531,6 +531,22 @@ describe("follow-ups and side questions", () => {
     expect(new Set(ids())).not.toContain(undefined);
   });
 
+  test("the same follow-up in another omp session gets a new id, so it isn't taken for a retry", async () => {
+    await show({ item: item({ status: "working" }) });
+    await input("after the turn");
+    net.reply = () => Response.json({ error: "omp did not take the message" }, { status: 502 });
+    await press("Enter", { ctrlKey: true });
+    const replacement = item({ status: "working" });
+    if (!replacement.agent) throw new Error("Missing agent fixture");
+    replacement.agent.sessionId = "replacement";
+    await show({ item: replacement });
+    await input("after the turn");
+    await press("Enter", { ctrlKey: true });
+    const [old, fresh] = ids();
+    expect(fresh).toMatch(/^[0-9a-f-]{36}$/);
+    expect(fresh).not.toBe(old);
+  });
+
   test("the follow-up button preserves attached images and ordinary Send steers instead", async () => {
     await show({ item: item({ status: "working" }) });
     await input("later");

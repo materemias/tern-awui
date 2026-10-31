@@ -110,8 +110,10 @@ export function Composer({
   const submitting = useRef(false);
   // Edits for the next prompt must reach omp after the current submission clears its editor.
   const deferredDraft = useRef<DraftWrite | null>(null);
-  // The last image or follow-up send, until one succeeds: a resend of the same prompt reuses its id.
-  const lastSend = useRef<{ id: string; text: string; images: PastedImage[]; followUp: boolean } | null>(null);
+  // The last image or follow-up send, until one succeeds: a resend of the same prompt to the same
+  // omp session reuses its id. Another block or session gets a fresh one, so the extension never
+  // takes a new session's prompt for a retry of the old one's.
+  const lastSend = useRef<{ id: string; block: string; sessionId: string | null; text: string; images: PastedImage[]; followUp: boolean } | null>(null);
   // Terminals: what the phone has typed onto the shell's line, and one queue for every write.
   const typed = useRef("");
   const chain = useRef<Promise<unknown>>(Promise.resolve());
@@ -304,10 +306,18 @@ export function Composer({
    */
   function sendId(text: string, images: PastedImage[], followUp: boolean): string {
     const last = lastSend.current;
-    if (last && last.text === text && last.followUp === followUp && last.images.length === images.length && last.images.every((p, i) => p === images[i]))
+    if (
+      last &&
+      last.block === block &&
+      last.sessionId === sessionId &&
+      last.text === text &&
+      last.followUp === followUp &&
+      last.images.length === images.length &&
+      last.images.every((p, i) => p === images[i])
+    )
       return last.id;
     const id = crypto.randomUUID();
-    lastSend.current = { id, text, images, followUp };
+    lastSend.current = { id, block, sessionId, text, images, followUp };
     return id;
   }
 
