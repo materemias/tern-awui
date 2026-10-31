@@ -388,7 +388,8 @@ export function Composer({
     }
     const body = followUp ? { text: text.trim(), followUp, id: sendId(text.trim(), [], true) } : { text: text.trim() };
     if (!(await send("submit", body))) {
-      lastSend.current = null;
+      // A plain steer carries no id, so it leaves a failed follow-up's id for that follow-up's retry.
+      if (followUp) lastSend.current = null;
       buzz();
       lastEdit.current = Date.now();
       // An echo of the draft from before the send must not come back once it settles.

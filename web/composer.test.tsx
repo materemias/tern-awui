@@ -547,6 +547,22 @@ describe("follow-ups and side questions", () => {
     expect(fresh).not.toBe(old);
   });
 
+  test("a plain steer sent between a failed follow-up and its retry leaves the follow-up's id", async () => {
+    await show({ item: item({ status: "working" }) });
+    await input("after the turn");
+    net.reply = () => Response.json({ error: "omp did not take the message" }, { status: 502 });
+    await press("Enter", { ctrlKey: true });
+    net.reply = () => Response.json({ ok: true });
+    await input("steer now");
+    await click(button("Send"));
+    expect(calls("submit")[1]).toEqual({ text: "steer now" });
+    await input("after the turn");
+    await press("Enter", { ctrlKey: true });
+    const [failed, steer, retried] = ids();
+    expect(steer).toBeUndefined();
+    expect(retried).toBe(failed);
+  });
+
   test("the follow-up button preserves attached images and ordinary Send steers instead", async () => {
     await show({ item: item({ status: "working" }) });
     await input("later");
