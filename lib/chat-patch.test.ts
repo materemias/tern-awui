@@ -55,3 +55,12 @@ test("a patch for another copy of the chat can't be applied", () => {
   expect(applyChatPatch({ entries: range(0, 10) }, { ...patch, keep: 11 })).toBeNull();
   expect(applyChatPatch({ entries: range(0, 10) }, { ...patch, add: undefined as never })).toBeNull();
 });
+
+test("a patch whose counts aren't whole, non-negative numbers is refused", () => {
+  const prev = { entries: range(0, 10) };
+  const patch: ChatPatch<Chat> = { base: 10, drop: 0, keep: 10, add: [said(10)] };
+  for (const bad of [{ drop: 0.5 }, { keep: 9.5 }, { drop: -1, keep: 10 }, { base: "10" as never }, { keep: Number.NaN }, { drop: null as never }]) {
+    expect(applyChatPatch(prev, { ...patch, ...bad })).toBeNull();
+  }
+  expect(applyChatPatch(prev, patch)?.entries).toEqual(range(0, 11));
+});

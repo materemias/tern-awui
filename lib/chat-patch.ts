@@ -55,9 +55,11 @@ export function chatUpdate<C extends Chat>(chat: C, keys: ChatKeys, before: Chat
   return ["chatpatch", { ...head, add: entries.slice(keep) } as ChatPatch<C>];
 }
 
-/** The chat a patch describes, built on `prev`; null when `prev` isn't the copy it was made against (resync needed). */
+/** The chat a patch describes, built on `prev`; null when `prev` isn't the copy it was made against (resync needed) or the patch is malformed. */
 export function applyChatPatch<C extends Chat>(prev: C, patch: ChatPatch<C>): C | null {
   const { base, drop, keep, add, ...rest } = patch;
-  if (prev.entries.length !== base || !Array.isArray(add) || drop < 0 || keep < 0 || drop + keep > base) return null;
+  const count = (n: unknown) => Number.isInteger(n) && (n as number) >= 0;
+  if (!count(base) || !count(drop) || !count(keep) || !Array.isArray(add)) return null;
+  if (prev.entries.length !== base || drop + keep > base) return null;
   return { ...rest, entries: [...prev.entries.slice(drop, drop + keep), ...add] } as unknown as C;
 }
