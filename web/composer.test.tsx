@@ -127,6 +127,9 @@ async function release(pending: { resolve: (response: Response) => void }, respo
 }
 const calls = (path: string) => net.to(`/api/blocks/5/${path}`);
 const image = (text = "PNG", type = "image/png") => new File([text], "paste", { type });
+/** Image and follow-up sends carry the phone's id for the prompt. */
+const anyId = expect.any(String);
+const ids = () => calls("submit").map((body) => (body && typeof body === "object" && "id" in body ? body.id : undefined));
 async function paste(files: File[], text = "") {
   const data = new DataTransfer();
   for (const file of files) data.items.add(file);
@@ -330,7 +333,7 @@ describe("pasted images", () => {
     expect(revoked).toEqual(["blob:composer-1"]);
     expect(root.querySelectorAll(".pasted-item")).toHaveLength(1);
     await click(button("Send"));
-    expect(calls("submit")).toEqual([{ text: "", images: [{ data: btoa("two"), mimeType: "image/png" }], followUp: false }]);
+    expect(calls("submit")).toEqual([{ text: "", images: [{ data: btoa("two"), mimeType: "image/png" }], followUp: false, id: anyId }]);
     expect(revoked).toEqual(["blob:composer-1", "blob:composer-2"]);
     expect(root.querySelector(".pasted")).toBeNull();
   });
@@ -365,7 +368,7 @@ describe("pasted images", () => {
     expect(previews).toHaveLength(9);
   });
 
-  test("failed image sends retain previews and text; a retry sends the same bytes", async () => {
+  test("failed image sends retain previews and text; a retry sends the same bytes as the same prompt", async () => {
     await show();
     await input("look here");
     await paste([image("pixels")]);
@@ -377,8 +380,9 @@ describe("pasted images", () => {
     expect(revoked).toEqual([]);
     net.reply = () => Response.json({ ok: true });
     await click(button("Send"));
-    const payload = { text: "look here", images: [{ data: btoa("pixels"), mimeType: "image/png" }], followUp: false };
+    const payload = { text: "look here", images: [{ data: btoa("pixels"), mimeType: "image/png" }], followUp: false, id: anyId };
     expect(calls("submit")).toEqual([payload, payload]);
+    expect(new Set(ids()).size).toBe(1);
     expect(root.querySelector(".pasted")).toBeNull();
   });
 
@@ -397,8 +401,8 @@ describe("pasted images", () => {
     net.reply = () => Response.json({ ok: true });
     await click(button("Send"));
     expect(calls("submit")).toEqual([
-      { text: "", images: [{ data: btoa("first"), mimeType: "image/png" }], followUp: false },
-      { text: "", images: [{ data: btoa("next"), mimeType: "image/png" }], followUp: false },
+      { text: "", images: [{ data: btoa("first"), mimeType: "image/png" }], followUp: false, id: anyId },
+      { text: "", images: [{ data: btoa("next"), mimeType: "image/png" }], followUp: false, id: anyId },
     ]);
   });
 
@@ -429,7 +433,7 @@ describe("pasted images", () => {
     expect(encodings).toEqual([{ type: "image/jpeg", quality: 0.88 }]);
     expect(previews[0]?.blob.type).toBe("image/jpeg");
     await click(button("Send"));
-    expect(calls("submit")).toEqual([{ text: "", images: [{ data: btoa("jpeg bytes"), mimeType: "image/jpeg" }], followUp: false }]);
+    expect(calls("submit")).toEqual([{ text: "", images: [{ data: btoa("jpeg bytes"), mimeType: "image/jpeg" }], followUp: false, id: anyId }]);
   });
 
   test("an unreadable image reports an error without disturbing existing attachments", async () => {
@@ -441,7 +445,7 @@ describe("pasted images", () => {
     expect(root.querySelectorAll(".pasted-item")).toHaveLength(1);
     expect(revoked).toEqual([]);
     await click(button("Send"));
-    expect(calls("submit")).toEqual([{ text: "", images: [{ data: btoa("good"), mimeType: "image/png" }], followUp: false }]);
+    expect(calls("submit")).toEqual([{ text: "", images: [{ data: btoa("good"), mimeType: "image/png" }], followUp: false, id: anyId }]);
   });
 
   test("the attach button picks images into the same tray, skips other files, and is absent in shells", async () => {
@@ -458,7 +462,7 @@ describe("pasted images", () => {
     expect(picker.value).toBe("");
     expect(root.querySelectorAll(".pasted-item")).toHaveLength(1);
     await click(button("Send"));
-    expect(calls("submit")).toEqual([{ text: "", images: [{ data: btoa("camera"), mimeType: "image/jpeg" }], followUp: false }]);
+    expect(calls("submit")).toEqual([{ text: "", images: [{ data: btoa("camera"), mimeType: "image/jpeg" }], followUp: false, id: anyId }]);
     await show({ item: item({ agent: null, live: null, status: null }), draft: null });
     expect(root.querySelector('input[type="file"]')).toBeNull();
     expect([...root.querySelectorAll("button")].some((b) => b.getAttribute("aria-label") === "Attach image")).toBe(false);
@@ -490,7 +494,7 @@ describe("pasted images", () => {
     await click(row("Paste from clipboard"));
     expect(root.querySelectorAll(".pasted-item")).toHaveLength(1);
     await click(button("Send"));
-    expect(calls("submit")).toEqual([{ text: "", images: [{ data: btoa("shot"), mimeType: "image/png" }], followUp: false }]);
+    expect(calls("submit")).toEqual([{ text: "", images: [{ data: btoa("shot"), mimeType: "image/png" }], followUp: false, id: anyId }]);
   });
 });
 
@@ -500,8 +504,31 @@ describe("follow-ups and side questions", () => {
     await input("  after the turn  ");
     expect(area().placeholder).toBe("Steer the agent…");
     expect((await press(key, { ctrlKey: true })).defaultPrevented).toBe(true);
-    expect(calls("submit")).toEqual([{ text: "after the turn", followUp: true }]);
+    expect(calls("submit")).toEqual([{ text: "after the turn", followUp: true, id: anyId }]);
     expect(area().value).toBe("");
+  });
+
+  test("a follow-up resent after a failure keeps its id; an edit or a success starts a new one", async () => {
+    await show({ item: item({ status: "working" }) });
+    await input("after the turn");
+    net.reply = () => Response.json({ error: "omp did not take the message" }, { status: 502 });
+    await press("Enter", { ctrlKey: true });
+    expect(area().value).toBe("after the turn");
+    await press("Enter", { ctrlKey: true });
+    await input("after the turn, then deploy");
+    await press("Enter", { ctrlKey: true });
+    net.reply = () => Response.json({ ok: true });
+    await press("Enter", { ctrlKey: true });
+    expect(area().value).toBe("");
+    await input("after the turn, then deploy");
+    await press("Enter", { ctrlKey: true });
+    const [first, resent, edited, resentEdit, afterSuccess] = ids();
+    expect(first).toMatch(/^[0-9a-f-]{36}$/);
+    expect(resent).toBe(first);
+    expect(edited).not.toBe(first);
+    expect(resentEdit).toBe(edited);
+    expect(afterSuccess).not.toBe(edited);
+    expect(new Set(ids())).not.toContain(undefined);
   });
 
   test("the follow-up button preserves attached images and ordinary Send steers instead", async () => {
@@ -509,7 +536,7 @@ describe("follow-ups and side questions", () => {
     await input("later");
     await paste([image()]);
     await click(button("Send after this turn"));
-    expect(calls("submit")).toEqual([{ text: "later", images: [{ data: btoa("PNG"), mimeType: "image/png" }], followUp: true }]);
+    expect(calls("submit")).toEqual([{ text: "later", images: [{ data: btoa("PNG"), mimeType: "image/png" }], followUp: true, id: anyId }]);
     await input("now");
     await click(button("Send"));
     expect(calls("submit")[1]).toEqual({ text: "now" });
@@ -580,7 +607,7 @@ describe("follow-ups and side questions", () => {
     await input("/btw later question");
     await press("q", { ctrlKey: true });
     expect(calls("btw")).toEqual([]);
-    expect(calls("submit")).toEqual([{ text: "/btw later question", followUp: true }]);
+    expect(calls("submit")).toEqual([{ text: "/btw later question", followUp: true, id: anyId }]);
   });
 });
 
@@ -641,7 +668,7 @@ describe("saved btw history", () => {
     await click(button("Close history"));
     await input("next");
     await click(button("Send"));
-    expect(calls("submit")).toEqual([{ text: "next", images: [{ data: btoa("PNG"), mimeType: "image/png" }], followUp: false }]);
+    expect(calls("submit")).toEqual([{ text: "next", images: [{ data: btoa("PNG"), mimeType: "image/png" }], followUp: false, id: anyId }]);
   });
 
   test("an old block's delayed history cannot open in a different session", async () => {

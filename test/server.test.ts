@@ -381,6 +381,23 @@ test("submit/draft and image/follow-up submissions use the bridge protocol", asy
   expect(s.calls()).toEqual([]);
 });
 
+test("an image or follow-up send carries the phone's id; a resend while it runs waits for it instead of sending again", async () => {
+  agent.inbox = [];
+  for (const id of [7, null, "", "x".repeat(65), "has space", "a/b"])
+    expect((await s.action(1, "submit", { text: "later", followUp: true, id })).status).toBe(400);
+  expect(agent.inbox.filter((m) => m.t === "send")).toEqual([]);
+  const id = crypto.randomUUID();
+  agent.silent = true;
+  const replies = await Promise.all([1, 2].map(() => s.action(1, "submit", { text: "later", followUp: true, id })));
+  agent.silent = false;
+  for (const r of replies) expect(await r.json()).toEqual({ error: "omp did not take the message" });
+  expect(agent.inbox.filter((m) => m.t === "send")).toMatchObject([{ text: "later", followUp: true, id }]);
+  // Once it has settled, a resend goes out again: omp, not the server, knows whether it took that id.
+  agent.inbox = [];
+  expect((await s.action(1, "submit", { text: "later", followUp: true, id })).status).toBe(200);
+  expect(await agent.take("send")).toMatchObject({ id });
+}, 4000);
+
 test("model catalog and model/thinking/tier commands correlate sequenced bridge replies", async () => {
   const models = await s.action(1, "models");
   expect(await models.json()).toEqual({ models: [{ p: "test", id: "fast", name: "Fast", ctx: 200000, r: false, in: 0, out: 0, img: false }] });

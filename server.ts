@@ -61,6 +61,8 @@ const DONE_SETTLE_MS = 3000;
 const PROJECTS_TIMEOUT_MS = 5000;
 /** Longest prompt or draft the API takes (characters). */
 const MAX_TEXT = 1_000_000;
+/** A phone's id for one prompt it sends (a UUID): a resend after a failed send carries the same one. */
+const SEND_ID = /^[A-Za-z0-9-]{1,64}$/;
 /** Only this origin's scripts, styles and images (plus data:/blob:): agent markdown can't make the app fetch a URL that leaks data. */
 const CSP = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
 
@@ -928,16 +930,29 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     return error;
   }
 
+  /** Image and follow-up sends still waiting for omp, by block and the phone's id. */
+  const sending = new Map<string, Promise<string | null>>();
+
   /**
    * Submits a prompt: through the bridge's draft when connected, else typed into the pane.
    * Images need the bridge (a terminal can't take them); they go to omp as one user message.
+   * `id`: the phone's id for an image or follow-up send. A resend with the id of a send still
+   * running waits for that one, and omp skips an id it already took, so the prompt runs once.
    */
-  async function submit(block: string, text: string, images: PromptImage[], followUp: boolean): Promise<string | null> {
+  async function submit(block: string, text: string, images: PromptImage[], followUp: boolean, id = ""): Promise<string | null> {
     const b = bridges.get(block);
     if (images.length || followUp) {
       if (!b) return `${followUp ? "follow-ups" : "images"} need an omp session connected to tern-mobile (restart it)`;
+      const key = `${block} ${id}`;
+      const running = id ? sending.get(key) : undefined;
+      if (running) return running;
       // `expected`: omp clears its editor only if it still holds the phone's draft, so desktop typing survives.
-      return bridgeError(await bridgeRequest(b, { t: "send", text, images, followUp, expected: b.state.text }), "omp did not take the message");
+      const result = bridgeRequest(b, { t: "send", text, images, followUp, expected: b.state.text, ...(id && { id }) }).then((reply) =>
+        bridgeError(reply, "omp did not take the message"),
+      );
+      if (!id) return result;
+      sending.set(key, result);
+      return result.finally(() => sending.delete(key));
     }
     if (!b) return (text && (await sendText(block, text))) || sendKeys(block, ["Enter"]);
     // Always set: the reported draft may be stale, and Enter must submit exactly the phone's text.
@@ -1040,6 +1055,14 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           /** The rows this stream sent last; after the first full `state`, only changed rows go (`patch`). */
           let lastRows: Map<string, string> | null = null;
           let lastDetail = "";
+          /** The chat this stream sent last; after the first full `chat`, only what changed goes (`chatpatch`). */
+          let lastChat: ChatKeys | null = null;
+          const sendChat = (chat: { entries: ChatEntry[] }) => {
+            const keys = chatKeys(chat);
+            const update = chatUpdate(chat, keys, lastChat);
+            lastChat = keys;
+            if (update) send(update[0], update[1]);
+          };
           let timer: Timer | undefined;
           let followed: { path: string; watcher: FSWatcher } | null = null;
           cleanups.push(() => {
@@ -1055,14 +1078,6 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
             followed?.watcher.close();
             followed = null;
             // A check can resume after the phone left; cleanup already ran, so take nothing new.
-          /** The chat this stream sent last; after the first full `chat`, only what changed goes (`chatpatch`). */
-          let lastChat: ChatKeys | null = null;
-          const sendChat = (chat: { entries: ChatEntry[] }) => {
-            const keys = chatKeys(chat);
-            const update = chatUpdate(chat, keys, lastChat);
-            lastChat = keys;
-            if (update) send(update[0], update[1]);
-          };
             if (!path || stop) return;
             const name = basename(path);
             try {
@@ -1357,7 +1372,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
         case "submit": {
           const images = promptImages(body.images);
           if (typeof images === "string") return json({ error: images }, 400);
-          return done(await submit(block, str(body.text), images, body.followUp === true));
+          if (body.id !== undefined && (typeof body.id !== "string" || !SEND_ID.test(body.id))) return json({ error: "bad id" }, 400);
+          return done(await submit(block, str(body.text), images, body.followUp === true, str(body.id)));
         }
         case "stretch": {
           // Opens or closes a stretch of a reply in the pane too (omp's stretch.ts), so the desktop

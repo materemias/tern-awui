@@ -180,7 +180,8 @@ type ServerMessage =
 	| { t: "btw"; id: string; text: string; seq: number }
 	/** `followUp`: hold it until the running turn ends (omp's Ctrl+Q), instead of steering. */
 	/** `expected`: clear the editor afterwards only if it still holds this draft. */
-	| { t: "send"; text: string; images: { data: string; mimeType: string }[]; followUp?: boolean; expected?: string; seq: number }
+	/** `id`: the phone's id for this prompt; a resend after a lost reply carries the same one. */
+	| { t: "send"; text: string; images: { data: string; mimeType: string }[]; followUp?: boolean; expected?: string; id?: string; seq: number }
 	| { t: "watch"; on: boolean }
 	/** Open or close a reply's stretch (omp's stretch.ts): `block` is `<message timestamp>.<content index>`. */
 	| { t: "stretch"; block: string; key: string; open: boolean; seq: number }
@@ -276,6 +277,20 @@ export default function ternMobile(pi: Pi): void {
 	const noteQueued = (text: string, followUp = false) => {
 		const last = queued[queued.length - 1];
 		if (text && !(last?.text === text && Date.now() - last.at < QUEUE_GRACE_MS)) queued.push({ text, at: Date.now(), followUp });
+	};
+	// The phone's ids for the prompts it sent here that omp took, oldest first: a resend after a
+	// lost reply gets success without running the prompt again. The last 100, for 10 minutes; kept
+	// across session switches, as the prompt already ran.
+	const taken = new Map<string, number>();
+	const TAKEN_MAX = 100;
+	const TAKEN_MS = 10 * 60_000;
+	const take = (id: string) => {
+		taken.delete(id);
+		taken.set(id, Date.now());
+		for (const [old, at] of taken) {
+			if (taken.size <= TAKEN_MAX && Date.now() - at < TAKEN_MS) break;
+			taken.delete(old);
+		}
 	};
 	// The running turn as omp's working row shows it: when it started and what the current tool
 	// call is doing ("" until the first one: omp's "Working…").
@@ -550,6 +565,9 @@ export default function ternMobile(pi: Pi): void {
 		if (msg.t === "send") {
 			// A phone prompt sent directly: images (the editor can't take pasted ones from here) or a
 			// follow-up. Refused without a model so the phone keeps its text.
+			const id = typeof msg.id === "string" ? msg.id : "";
+			const at = id ? taken.get(id) : undefined;
+			if (at !== undefined && Date.now() - at < TAKEN_MS) return flush(true, msg.seq);
 			if (!ctx.model) return reply(msg.seq, { error: "no model selected" });
 			const followUp = msg.followUp === true && !ctx.isIdle();
 			if (!ctx.isIdle()) noteQueued(msg.text || "(image)", followUp);
@@ -560,6 +578,7 @@ export default function ternMobile(pi: Pi): void {
 				],
 				followUp ? { deliverAs: "followUp" } : undefined,
 			);
+			if (id) take(id);
 			// The draft it replaces is cleared, unless the desktop typed something newer meanwhile.
 			if (msg.expected === undefined || ctx.ui.getEditorText() === msg.expected) ctx.ui.setEditorText("");
 			return flush(true, msg.seq);

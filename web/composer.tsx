@@ -110,6 +110,8 @@ export function Composer({
   const submitting = useRef(false);
   // Edits for the next prompt must reach omp after the current submission clears its editor.
   const deferredDraft = useRef<DraftWrite | null>(null);
+  // The last image or follow-up send, until one succeeds: a resend of the same prompt reuses its id.
+  const lastSend = useRef<{ id: string; text: string; images: PastedImage[]; followUp: boolean } | null>(null);
   // Terminals: what the phone has typed onto the shell's line, and one queue for every write.
   const typed = useRef("");
   const chain = useRef<Promise<unknown>>(Promise.resolve());
@@ -295,6 +297,20 @@ export function Composer({
     }
   }
 
+  /**
+   * The id an image or follow-up send carries. A resend of a failed send's prompt, unchanged, gets
+   * that send's id: omp skips an id it already took, so a send whose reply was lost doesn't run
+   * twice. Any other prompt gets a new one.
+   */
+  function sendId(text: string, images: PastedImage[], followUp: boolean): string {
+    const last = lastSend.current;
+    if (last && last.text === text && last.followUp === followUp && last.images.length === images.length && last.images.every((p, i) => p === images[i]))
+      return last.id;
+    const id = crypto.randomUUID();
+    lastSend.current = { id, text, images, followUp };
+    return id;
+  }
+
   async function submitPrompt(followUp: boolean) {
     // A draft push still queued would reach omp after the send and refill its editor (and from
     // there this composer) with the sent text: drop it, since the send carries the final text,
@@ -345,7 +361,8 @@ export function Composer({
     if (pasted.length) {
       const sent = pasted;
       const images = sent.map(({ data, mimeType }) => ({ data, mimeType }));
-      if (await send("submit", { text: text.trim(), images, followUp })) return;
+      if (await send("submit", { text: text.trim(), images, followUp, id: sendId(text.trim(), sent, followUp) })) return;
+      lastSend.current = null;
       buzz();
       for (const p of sent) URL.revokeObjectURL(p.url);
       // Images pasted while this one was uploading stay for the next send.
@@ -359,7 +376,9 @@ export function Composer({
       }
       return;
     }
-    if (!(await send("submit", followUp ? { text: text.trim(), followUp } : { text: text.trim() }))) {
+    const body = followUp ? { text: text.trim(), followUp, id: sendId(text.trim(), [], true) } : { text: text.trim() };
+    if (!(await send("submit", body))) {
+      lastSend.current = null;
       buzz();
       lastEdit.current = Date.now();
       // An echo of the draft from before the send must not come back once it settles.

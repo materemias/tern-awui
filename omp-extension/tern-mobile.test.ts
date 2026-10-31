@@ -391,6 +391,29 @@ describe("omp extension bridge contract", () => {
 		expect(f.state.sends).toHaveLength(2);
 	});
 
+	test("a resent id reaches omp once and succeeds; the memory keeps the last 100 ids for 10 minutes", async () => {
+		const f = fixture(); await f.start();
+		const send = (id: string) => f.bridge.request({ t: "send", text: "look", images: [], followUp: true, id });
+		expect(await send("first")).toMatchObject({ text: "" });
+		f.state.text = "typed meanwhile";
+		const again = await send("first");
+		expect(again).not.toHaveProperty("error");
+		expect(f.state.text).toBe("typed meanwhile");
+		expect(f.state.sends).toHaveLength(1);
+		await send("second");
+		expect(f.state.sends).toHaveLength(2);
+		for (let i = 0; i < 100; i++) await send(`id-${i}`);
+		expect(f.state.sends).toHaveLength(102);
+		await send("id-99");
+		expect(f.state.sends).toHaveLength(102);
+		// 100 newer ids pushed the first two out.
+		await send("first");
+		expect(f.state.sends).toHaveLength(103);
+		advance(10 * 60_000);
+		await send("id-99");
+		expect(f.state.sends).toHaveLength(104);
+	});
+
 	test("native interactive queue prefixes and explicit phone follow-ups publish the same clean queue", async () => {
 		const text = "btw evaluate this\n  keep this indentation\nand this line";
 		for (const prefix of ["->", "=>"]) {
