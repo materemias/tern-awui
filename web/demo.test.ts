@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ChatEntry, Run, State } from "./api";
 import { DemoServer, demoEventSource, type Clock } from "./demo-backend";
+import { isOld } from "./lib";
 
 /** A clock the test moves by hand: timers run in time order as `advance` passes them. */
 class ManualClock implements Clock {
@@ -48,12 +49,15 @@ function open(server: DemoServer, clock: ManualClock, block: string) {
 
 describe("demo backend", () => {
   test("answers the app's state request with the sample sessions", async () => {
-    const server = new DemoServer(new ManualClock());
+    const clock = new ManualClock();
+    const server = new DemoServer(clock);
     const state: State = await (await server.fetch(new URL("http://demo.test/api/state"))).json();
     expect(state.projects.map((p) => p.name)).toEqual(["tern-awui", "trading-bot", "dotfiles"]);
     const items = state.projects.flatMap((p) => p.items);
-    expect(items.map((i) => i.status)).toEqual(["working", "blocked", null, "idle", "idle", "idle"]);
-    expect(state.counts).toEqual({ working: 1, blocked: 1, idle: 3 });
+    expect(items.map((i) => i.status)).toEqual(["working", "blocked", null, "idle", "idle", "idle", "idle"]);
+    expect(state.counts).toEqual({ working: 1, blocked: 1, idle: 4 });
+    // The list's eye has something to hide: two sessions are older than a day.
+    expect(items.filter((i) => isOld(i, clock.now(), null)).map((i) => i.title)).toEqual(["Fix the swipe wheel", "Tidy the zsh config"]);
   });
 
   test("a submitted prompt streams its reply as live text, then lands in the chat", async () => {

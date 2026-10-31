@@ -77,6 +77,8 @@ const tools = (ts: number, ...calls: [name: string, intent: string][]): ChatEntr
 const turn = (ms: number, ts: number): ChatEntry => ({ role: "turn", ms, model: MODEL, ts });
 
 const MIN = 60_000;
+/** A day in the minutes `t()` takes. */
+const DAY = 24 * 60;
 
 /** The ask the blocked session waits on. */
 export const ASK_QUESTIONS: AskQuestion[] = [
@@ -263,24 +265,40 @@ export function demoSessions(now: number): DemoSession[] {
       subagentChats: {},
       tokens: 24_000,
     },
-    // An older idle session.
+    // Older than a day: the eye in the list header hides these (and the dotfiles project with them).
     {
       item: omp("31", "dotfiles", "Tidy the zsh config", {
-        since: t(190),
+        since: t(3 * DAY),
         cwd: `${HOME}/dotfiles`,
         branch: null,
-        agent: demoAgent("demo-31", { lastPrompt: "why does my shell take a second to start?", lastActivity: t(190) }),
+        agent: demoAgent("demo-31", { lastPrompt: "why does my shell take a second to start?", lastActivity: t(3 * DAY) }),
       }),
       chat: [
-        user("u31a", "why does my shell take a second to start?", t(200)),
-        tools(t(199), ["bash", "Timing zsh -i -c exit"], ["read", "Reading .zshrc"]),
-        assistant("`nvm` loads eagerly and takes 640 ms of the 900. I made it load on first use of `node`, `npm` or `nvm`; startup is now 180 ms.", t(190)),
-        turn(10 * MIN, t(190)),
+        user("u31a", "why does my shell take a second to start?", t(3 * DAY + 10)),
+        tools(t(3 * DAY + 9), ["bash", "Timing zsh -i -c exit"], ["read", "Reading .zshrc"]),
+        assistant("`nvm` loads eagerly and takes 640 ms of the 900. I made it load on first use of `node`, `npm` or `nvm`; startup is now 180 ms.", t(3 * DAY)),
+        turn(10 * MIN, t(3 * DAY)),
       ],
       screen: "",
       subagents: [],
       subagentChats: {},
       tokens: 15_000,
+    },
+    {
+      item: omp("13", "tern-awui", "Fix the swipe wheel", {
+        since: t(2 * DAY),
+        agent: demoAgent("demo-13", { lastPrompt: "the session wheel keeps stepping on its own near the edge", lastActivity: t(2 * DAY) }),
+      }),
+      chat: [
+        user("u13a", "the session wheel keeps stepping on its own near the edge", t(2 * DAY + 6)),
+        tools(t(2 * DAY + 5), ["read", "Reading web/swipe.tsx"], ["edit", "Ignoring the edge the wheel opened at"]),
+        assistant("The wheel opened at the screen edge and read the finger resting there as a request to step. It now waits until the finger moves away from that edge first.", t(2 * DAY)),
+        turn(6 * MIN, t(2 * DAY)),
+      ],
+      screen: "",
+      subagents: [],
+      subagentChats: {},
+      tokens: 11_000,
     },
   ];
 }
