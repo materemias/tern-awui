@@ -4,12 +4,11 @@
 import { statSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { inBatches } from "./batch";
 import { obj, str } from "./json";
 
 /** omp writes the `session` row first, after an optional `title` row; this covers both. */
 const HEAD_BYTES = 4096;
-/** Transcripts read at once: a few thousand files must not exhaust file descriptors. */
-const BATCH = 64;
 
 /** The cwd in a transcript's `session` header row; "" when the head has none. */
 export async function transcriptCwd(path: string): Promise<string> {
@@ -29,6 +28,15 @@ export async function transcriptCwd(path: string): Promise<string> {
 /** Header cwds by transcript path: a header never changes once written. */
 const cwdCache = new Map<string, string>();
 
+/** `transcriptCwd`, read once per transcript. */
+export async function cachedTranscriptCwd(path: string): Promise<string> {
+  const hit = cwdCache.get(path);
+  if (hit !== undefined) return hit;
+  const cwd = await transcriptCwd(path);
+  if (cwd) cwdCache.set(path, cwd);
+  return cwd;
+}
+
 /**
  * The cwds of `open` blocks (with their last activity, 0 when unknown) and of omp sessions under
  * `sessionsDir` (their transcript's last write), most recently used first; each folder once, at
@@ -45,21 +53,14 @@ export async function recentProjects(sessionsDir: string, open: { cwd: string; a
     // No sessions folder yet: only the open blocks.
   }
   const uses = [...open];
-  for (let i = 0; i < files.length; i += BATCH)
-    await Promise.all(
-      files.slice(i, i + BATCH).map(async (file) => {
-        try {
-          const at = (await stat(file)).mtimeMs;
-          const cwd = cwdCache.get(file) ?? await transcriptCwd(file);
-          if (cwd) {
-            cwdCache.set(file, cwd);
-            uses.push({ cwd, at });
-          }
-        } catch {
-          // Deleted while listing.
-        }
-      }),
-    );
+  for (const use of await inBatches(files, async (file) => {
+    try {
+      return { cwd: await cachedTranscriptCwd(file), at: (await stat(file)).mtimeMs };
+    } catch {
+      return null; // deleted while listing
+    }
+  }))
+    if (use?.cwd) uses.push(use);
   // Stable sort: among undated open blocks, Tern's order stands.
   uses.sort((a, b) => b.at - a.at);
   // Each spelling is checked once; folders are told apart by device and inode, so `C:\Code` and
