@@ -25,9 +25,12 @@ import { queryRecaps, querySessionRecaps, recapMark, withRecaps } from "./lib/re
 import { answerSteps, KEYS, promptImages, type PromptImage } from "./lib/input";
 import { emptyState, foldVoice, listChanged, parseBridgeState, PROTOCOL, STRETCH_BLOCK, type BridgeState, type Caps, type ContextUse, type Job, type Voice } from "./lib/bridge-state";
 import { extensionCheck, offersCommand, sessionMismatch, type InstallStatus, type Mismatch } from "./lib/extension-check";
-import { configDir, docIcon, installedExtension, ompDataDir, ternNotesDir } from "./lib/paths";
+import { claudeDir, codexDir, configDir, docIcon, installedExtension, ompDataDir, ternNotesDir } from "./lib/paths";
 import { ensureToken, sameToken } from "./lib/auth";
 import { recentProjects } from "./lib/projects";
+import { closedSessions, IdList, openableFolder, resumableCwd, splitTitle } from "./lib/closed";
+import { otherSessions } from "./lib/other-agents";
+import { CLOSED_AGENTS, type ClosedAgent } from "./lib/search";
 import { rowKeys, statePatch } from "./lib/state-patch";
 import { chatKeys, chatUpdate, type ChatKeys } from "./lib/chat-patch";
 import { vapidSubject } from "./lib/push";
@@ -46,6 +49,8 @@ const PING_MS = 12_000;
 const TERN_EVENTS_RETRY_MS = 2000;
 const ROLES_TTL_MS = 5 * 60_000;
 const SCREEN_LINES = 160;
+/** Sessions the new-omp sheet's Closed tab lists. */
+const CLOSED_LIMIT = 100;
 /** Screen polls: shells echo typing, so they go faster than an omp's Raw screen. */
 const SCREEN_POLL_MS = { terminal: 450, agent: 1200 };
 const BRIDGE_REPLY_MS = 2000;
@@ -106,6 +111,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   const HISTORY_DB = join(OMP_DATA, "history.db");
   const BLOBS_DIR = join(OMP_DATA, "blobs");
   const NOTES_DIR = ternNotesDir(env, HOME, process.platform);
+  const CLAUDE_DIR = claudeDir(env, HOME);
+  const CODEX_DIR = codexDir(env, HOME);
   /** A command printing one folder per line; `.py` runs with python3. Unset: lib/projects.ts. */
   const PROJECTS_SCRIPT = env.TERN_AWUI_PROJECTS ?? "";
   const DIST = options.dist ?? fileURLToPath(new URL("./dist/", import.meta.url));
@@ -115,6 +122,9 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   const extension = extensionCheck(INSTALLED_EXTENSION, join(REPO, "omp-extension", "tern-mobile.ts"));
 
   const BRIDGE_TOKEN = ensureToken(join(CONFIG_DIR, "bridge-token"));
+  /** Every session a pane's omp reported, and those dismissed from the new-omp sheet's Closed tab. */
+  const seen = new IdList(join(CONFIG_DIR, "closed-seen.json"), 2000);
+  const dismissed = new IdList(join(CONFIG_DIR, "closed-dismissed.json"), 1000);
   /** Set by `stop`: background loops and late callbacks end. */
   let stopped = false;
 
@@ -518,9 +528,6 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     };
   };
 
-  // Nerd-font icons live in the private use areas; the app ships the symbols font for them.
-  const PUA = /[\u{E000}-\u{F8FF}\u{F0000}-\u{10FFFF}]/u;
-
   const factsCache = new Map<string, Facts>();
   const transcriptImages = new TranscriptImages();
 
@@ -627,9 +634,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
       const doc = note ? join(NOTES_DIR, `${note}.md`) : file && isAbsolute(file) ? file : null;
       // Tern leaves file blocks untitled: name them after the file, with a file-type glyph.
       const raw = str(b.title).trim() || (note ? "Note" : doc ? basename(doc) : basename(str(b.program, id)));
-      const icon = PUA.exec(raw)?.[0] ?? (doc ? docIcon(doc, !!note) : null);
-      const clean = raw.replace(new RegExp(PUA.source, "gu"), "").trim();
-      const m = /^([\p{Lu}\d_-]{2,14}):\s+(.*)$/u.exec(clean);
+      const t = splitTitle(raw);
+      const icon = t.icon ?? (doc ? docIcon(doc, !!note) : null);
       const { project, branch } = repos.get(cwd)!;
       const status = bridge?.state.status || null;
       // The bridge's clock starts at its connect; an idle session dates from its last entry.
@@ -642,8 +648,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
       list.push({
         block: id,
         icon,
-        tag: m ? m[1] : null,
-        title: m ? m[2] : clean,
+        tag: t.tag,
+        title: t.title,
         cwd,
         project,
         branch: doc ? null : branch,
@@ -1214,6 +1220,80 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     );
   }
 
+  type Reply = { status: number; body: Obj };
+
+  /** Opens a Tern tab running `argv` in `cwd`; the reply names its block. */
+  async function newAgentTab(cwd: string, argv: string[]): Promise<Reply> {
+    const r = await tern(["new", "tab", "--cwd", cwd, "--json", "--", ...argv]);
+    if (r.error) return { status: 502, body: { error: r.error } };
+    invalidateTree();
+    try {
+      return { status: 200, body: { block: String(obj(JSON.parse(r.out)).block) } };
+    } catch {
+      return { status: 200, body: { ok: true } };
+    }
+  }
+
+  /** Resumes in progress by tool and session id: a second tap, or another phone, waits for the first instead of starting a second agent on the transcript. */
+  const resuming = new Map<string, Promise<Reply>>();
+
+  const AGENT_NAMES: Record<ClosedAgent, string> = { omp: "omp", claude: "Claude Code", codex: "Codex" };
+  /**
+   * A Tern block's command that runs the tool: `omp …`, `/usr/bin/claude …`, `zsh -ic 'codex
+   * resume …'`, and on Windows `C:\Tools\claude.exe …`, `codex.cmd …` or a quoted path.
+   */
+  const RUNS = Object.fromEntries(
+    CLOSED_AGENTS.map((a) => [a, new RegExp(String.raw`(^|[\s/\\'"&;])${a}(\.(exe|cmd|bat|ps1))?(?=[\s'"&;]|$)`, "i")]),
+  ) as Record<ClosedAgent, RegExp>;
+
+  /**
+   * Opens session `id` of `agent` in a new tab, or the pane already running it. Two agents on one
+   * transcript would both append to it, so a tab Tern runs the tool in without a bridge (Claude
+   * Code and Codex never have one; an omp without the extension, still starting, or reconnecting)
+   * counts too: one whose command names the session is that pane, and one in the session's folder
+   * asks for `force`.
+   */
+  async function resumeSession(agent: ClosedAgent, id: string, force: boolean): Promise<Reply> {
+    let cwd: string;
+    let argv: string[];
+    if (agent === "omp") {
+      const s = await getState();
+      const open = s.projects.flatMap((p) => p.items).find((i) => i.agent?.sessionId === id);
+      if (open) return { status: 200, body: { block: open.block } };
+      const file = transcriptPath(id);
+      if (!file) return { status: 404, body: { error: "no transcript for this session" } };
+      cwd = await resumableCwd(file);
+      // The transcript's path rather than its id, so omp has nothing to look up.
+      argv = ["omp", "--resume", file];
+    } else {
+      const scan = await otherSessions(CLAUDE_DIR, CODEX_DIR);
+      const session = scan.sessions.find((s) => s.agent === agent && s.id === id);
+      if (!session && scan.late) return { status: 503, body: { error: `${AGENT_NAMES[agent]}'s files aren't answering. Try again.` } };
+      if (!session) return { status: 404, body: { error: "no transcript for this session" } };
+      cwd = await openableFolder(session.cwd);
+      argv = agent === "claude" ? ["claude", "--resume", id] : ["codex", "resume", id];
+    }
+    if (!cwd) return { status: 409, body: { error: "its folder is gone or not responding" } };
+    // Without Tern's blocks there is no telling whether the tool runs this session already: no launch, even forced.
+    const ls = await ternTree();
+    let sessions: unknown;
+    try {
+      sessions = obj(JSON.parse(ls.out)).sessions;
+    } catch {}
+    if (ls.error || !Array.isArray(sessions))
+      return { status: 503, body: { error: `can't list Tern's tabs to check this session isn't open: ${ls.error ?? "unreadable answer"}. Try again.` } };
+    const unbridged = sessions
+      .flatMap((t) => arr(obj(t).tabs).flatMap((tab) => arr(obj(tab).blocks).map(obj)))
+      .filter((b) => !bridges.has(String(b.id)) && b.exited == null && RUNS[agent].test(str(b.command)));
+    const named = unbridged.find((b) => str(b.command).includes(id));
+    if (named) return { status: 200, body: { block: String(named.id) } };
+    if (!force && unbridged.some((b) => resolve(str(b.cwd)) === resolve(cwd))) {
+      const what = agent === "omp" ? `An omp in ${cwd} isn't connected to tern-awui` : `${AGENT_NAMES[agent]} runs in a tab in ${cwd}`;
+      return { status: 409, body: { error: `${what}, so it may be running this session.`, confirm: true } };
+    }
+    return newAgentTab(cwd, argv);
+  }
+
   async function handleApi(req: Request, url: URL): Promise<Response> {
     const path = url.pathname;
     if (req.method === "GET" && path === "/api/state") return json(await getState());
@@ -1278,6 +1358,15 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
       }
       // `home` lets the phone show paths under it as ~, whatever the separators.
       return json({ projects, home: HOME });
+    }
+    if (req.method === "GET" && path === "/api/closed") {
+      // Sessions that ran in a pane or got a typed prompt and that no pane's omp reports now, for the
+      // new-omp sheet's Closed tab; `q` searches all of them, Claude Code's and Codex's too.
+      const query = url.searchParams.get("q") ?? "";
+      const skip = new Set([...[...bridges.values()].map((b) => b.state.sessionId), ...dismissed.all()]);
+      const others = async () => (await otherSessions(CLAUDE_DIR, CODEX_DIR)).sessions;
+      const sessions = await closedSessions({ history: fromHistory, sessionsDir: SESSIONS_DIR, seen: seen.all(), skip, limit: CLOSED_LIMIT, query, others });
+      return json({ sessions, home: HOME });
     }
     if (req.method === "GET" && path === "/api/push/key") return json({ key: VAPID.publicKey });
     if (req.method !== "POST") return json({ error: "not found" }, 404);
@@ -1472,14 +1561,26 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
       const cwd = str(body.cwd);
       if (!isAbsolute(cwd) || !existsSync(cwd) || !statSync(cwd).isDirectory())
         return json({ error: "cwd must be an existing directory" }, 400);
-      const r = await tern(["new", "tab", "--cwd", cwd, "--json", "--", "omp"]);
-      if (r.error) return json({ error: r.error }, 502);
-      invalidateTree();
-      try {
-        return json({ block: String(obj(JSON.parse(r.out)).block) });
-      } catch {
+      const r = await newAgentTab(cwd, ["omp"]);
+      return json(r.body, r.status);
+    }
+    if (path === "/api/closed/resume" || path === "/api/closed/dismiss") {
+      const id = str(body.id);
+      if (!/^[\w-]+$/.test(id)) return json({ error: "bad session id" }, 400);
+      if (path.endsWith("/dismiss")) {
+        dismissed.add(id);
         return json({ ok: true });
       }
+      const agent = CLOSED_AGENTS.find((a) => a === (body.agent ?? "omp"));
+      if (!agent) return json({ error: "unknown agent" }, 400);
+      const key = `${agent}:${id}`;
+      let pending = resuming.get(key);
+      if (!pending) {
+        pending = resumeSession(agent, id, body.force === true).finally(() => resuming.delete(key));
+        resuming.set(key, pending);
+      }
+      const r = await pending;
+      return json(r.body, r.status);
     }
     return json({ error: "not found" }, 404);
   }
@@ -1691,6 +1792,9 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           if (!b || b.ws !== ws) return;
           const before = b.state;
           b.state = parseBridgeState(msg, before, Date.now());
+          seen.add(b.state.sessionId);
+          // Running again ends a dismissal: once closed, the session is back in the Closed tab.
+          dismissed.delete(b.state.sessionId);
           const status = b.state.status;
           const changedSession = Boolean(before.sessionId) && before.sessionId !== b.state.sessionId;
           if (changedSession) {

@@ -20,8 +20,8 @@ export async function until<T>(fn: () => T | Promise<T>, description: string, ti
   throw new Error(`Timed out: ${description}`);
 }
 
-/** Variables that would point the server at the user's real omp, Tern or tern-mobile files. */
-const LEAKY = /^(TERN_AWUI_|PI_CODING_AGENT_DIR$|PI_CONFIG_DIR$|OMP_PROFILE$|PI_PROFILE$|XDG_(DATA|STATE|CONFIG|CACHE)_HOME$)/;
+/** Variables that would point the server at the user's real omp, Tern, Claude Code, Codex or tern-mobile files. */
+const LEAKY = /^(TERN_AWUI_|PI_CODING_AGENT_DIR$|PI_CONFIG_DIR$|OMP_PROFILE$|PI_PROFILE$|CLAUDE_CONFIG_DIR$|CODEX_HOME$|XDG_(DATA|STATE|CONFIG|CACHE)_HOME$)/;
 /** The test process's environment without anything that reaches outside `home`. */
 export function isolatedEnv(home: string, extra: Record<string, string> = {}): Record<string, string> {
   const env: Record<string, string> = {};

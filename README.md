@@ -49,6 +49,7 @@ It has no login of its own. You reach it over a private network you control, suc
 
 - **Close** a session from the web, and its pane closes in Tern.
 - **+ omp** opens a new omp tab in Tern in any project folder and jumps to it.
+- **Closed** in the same sheet lists the omp sessions you typed into that no Tern pane runs any more, newest first, with their title, recap and folder. Typing searches all your omp sessions on the server, plus Claude Code and Codex sessions; a tool's name (`claude`, `codex`, `omp`) shows only that tool's. A tap reopens one in a new Tern tab in its folder (`omp --resume`, `claude --resume`, `codex resume`), and × hides it from the list.
 - **The monitor button** in a session's header focuses that pane in the Tern window on the desktop.
 
 ## Requirements
@@ -130,6 +131,8 @@ What it does protect against, and why, is in [how it works](docs/architecture.md
 - It is not a terminal emulator. Full-screen programs like vim or htop are only usable through the screen view and the key bar.
 - Sessions without the extension show as plain terminals.
 - The extension uses some omp internals; a new omp version can turn individual features off until the extension catches up.
+- The Closed list knows a session is open only through the extension, so an omp running in another terminal, or one that hasn't connected yet, shows there too. If a Tern tab started with `omp` runs in the session's folder without the extension, resuming asks first. An omp typed by hand into a shell tab can't be told apart, so check before resuming it. The list skips sessions whose folder was deleted. Sessions from before this feature are found through omp's prompt history only, which misses a session whose every prompt was typed again later in another one.
+- Claude Code and Codex sessions show up only in a search, only if you typed into them (their `history.jsonl`) and only while their transcript is on disk; Claude Code deletes transcripts after 30 days by default. Neither tool says whether a session is running, so a search lists running ones too; resuming one opens the Tern tab whose command names it, and asks first if a tab runs the tool in its folder. A resumed Claude Code or Codex session shows here as a plain terminal.
 - Voice calls end when the session screen closes. With the screen off, Android keeps playing the voice but silences the phone's microphone until you unlock, so use the black screen instead of the power button. Phones may also cut a call when the app goes to the background (iOS Safari does), and the call stays on the phone that started it.
 - Swiping between sessions follows the list's hidden-old and folded projects, but not a filter typed in the desktop sidebar. A swipe that starts on something that scrolls sideways (a wide code block or table), or within 24 px of the screen edge, scrolls or goes back instead.
 

@@ -52,6 +52,16 @@ export function ternNotesDir(env: Env, home: string, platform: NodeJS.Platform):
   return join(state, "tern", "notes");
 }
 
+/** Claude Code's files (`history.jsonl`, `projects/`): `$CLAUDE_CONFIG_DIR`, else ~/.claude, on every OS. */
+export function claudeDir(env: Env, home: string): string {
+  return env.CLAUDE_CONFIG_DIR ? resolve(env.CLAUDE_CONFIG_DIR) : join(home, ".claude");
+}
+
+/** Codex's files (`history.jsonl`, `session_index.jsonl`, `sessions/`): `$CODEX_HOME`, else ~/.codex, on every OS. */
+export function codexDir(env: Env, home: string): string {
+  return env.CODEX_HOME ? resolve(env.CODEX_HOME) : join(home, ".codex");
+}
+
 /** A Nerd Font glyph for a file block: Tern's notes, Markdown files, anything else. */
 export function docIcon(path: string, note: boolean): string {
   if (note) return "\u{F039B}"; // md-note_outline

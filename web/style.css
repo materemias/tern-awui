@@ -348,6 +348,16 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .sheet.tall { max-height: 82dvh; }
 .sheet-filter { margin: 0 6px 6px; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit; outline: none; }
 .sheet-list { overflow-y: auto; display: flex; flex-direction: column; }
+/* The new-omp sheet's tabs, and its Closed rows: a tap on the text resumes, × dismisses. */
+.sheet-head .seg { align-self: center; }
+.closed-row { display: flex; align-items: flex-start; gap: 2px; }
+.closed-main { flex: 1; min-width: 0; padding: 10px; border: 0; border-radius: 10px; background: none; color: var(--fg); font: inherit; text-align: left; }
+.closed-main:active, .closed-main:hover { background: var(--raise); }
+.closed-meta { font-size: 12px; }
+.closed-project { color: var(--accent); }
+.nf.agent-claude, .closed-meta .agent-claude { color: var(--claude); }
+.nf.agent-codex, .closed-meta .agent-codex { color: var(--gpt); }
+.closed-dismiss { flex: none; margin-top: 4px; font-size: 20px; }
 .btw-history .sheet-list { min-height: 0; }
 .btw-history .sheet-row { align-items: flex-start; }
 .btw-history .sheet-row .role { min-width: 0; overflow-wrap: anywhere; }

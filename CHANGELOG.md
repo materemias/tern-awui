@@ -4,6 +4,7 @@
 
 ### Features
 
+- The new-omp sheet has a **Closed** tab: the omp sessions no Tern pane runs any more, newest first. Typing searches every omp session, and Claude Code and Codex sessions too (`claude` or `codex` as a word shows only that tool's). A tap resumes one in a new Tern tab in its folder; × dismisses it.
 - While a session works, its working row shows the todo list's progress and current task, like `2/5 · Add the light palette`; a tap scrolls to the list.
 - **Subagents (N)** under the chat stays after every subagent has finished.
 - After its first load, an open chat receives only the entries that changed, so following a working turn uses far less mobile data.

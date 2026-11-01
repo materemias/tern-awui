@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import type { Item } from "./api";
-import { FakeEventSource, item, live, Net, settle, state } from "./fakes";
+import { FakeEventSource, item, live, Net, settle, sleep, state } from "./fakes";
 
 GlobalRegistrator.register({ url: "http://localhost/" });
 afterAll(() => GlobalRegistrator.unregister());
@@ -245,6 +245,117 @@ describe("Home", () => {
     await click(root.querySelector('[aria-label="New omp in a project"]'));
     await act(() => settle());
     expect(root.querySelector(".sheet-head")?.textContent).toContain("0 projects");
+  });
+
+  test("Closed tab lists closed sessions, resumes on tap, dismisses with × and is remembered", async () => {
+    const closed = [
+      { agent: "omp", id: "a", icon: null, tag: "FIX", title: "Fix the build", cwd: "/home/u/code/app", prompt: "run it", recap: "Build is green again.", at: Date.now() - 2 * 3600_000 },
+      { agent: "omp", id: "b", icon: null, tag: null, title: "", cwd: "/home/u/code/other", prompt: "check the logs", recap: "", at: Date.now() - 86400_000 },
+    ];
+    net.reply = (c) =>
+      c.url === "/api/closed" ? Response.json({ sessions: closed, home: "/home/u" })
+      : c.url === "/api/projects" ? Response.json({ projects: [], home: "/home/u" })
+      : c.url === "/api/closed/resume" ? Response.json({ block: "resumed" })
+      : Response.json({ ok: true });
+    await mount([]);
+    await click(root.querySelector('[aria-label="New omp in a project"]'));
+    expect(net.calls.some((c) => c.url === "/api/closed")).toBe(false);
+    await click([...root.querySelectorAll('[role="tab"]')].find((t) => t.textContent === "Closed"));
+    await act(() => settle());
+    expect(root.querySelector(".sheet-head")?.textContent).toContain("2 closed");
+    const rows = root.querySelectorAll(".closed-row");
+    expect(rows[0].textContent).toContain("FIXFix the build");
+    expect(rows[0].textContent).toContain("Build is green again.");
+    expect(rows[0].textContent).toContain("app · 2h");
+    // An untitled session goes by its prompt, under omp's π.
+    expect(rows[1].querySelector(".title")?.textContent).toBe("check the logs");
+    expect(rows[1].querySelector(".nf.pi")).not.toBeNull();
+    await input(".sheet-filter", "green");
+    expect(root.querySelectorAll(".closed-row").length).toBe(1);
+    await input(".sheet-filter", "");
+    await click(root.querySelectorAll('.closed-row [aria-label="Dismiss"]')[1]);
+    expect(net.to("/api/closed/dismiss")).toEqual([{ id: "b" }]);
+    expect(root.querySelectorAll(".closed-row").length).toBe(1);
+    await click(root.querySelector(".closed-main"));
+    expect(root.querySelector(".sheet")).toBeNull();
+    expect(net.to("/api/closed/resume")).toEqual([{ id: "a", agent: "omp" }]);
+    expect(prompts).toEqual([]);
+    expect(location.hash).toBe("#/b/resumed");
+    // The sheet opens on the tab last used.
+    await click(root.querySelector('[aria-label="New omp in a project"]'));
+    expect(root.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Closed");
+  });
+
+  test("Closed tab says when it can't load and retries; a failed dismissal puts the row back; a resume the server doubts asks first", async () => {
+    localStorage.setItem("tern-mobile:new-sheet-tab", "closed");
+    let down = true;
+    const session = { agent: "omp", id: "a", icon: null, tag: null, title: "Fix it", cwd: "/w/app", prompt: "", recap: "", at: Date.now() };
+    net.reply = (c) => {
+      const force = (c.body as { force?: boolean } | undefined)?.force;
+      if (c.url === "/api/closed") return down ? Response.json({ error: "boom" }, { status: 500 }) : Response.json({ sessions: [session], home: "/w" });
+      if (c.url === "/api/closed/dismiss") return Response.json({ error: "disk full" }, { status: 502 });
+      if (c.url === "/api/closed/resume") return force ? Response.json({ block: "r" }) : Response.json({ error: "An omp in /w/app isn't connected.", confirm: true }, { status: 409 });
+      return Response.json({});
+    };
+    await mount([]);
+    await click(root.querySelector('[aria-label="New omp in a project"]'));
+    await act(() => settle());
+    // Opened on Closed: the folder list isn't fetched.
+    expect(net.calls.some((c) => c.url === "/api/projects")).toBe(false);
+    expect(root.querySelector(".sheet-list")?.textContent).toContain("Couldn't load closed sessions (boom)");
+    expect(root.querySelector(".sheet-list")?.textContent).not.toContain("No closed sessions.");
+    down = false;
+    await click([...root.querySelectorAll('[role="tab"]')].find((t) => t.textContent === "Closed"));
+    await act(() => settle());
+    expect(root.querySelectorAll(".closed-row").length).toBe(1);
+    await click(root.querySelector('.closed-row [aria-label="Dismiss"]'));
+    await act(() => settle());
+    expect(alerts).toEqual(["disk full"]);
+    expect(root.querySelectorAll(".closed-row").length).toBe(1);
+    await click(root.querySelector(".closed-main"));
+    await act(() => settle());
+    expect(prompts).toEqual(["An omp in /w/app isn't connected. Open it anyway?"]);
+    expect(net.to("/api/closed/resume")).toEqual([{ id: "a", agent: "omp" }, { id: "a", agent: "omp", force: true }]);
+    expect(location.hash).toBe("#/b/r");
+  });
+
+  test("typing in Closed searches on the server, which adds Claude Code and Codex sessions that resume in their tool", async () => {
+    localStorage.setItem("tern-mobile:new-sheet-tab", "closed");
+    const omp = { agent: "omp", id: "o", icon: null, tag: null, title: "Ask claude about the parser", cwd: "/w/app", prompt: "", recap: "", at: Date.now() };
+    const claude = { agent: "claude", id: "c", icon: null, tag: null, title: "Parser walkthrough", cwd: "/w/lib", prompt: "now add tests", recap: "", at: Date.now() };
+    net.reply = (c) =>
+      c.url === "/api/closed" ? Response.json({ sessions: [omp], home: "/w" })
+      : c.url === "/api/closed?q=claude%20parser" ? Response.json({ sessions: [claude], home: "/w" })
+      : c.url === "/api/closed/dismiss" ? Response.json({ error: "disk full" }, { status: 502 })
+      : c.url === "/api/closed/resume" ? Response.json({ block: "c1" })
+      : Response.json({});
+    await mount([]);
+    await click(root.querySelector('[aria-label="New omp in a project"]'));
+    await act(() => settle());
+    await input(".sheet-filter", "claude parser");
+    // Until the server answers, the loaded rows filter, `claude` naming the tool as the server reads it: the omp row that mentions it stays out.
+    expect(root.querySelector(".sheet-head")?.textContent).toContain("searching");
+    expect(root.querySelectorAll(".closed-row").length).toBe(0);
+    await act(async () => {
+      await sleep(350);
+      await settle();
+    });
+    expect(net.calls.filter((c) => c.url.startsWith("/api/closed?q=")).map((c) => c.url)).toEqual(["/api/closed?q=claude%20parser"]);
+    expect(root.querySelector(".sheet-head")?.textContent).toContain("1 found");
+    const row = () => root.querySelector(".closed-row");
+    expect(row()?.querySelector(".nf.agent-claude")).not.toBeNull();
+    expect(row()?.querySelector(".closed-meta")?.textContent).toContain("lib · Claude Code");
+    // A failed dismissal puts the found row back in the search only, not in the loaded list.
+    await click(row()?.querySelector('[aria-label="Dismiss"]') ?? null);
+    await act(() => settle());
+    expect(alerts).toEqual(["disk full"]);
+    expect(root.querySelectorAll(".closed-row").length).toBe(1);
+    await input(".sheet-filter", "");
+    expect([...root.querySelectorAll(".closed-row .title")].map((t) => t.textContent)).toEqual(["Ask claude about the parser"]);
+    await input(".sheet-filter", "claude parser");
+    await click(row()?.querySelector(".closed-main") ?? null);
+    expect(net.to("/api/closed/resume")).toEqual([{ id: "c", agent: "claude" }]);
+    expect(location.hash).toBe("#/b/c1");
   });
 
   test("bell renders off, pending and on states and submits subscriptions through its real hook", async () => {

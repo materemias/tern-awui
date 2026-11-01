@@ -1,7 +1,8 @@
 // The session list: projects with their rows, the filter, the bell, and the new-omp sheet.
 import { useEffect, useMemo, useState } from "preact/hooks";
-import { postJson, type Item } from "./api";
-import { age, folderLabel, isOld, jobsSummary, listProjects, matchesWords, parseStoredList, rowText, toggled } from "./lib";
+import { post, postJson, type Closed, type Item } from "./api";
+import { keepsTool, matchesWords, parseSearch } from "../lib/search";
+import { age, folderLabel, isOld, jobsSummary, listProjects, parseStoredList, rowText, toggled } from "./lib";
 import { Dot, PiMark } from "./parts";
 import { ExtensionBanner } from "./extension";
 import { useExitGuard, useNow, useStream } from "./hooks";
@@ -14,12 +15,18 @@ function iconOf(item: Item): { glyph: string; pi: boolean } | null {
 }
 
 export function Title({ item }: { item: Item }) {
-  const icon = iconOf(item);
+  return <TitleRow icon={iconOf(item)} tag={item.tag} title={item.title} />;
+}
+
+/** A row's icon: a glyph from the symbols font; `pi` marks omp's π, `cls` adds a class (an agent's colour). */
+type Icon = { glyph: string; pi: boolean; cls?: string };
+
+function TitleRow({ icon, tag, title }: { icon: Icon | null; tag: string | null; title: string }) {
   return (
     <div class="row-title">
-      {icon && <span class={`nf${icon.pi ? " pi" : ""}`}>{icon.glyph}</span>}
-      {item.tag && <span class="tag">{item.tag}</span>}
-      <span class="title">{item.title}</span>
+      {icon && <span class={`nf${icon.pi ? " pi" : ""}${icon.cls ? ` ${icon.cls}` : ""}`}>{icon.glyph}</span>}
+      {tag && <span class="tag">{tag}</span>}
+      <span class="title">{title}</span>
     </div>
   );
 }
@@ -130,12 +137,46 @@ function PushButton({ push: [push, togglePush] }: { push: [PushState, () => void
   );
 }
 
-/** The folders a new omp can open in (open blocks and past omp sessions, newest first), filtered as you type. */
-function ProjectSheet({ open, onPick, onClose }: { open: Set<string>; onPick: (dir: string) => void; onClose: () => void }) {
+const SHEET_TAB_KEY = "tern-mobile:new-sheet-tab";
+/** Typing pauses this long before the Closed tab asks the server to search. */
+const SEARCH_DELAY_MS = 300;
+/** Claude Code and Codex rows: the tool's name, its mark and colour. */
+const OTHER_AGENTS: Record<Exclude<Closed["agent"], "omp">, { name: string; icon: Icon }> = {
+  claude: { name: "Claude Code", icon: { glyph: "✳", pi: false, cls: "agent-claude" } },
+  codex: { name: "Codex", icon: { glyph: "›_", pi: false, cls: "agent-codex" } },
+};
+
+/**
+ * The new-omp sheet. Folder: where a new omp can open (open blocks and past omp sessions, newest
+ * first). Closed: omp sessions no pane runs now, which a tap resumes in a new tab. Both filter as
+ * you type; Closed also asks the server, which searches every omp session and Claude Code's and
+ * Codex's too. The tab last used is remembered on this device.
+ */
+function NewSheet({
+  open,
+  now,
+  onPick,
+  onResume,
+  onClose,
+}: {
+  open: Set<string>;
+  now: number;
+  onPick: (dir: string) => void;
+  onResume: (s: Closed) => void;
+  onClose: () => void;
+}) {
+  const [tab, setTab] = useState<"folder" | "closed">(() => (localStorage.getItem(SHEET_TAB_KEY) === "closed" ? "closed" : "folder"));
   const [projects, setProjects] = useState<string[] | null>(null);
+  const [closed, setClosed] = useState<Closed[] | null>(null);
+  const [closedError, setClosedError] = useState("");
+  /** The server's answer to the last search, with the words it was for. */
+  const [found, setFound] = useState<{ q: string; sessions: Closed[] | null; error?: string } | null>(null);
   const [home, setHome] = useState("");
   const [q, setQ] = useState("");
+  const query = q.trim();
+  // Each list is fetched when its tab first shows: the sheet opens on the tab used last.
   useEffect(() => {
+    if (tab !== "folder" || projects) return;
     fetch("/api/projects")
       .then((r) => r.json())
       .then((d: { projects?: string[]; home?: string }) => {
@@ -143,29 +184,134 @@ function ProjectSheet({ open, onPick, onClose }: { open: Set<string>; onPick: (d
         setHome(d.home ?? "");
       })
       .catch(() => setProjects([]));
-  }, []);
-  const shown = (projects ?? []).filter((p) => matchesWords(q, p));
+  }, [tab, projects]);
+  useEffect(() => {
+    if (tab !== "closed" || closed || closedError) return;
+    fetch("/api/closed")
+      .then(async (r) => {
+        const d: { sessions?: Closed[]; home?: string; error?: string } = await r.json().catch(() => ({}));
+        if (!r.ok || !d.sessions) throw new Error(d.error ?? `HTTP ${r.status}`);
+        setClosed(d.sessions);
+        setHome(d.home ?? "");
+      })
+      .catch((err: unknown) => setClosedError(err instanceof Error ? err.message : String(err)));
+  }, [tab, closed, closedError]);
+  useEffect(() => {
+    if (tab !== "closed" || !query) return;
+    const abort = new AbortController();
+    const timer = setTimeout(() => {
+      fetch(`/api/closed?q=${encodeURIComponent(query)}`, { signal: abort.signal })
+        .then(async (r) => {
+          const d: { sessions?: Closed[]; home?: string; error?: string } = await r.json().catch(() => ({}));
+          if (!r.ok || !d.sessions) throw new Error(d.error ?? `HTTP ${r.status}`);
+          setFound({ q: query, sessions: d.sessions });
+          setHome(d.home ?? "");
+        })
+        .catch((err: unknown) => {
+          if (!abort.signal.aborted) setFound({ q: query, sessions: null, error: err instanceof Error ? err.message : String(err) });
+        });
+    }, SEARCH_DELAY_MS);
+    return () => {
+      clearTimeout(timer);
+      abort.abort();
+    };
+  }, [tab, query]);
+  function show(next: "folder" | "closed") {
+    localStorage.setItem(SHEET_TAB_KEY, next);
+    setTab(next);
+    // Tapping Closed after a failed load tries again.
+    setClosedError("");
+  }
+  async function dismiss(s: Closed) {
+    const other = (c: Closed) => c.agent !== s.agent || c.id !== s.id;
+    // A row found by a search may be past the loaded list: it goes back only where it was.
+    const inClosed = !!closed?.some((c) => !other(c));
+    const inFound = !!found?.sessions?.some((c) => !other(c));
+    setClosed((list) => list?.filter(other) ?? null);
+    setFound((f) => f && { ...f, sessions: f.sessions?.filter(other) ?? null });
+    const err = await post("/api/closed/dismiss", { id: s.id });
+    if (!err) return;
+    // Not recorded: the row comes back where it was.
+    const back = (list: Closed[] | null) => list && [...list, s].sort((a, b) => b.at - a.at);
+    if (inClosed) setClosed(back);
+    if (inFound) setFound((f) => f && { ...f, sessions: back(f.sessions) });
+    alert(err);
+  }
+  const shownProjects = (projects ?? []).filter((p) => matchesWords(q, p));
+  // Until the server answers, the loaded rows (all omp's) filter as you type, tool names as the server reads them.
+  const searched = query && found?.q === query ? found : null;
+  const local = parseSearch(q);
+  const shownClosed =
+    searched?.sessions ??
+    (keepsTool(local.tools, "omp") ? (closed ?? []).filter((s) => matchesWords(local.rest, `${s.tag ?? ""} ${s.title} ${s.prompt} ${s.recap} ${s.cwd}`)) : []);
+  const list = tab === "folder" ? projects : closed;
+  const count =
+    tab === "folder" ? (projects ? `${shownProjects.length} projects` : "loading")
+    : query ? (searched ? (searched.error ? "search failed" : `${shownClosed.length} found`) : "searching")
+    : closed ? `${shownClosed.length} closed`
+    : closedError ? ""
+    : "loading";
   return (
     <div class="sheet-backdrop" onClick={onClose}>
       <div class="sheet tall" onClick={(e) => e.stopPropagation()}>
         <div class="sheet-head">
-          <span>New omp in…</span>
-          <span class="muted small">{projects ? `${shown.length} projects` : "loading"}</span>
+          <div class="seg" role="tablist">
+            <button type="button" role="tab" aria-selected={tab === "folder"} class={tab === "folder" ? "on" : ""} onClick={() => show("folder")}>
+              New omp in…
+            </button>
+            <button type="button" role="tab" aria-selected={tab === "closed"} class={tab === "closed" ? "on" : ""} onClick={() => show("closed")}>
+              Closed
+            </button>
+          </div>
+          <span class="muted small">{count}</span>
         </div>
-        <input class="sheet-filter" type="search" autoFocus placeholder="Filter projects" value={q} onInput={(e) => setQ(e.currentTarget.value)} />
+        <input
+          class="sheet-filter"
+          type="search"
+          autoFocus
+          placeholder={tab === "folder" ? "Filter projects" : "Search sessions, Claude Code and Codex too"}
+          value={q}
+          onInput={(e) => setQ(e.currentTarget.value)}
+        />
         <div class="sheet-list">
-          {shown.map((p) => {
-            const { name, parent } = folderLabel(p, home);
-            return (
-              <button key={p} class="sheet-row" onClick={() => onPick(p)}>
-                <span class="role">{name}</span>
-                <span class="muted small">
-                  {open.has(p) && <span class="c-working">open · </span>}
-                  {parent}
-                </span>
-              </button>
-            );
-          })}
+          {tab === "folder" &&
+            shownProjects.map((p) => {
+              const { name, parent } = folderLabel(p, home);
+              return (
+                <button key={p} class="sheet-row" onClick={() => onPick(p)}>
+                  <span class="role">{name}</span>
+                  <span class="muted small">
+                    {open.has(p) && <span class="c-working">open · </span>}
+                    {parent}
+                  </span>
+                </button>
+              );
+            })}
+          {tab === "closed" &&
+            shownClosed.map((s) => {
+              const other = s.agent === "omp" ? null : OTHER_AGENTS[s.agent];
+              // Untitled sessions go by their last prompt; omp's π stands in for a missing icon.
+              const icon = other?.icon ?? (s.icon ? { glyph: s.icon, pi: false } : { glyph: "π", pi: true });
+              return (
+                <div key={`${s.agent}:${s.id}`} class="closed-row">
+                  <button class="closed-main" onClick={() => onResume(s)} title={`Resume in a new tab in ${s.cwd}`}>
+                    <TitleRow icon={icon} tag={s.tag} title={s.title || s.prompt || "Untitled session"} />
+                    {(s.recap || (s.title && s.prompt)) && <div class={`row-sub${s.recap ? " recap" : ""}`}>{s.recap || s.prompt}</div>}
+                    <div class="row-sub closed-meta">
+                      <span class="closed-project">{folderLabel(s.cwd, home).name}</span>
+                      {other && <span class={icon.cls}> · {other.name}</span>} · {age(s.at, now)}
+                    </div>
+                  </button>
+                  <button class="icon-btn closed-dismiss" aria-label="Dismiss" title="Dismiss: hide it from this list" onClick={() => void dismiss(s)}>
+                    ×
+                  </button>
+                </div>
+              );
+            })}
+          {tab === "closed" && !query && list?.length === 0 && <div class="empty">No closed sessions.</div>}
+          {tab === "closed" && searched?.sessions?.length === 0 && <div class="empty">No session matches.</div>}
+          {tab === "closed" && searched?.error && <div class="empty">Couldn't search ({searched.error}).</div>}
+          {tab === "closed" && closedError && <div class="empty">Couldn't load closed sessions ({closedError}). Tap Closed to try again.</div>}
         </div>
       </div>
     </div>
@@ -232,13 +378,19 @@ export function Home({
   // Only the phone's single-pane list guards against leaving on back.
   const exitHint = useExitGuard(!wide);
 
-  async function newAgent(cwd: string, project: string) {
-    setBusy(project);
+  /**
+   * Starts an omp (`/api/new`) or resumes one (`/api/closed/resume`), then opens its block; `key`
+   * marks what is busy meanwhile. A resume the server wants confirmed goes again with `force`.
+   */
+  async function launch(url: string, body: Record<string, unknown>, key: string) {
+    setBusy(key);
     try {
-      const r = await postJson("/api/new", { cwd });
-      const data: { block?: string; error?: string } = await r.json().catch(() => ({}));
+      const r = await postJson(url, body);
+      const data: { block?: string; error?: string; confirm?: boolean } = await r.json().catch(() => ({}));
       if (data.block) location.hash = `#/b/${data.block}`;
-      else if (data.error) alert(data.error);
+      else if (data.confirm) {
+        if (confirm(`${data.error ?? ""} Open it anyway?`)) await launch(url, { ...body, force: true }, key);
+      } else if (data.error) alert(data.error);
     } catch (err) {
       alert(String(err));
     } finally {
@@ -247,12 +399,17 @@ export function Home({
   }
 
   const sheet = picker && (
-    <ProjectSheet
+    <NewSheet
       open={new Set(state?.projects.flatMap((p) => p.items.map((i) => i.cwd)) ?? [])}
+      now={now}
       onClose={() => setPicker(false)}
       onPick={(dir) => {
         setPicker(false);
-        void newAgent(dir, dir);
+        void launch("/api/new", { cwd: dir }, dir);
+      }}
+      onResume={(s) => {
+        setPicker(false);
+        void launch("/api/closed/resume", { id: s.id, agent: s.agent }, s.id);
       }}
     />
   );
@@ -377,7 +534,7 @@ export function Home({
                   disabled={busy === p.name}
                   onClick={(e) => {
                     e.stopPropagation();
-                    void newAgent(p.items[0].cwd, p.name);
+                    void launch("/api/new", { cwd: p.items[0].cwd }, p.name);
                   }}
                 >
                   <PiMark plus />

@@ -1,7 +1,8 @@
 // The model picker: effort, priority, omp's roles, recent picks and every listable model.
 import { useEffect, useMemo, useState } from "preact/hooks";
 import type { CatalogModel, Live, Role } from "./api";
-import { can, ctxShort, currentRole, matchesWords, parseRecent, prettyModel, priceShort, searchModels, withRecent } from "./lib";
+import { matchesWords } from "../lib/search";
+import { can, ctxShort, currentRole, parseRecent, prettyModel, priceShort, searchModels, withRecent } from "./lib";
 
 const RECENT_MODELS_KEY = "tern-mobile:recent-models";
 const SEARCH_MAX = 80;

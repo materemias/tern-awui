@@ -165,6 +165,7 @@ export function sessionNotice(item: Item, install: Install): Notice | null {
 // ---------- routes ----------
 
 import { SUBAGENT_NAME } from "../lib/subagent-name";
+import { matchesWords } from "../lib/search";
 export { SUBAGENT_NAME };
 
 /** The screen a URL hash shows: the list, a session, its subagents, or one subagent's chat. */
@@ -355,16 +356,6 @@ export function toggled(set: Set<string>, name: string): Set<string> {
 // ---------- the model picker ----------
 
 const RECENT_MAX = 6;
-
-/** Every whitespace-separated word of `query` appears in `text`, ignoring case. */
-export function matchesWords(query: string, text: string): boolean {
-  const lower = text.toLowerCase();
-  return query
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean)
-    .every((w) => lower.includes(w));
-}
 
 /** Models matching every word; the whole query in the name ranks first, then in the id. */
 export function searchModels(models: CatalogModel[], query: string): CatalogModel[] {

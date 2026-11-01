@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { matchesWords } from "../lib/search";
 import type { Caps, CatalogModel, Install, Item, Job, Live, Project, Role } from "./api";
 import {
   OLD_MS,
@@ -23,7 +24,6 @@ import {
   langOf,
   lineEdit,
   listProjects,
-  matchesWords,
   needsReencode,
   parseAdvisorNote,
   parseStoredList,
