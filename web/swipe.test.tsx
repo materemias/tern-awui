@@ -45,10 +45,11 @@ test("a wheel opened by a sideways thumb swipe low on the screen stays still unt
   await touch("touchmove", 180, 770);
   expect(root.querySelector(".swipe-wheel")).not.toBeNull();
 
-  // Held there, nothing steps and nothing buzzes.
+  // One buzz as it opens; held there, nothing steps and nothing buzzes again.
+  expect(buzzes).toEqual([20]);
   await act(() => sleep(700));
-  expect(buzzes).toEqual([]);
-  expect(root.querySelector(".swipe-count")?.textContent).toBe("2 / 6");
+  expect(buzzes).toEqual([20]);
+  expect(root.querySelector(".swipe-count")?.textContent).toBe("1 / 6");
   expect(root.querySelector(".swipe-edge.down.on")).toBeNull();
 
   // Out of the zone and back: holding at the edge steps again.
@@ -59,4 +60,26 @@ test("a wheel opened by a sideways thumb swipe low on the screen stays still unt
   await act(() => sleep(300));
   expect(buzzes.length).toBeGreaterThan(before);
   await touch("touchend", 0, 0);
+});
+
+test("the wheel opens on the open session, whichever way the drag went", async () => {
+  const touch = await mount();
+  await touch("touchstart", 300, 400);
+  for (const x of [280, 240, 200, 180]) await touch("touchmove", x, 400);
+  await touch("touchmove", 180, 430);
+  expect(root.querySelector(".swipe-count")?.textContent).toBe("1 / 6");
+  expect(buzzes).toEqual([20]);
+  expect(root.querySelector<HTMLElement>(".swipe-wheel-row.here")?.style.opacity).toBe("1");
+
+  // One row down highlights the next session; lifting there would open it.
+  await touch("touchmove", 180, 480);
+  expect(root.querySelector(".swipe-count")?.textContent).toBe("2 / 6");
+  expect(buzzes).toEqual([20, 8]);
+  await touch("touchmove", 180, 430);
+  expect(root.querySelector(".swipe-count")?.textContent).toBe("1 / 6");
+
+  // Lifting on the open session springs back: nothing navigates.
+  await touch("touchend", 0, 0);
+  expect(root.querySelector<HTMLElement>(".swipe-page")!.style.transform).toBe("");
+  expect(root.querySelector(".swipe-wheel")).toBeNull();
 });

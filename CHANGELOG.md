@@ -9,6 +9,7 @@
 - **Subagents (N)** under the chat stays after every subagent has finished.
 - After its first load, an open chat receives only the entries that changed, so following a working turn uses far less mobile data.
 - A static demo of the app with sample sessions runs in any browser without Tern or omp (`bun run build:demo`, deployed to GitHub Pages).
+- The session wheel opens on the session you're in, with a short buzz, so a quick swipe moves to the next or previous session and a turn up or down picks from there.
 
 ### Fixes
 

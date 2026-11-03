@@ -1,8 +1,9 @@
 // Sideways moves between sessions, and between a session's subagents: the screen follows a
 // horizontal swipe, the neighbour's name shows in the gap it opens, and a release past a third of
 // the width (or a flick) moves there. Turning the finger up or down mid-swipe opens a wheel of
-// all siblings instead: each row of travel steps the highlight, holding near the top or bottom
-// keeps stepping, and lifting opens the highlighted one. Alt+← and Alt+→ move from a keyboard.
+// all siblings instead, highlighting this screen: each row of travel steps the highlight, holding
+// near the top or bottom keeps stepping, and lifting opens the highlighted one (on this screen's
+// own row it springs back). Alt+← and Alt+→ move from a keyboard.
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { goSideways } from "./hooks";
@@ -40,6 +41,9 @@ const HOLD_FIRST_MS = 220;
 const HOLD_MIN_MS = 60;
 /** The share of the width the screen moves aside for the wheel (style.css sizes the wheel to it). */
 const WHEEL_SHARE = 0.62;
+/** Vibrations, where the browser has them: the wheel opening, and each step of its highlight. */
+const OPEN_BUZZ_MS = 20;
+const STEP_BUZZ_MS = 8;
 
 /** The side the next screen comes in from, set by a move just before it navigates. */
 let entering: -1 | 1 | 0 = 0;
@@ -156,7 +160,7 @@ export function SwipeNav({ siblings, children }: { siblings: () => Siblings; chi
       const at = Math.min(Math.max(picking + by, 0), sibs.items.length - 1);
       if (at === picking) return;
       pick(at);
-      navigator.vibrate?.(8);
+      navigator.vibrate?.(STEP_BUZZ_MS);
     };
     const zoneAt = (y: number): -1 | 0 | 1 => {
       const r = box.getBoundingClientRect();
@@ -248,7 +252,10 @@ export function SwipeNav({ siblings, children }: { siblings: () => Siblings; chi
       else if (side && Math.abs(dx) > PICK_DX && Math.abs(t.clientY - turn.y) > PICK_DY) {
         pickDir = dir;
         stepY = t.clientY;
-        pick(sibs.index + dir);
+        // The wheel starts on this screen, whichever way the drag went: up or down from here.
+        pick(sibs.index);
+        // A longer buzz than a step's: the wheel took over from the swipe.
+        navigator.vibrate?.(OPEN_BUZZ_MS);
         el.style.transition = "transform .18s ease-out";
         el.style.transform = `translateX(${-dir * WHEEL_SHARE * 100}%)`;
         // A finger already at an edge has to leave it and come back to keep stepping.
