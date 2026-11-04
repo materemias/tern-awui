@@ -118,7 +118,8 @@ export type ChatEntry =
   | { role: "recap"; text: string; ts: number };
 export type AdvisorNote = { advisor: string; severity: string; note: string };
 export type Img = { src: string };
-export type Doc = { text: string; markdown: boolean; missing: boolean; clipped: boolean };
+/** `imageSources`: a markdown file's local images (relative to it or absolute) as `/api/blob/…` URLs. */
+export type Doc = { text: string; markdown: boolean; imageSources?: Record<string, string>; missing: boolean; clipped: boolean };
 /** A model omp has credentials for, as the bridge lists it. */
 export type CatalogModel = { p: string; id: string; name: string; r: boolean; ctx: number; in: number; out: number; img: boolean };
 

@@ -2,7 +2,7 @@
 
 import { closeSync, constants, fstatSync, lstatSync, openSync, statSync, type Stats } from "node:fs";
 import { createHash } from "node:crypto";
-import { extname, isAbsolute } from "node:path";
+import { dirname, extname, isAbsolute, resolve } from "node:path";
 import { marked } from "marked";
 import { arr, num, obj, str, type Obj } from "./json";
 
@@ -211,38 +211,75 @@ export class TranscriptImages {
     }
   }
 
+  /**
+   * The local images `text`'s markdown embeds, as `[href, file, /api/blob/… src]`. Absolute paths
+   * always; with `dir`, also relative ones (`docs/shot.png`) resolved against it, as a README's are.
+   */
+  private async resolveAll(text: string, dir?: string): Promise<[href: string, file: string, src: string][]> {
+    const files = new Map<string, string>();
+    marked.walkTokens(marked.lexer(text), (token) => {
+      if (token.type !== "image") return;
+      const file = localImagePath(token.href, dir);
+      if (file) files.set(token.href, file);
+    });
+    const found: [string, string, string][] = [];
+    for (const [href, file] of files) {
+      let work = this.pending.get(file);
+      if (!work) {
+        work = this.source(file);
+        this.pending.set(file, work);
+      }
+      const src = await work;
+      if (this.pending.get(file) === work) this.pending.delete(file);
+      if (src) found.push([href, file, src]);
+    }
+    return found;
+  }
+
+  /** Whether `src` is still the blob URL indexed for `file`: later references may have evicted it. */
+  private current(file: string, src: string): boolean {
+    const reference = this.references.get(file);
+    return !!reference && src === `/api/blob/${reference.hash}?type=${encodeURIComponent(reference.type)}`;
+  }
+
   async attach(chat: { entries: ChatEntry[] }): Promise<{ entries: ChatEntry[] }> {
     for (const entry of chat.entries) {
       if (entry.role !== "assistant" || !entry.text.includes("!")) continue;
       delete entry.imageSources;
-      const paths = new Set<string>();
-      marked.walkTokens(marked.lexer(entry.text), (token) => {
-        if (token.type === "image" && isAbsolute(token.href)) paths.add(token.href);
-      });
-      const sources: Record<string, string> = {};
-      for (const path of paths) {
-        let work = this.pending.get(path);
-        if (!work) {
-          work = this.source(path);
-          this.pending.set(path, work);
-        }
-        const src = await work;
-        if (this.pending.get(path) === work) this.pending.delete(path);
-        if (src) sources[path] = src;
-      }
-      if (Object.keys(sources).length) entry.imageSources = sources;
+      // In replies an image's href is its absolute path.
+      const found = await this.resolveAll(entry.text);
+      if (found.length) entry.imageSources = Object.fromEntries(found.map(([href, , src]) => [href, src]));
     }
     // A single oversized transcript must not emit hashes already evicted from the authority index.
     for (const entry of chat.entries) {
       if (entry.role !== "assistant" || !entry.imageSources) continue;
-      for (const path of Object.keys(entry.imageSources)) {
-        const reference = this.references.get(path);
-        if (!reference || entry.imageSources[path] !== `/api/blob/${reference.hash}?type=${encodeURIComponent(reference.type)}`)
-          delete entry.imageSources[path];
-      }
+      for (const path of Object.keys(entry.imageSources)) if (!this.current(path, entry.imageSources[path])) delete entry.imageSources[path];
       if (!Object.keys(entry.imageSources).length) delete entry.imageSources;
     }
     return chat;
+  }
+
+  /** An opened markdown file's embedded images: absolute paths, and paths relative to the file. */
+  async doc(text: string, path: string): Promise<Record<string, string> | undefined> {
+    if (!text.includes("![")) return undefined;
+    // Many references in one file must not emit hashes already evicted from the authority index.
+    const found = (await this.resolveAll(text, dirname(path))).filter(([, file, src]) => this.current(file, src));
+    return found.length ? Object.fromEntries(found.map(([href, , src]) => [href, src])) : undefined;
+  }
+}
+
+/**
+ * The file a markdown image `href` names. Without `dir` (assistant replies): an absolute path, as
+ * written. With `dir` (an opened file): an absolute or relative path, percent-decoded, its
+ * `?query`/`#fragment` dropped, relative ones against `dir`; never a scheme, `//host` or `#…`.
+ */
+function localImagePath(href: string, dir?: string): string | null {
+  if (!dir) return isAbsolute(href) ? href : null;
+  if (/^[/\\]{2}|^[#?]/.test(href) || (!isAbsolute(href) && /^[a-z][a-z0-9+.-]*:/i.test(href))) return null;
+  try {
+    return resolve(dir, decodeURIComponent(href.replace(/[?#].*$/s, "")));
+  } catch {
+    return null;
   }
 }
 

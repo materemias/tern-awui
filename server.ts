@@ -1156,8 +1156,10 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
               const etag = st ? `${path}:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}` : "none";
               if (etag !== lastDetail) {
                 const text = st && st.isFile() ? await Bun.file(path).slice(0, DOC_MAX_BYTES).text() : "";
+                const markdown = /\.(md|markdown)$/i.test(path);
+                const imageSources = markdown ? await transcriptImages.doc(text, path) : undefined;
                 lastDetail = etag;
-                send("doc", { text, markdown: /\.(md|markdown)$/i.test(path), missing: !st, clipped: (st?.size ?? 0) > DOC_MAX_BYTES });
+                send("doc", { text, markdown, imageSources, missing: !st, clipped: (st?.size ?? 0) > DOC_MAX_BYTES });
               }
             } else if (item?.agent && view === "chat") {
               const path = transcriptPath(item.agent.sessionId);

@@ -15,6 +15,7 @@
 
 - A sideways swipe low on the screen no longer buzzes on and on: a session wheel that a drifting finger opens no longer steps by itself from the edge it opened at.
 - Resending an image or follow-up prompt after a failed send no longer runs it twice when the first send had gone through. omp sessions need `/restart` to load the updated extension.
+- Opened Markdown files show their embedded images, including ones given relative to the file such as a README's `docs/demo.gif`.
 
 ### Docs
 

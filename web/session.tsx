@@ -185,7 +185,7 @@ export function Session({ block }: { block: string }) {
               doc.missing ? (
                 <div class="empty">The file is gone.</div>
               ) : doc.markdown ? (
-                <Markdown class="msg md doc" text={doc.text} highlight />
+                <Markdown class="msg md doc" text={doc.text} imageSources={doc.imageSources} highlight />
               ) : (
                 <FileText text={doc.text} path={item.doc} />
               )

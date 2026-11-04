@@ -82,6 +82,27 @@ describe("assistant markdown image transport", () => {
     expect(entry.imageSources).toBeUndefined();
   });
 
+  test("an opened markdown file resolves images relative to itself and decodes absolute ones; chat replies never do", async () => {
+    const cache = new TranscriptImages();
+    mkdirSync(`${dir}/readme/docs`, { recursive: true });
+    writeFileSync(`${dir}/readme/docs/demo shot.png`, PNG);
+    writeFileSync(`${dir}/sibling.png`, PNG);
+    const absolute = `${dir}/readme/docs/demo%20shot.png#frag`;
+    const md = [
+      "![demo](docs/demo%20shot.png)",
+      "![parent](../sibling.png?raw=1)",
+      `![absolute](${absolute})`,
+      "![remote](https://example.test/image.png)",
+      "![share](//server/share.png)",
+      "![anchor](#top)",
+      "![missing](docs/missing.png)",
+    ].join("\n\n");
+    const sources = (await cache.doc(md, `${dir}/readme/README.md`))!;
+    expect(Object.keys(sources)).toEqual(["docs/demo%20shot.png", "../sibling.png?raw=1", absolute]);
+    for (const src of Object.values(sources)) expect((await cache.get(srcHash(src)))?.bytes).toEqual(new Uint8Array(PNG));
+    expect(only((await cache.attach(chat(md))).entries, "assistant")[0].imageSources).toBeUndefined();
+  });
+
   test("unchanged polls reuse the same byte snapshot; changed files get new content hashes", async () => {
     const cache = new TranscriptImages();
     const path = `${dir}/cached.png`;
