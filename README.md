@@ -48,7 +48,7 @@ It has no login of its own. You reach it over a private network you control, suc
 ## Works with Tern
 
 - **Close** a session from the web, and its pane closes in Tern.
-- **Park** a session from its header to put it away in Tern, still running. It leaves the list, except while it waits on you or has news you haven't seen. The **Parked** tab of the **+ omp** sheet lists parked panes, and a tap brings one back into a tab of its own and opens it.
+- **Park** a session or shell from its header to put it away in Tern, still running. It leaves the list, except while it waits on you or has news you haven't seen. The **Parked** tab of the **+ omp** sheet lists parked panes, and a tap brings one back into a tab of its own and opens it. Files and notes can't be parked from the web: Tern stops listing them once parked.
 - **+ omp** opens a new omp tab in Tern in any project folder and jumps to it.
 - **Closed** in the same sheet lists the omp sessions you typed into that no Tern pane runs any more, newest first, with their title, recap and folder. Typing searches all your omp sessions on the server, plus Claude Code and Codex sessions; a tool's name (`claude`, `codex`, `omp`) shows only that tool's. A tap reopens one in a new Tern tab in its folder (`omp --resume`, `claude --resume`, `codex resume`), and × hides it from the list.
 - **The monitor button** in a session's header focuses that pane in the Tern window on the desktop.

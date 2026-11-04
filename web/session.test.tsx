@@ -240,6 +240,12 @@ test("Park asks nothing and returns to the list; a parked pane offers Unpark ins
   expect(location.hash).toBe("#/b/5");
 });
 
+test("an opened file offers no Park: Tern's list would lose it once parked", async () => {
+  await open(item({ agent: null, live: null, status: null, doc: "/w/README.md" }));
+  expect(root.querySelector('[aria-label="Park this pane"]')).toBeNull();
+  expect(root.querySelector('[title="Show this pane on the desktop"]')).not.toBeNull();
+});
+
 test("a delayed close reply does not leave a different session opened in the meantime", async () => {
   await open(item());
   const pending = Promise.withResolvers<Response>();

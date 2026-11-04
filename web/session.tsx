@@ -134,7 +134,8 @@ export function Session({ block }: { block: string }) {
             {!online && <span class="c-blocked">offline</span>}
           </div>
         </div>
-        {item && (
+        {/* Files and notes vanish from `tern ls` once parked, so only programs' panes get Park. */}
+        {item && !item.doc && (
           <button
             class={`icon-btn${item.parked ? " on" : ""}`}
             title={item.parked ? "Unpark: back into a tab of its own in Tern" : "Park: put it away in Tern, still running"}

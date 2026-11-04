@@ -630,6 +630,11 @@ test("park and unpark go through tern-awui's Tern plugin, never opening the requ
     expect(missing.status).toBe(502);
     expect(String(obj(await missing.json()).error)).toContain("bun install.ts");
     expect(s.calls()).toEqual([]);
+    // A note (block 3) would drop out of `tern ls` once parked: refused before asking Tern anything.
+    const note = await s.action(3, "park");
+    expect(note.status).toBe(409);
+    expect(String(obj(await note.json()).error)).toContain("can't be parked");
+    expect(s.calls()).toEqual([]);
 
     writeFileSync(`${s.home}/plugins.json`, JSON.stringify({ plugins: [{ id: "tern-awui", status: "error" }] }));
     expect(await (await s.action(2, "park")).json()).toEqual({ error: "tern-awui's Tern plugin isn't ready (error): see `tern plugin list`" });

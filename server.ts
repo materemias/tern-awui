@@ -1526,6 +1526,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
         case "unpark":
           // Already where it was asked to go (a second tap, another phone): nothing to do.
           if (item.parked === (action === "park")) return json({ ok: true });
+          // A parked file block drops out of `tern ls` altogether: the phone could neither see nor unpark it.
+          if (item.doc) return json({ error: "Files and notes can't be parked from here: Tern's list loses them once parked" }, 409);
           return done(await parkPane(block, action === "park"));
         case "keys":
           return done(await sendKeys(block, arr(body.keys).map((k) => str(k))));
