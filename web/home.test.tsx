@@ -286,6 +286,37 @@ describe("Home", () => {
     expect(root.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Closed");
   });
 
+  test("parked panes leave the list for the Parked tab unless they need you; a tap there unparks and opens one; a failure says so", async () => {
+    net.reply = (c) => (c.url === "/api/blocks/7/unpark" ? Response.json({ error: "Tern didn't unpark it" }, { status: 502 }) : Response.json({ ok: true, projects: [] }));
+    await mount([
+      item({ block: "5", title: "Visible" }),
+      item({ block: "6", title: "Put away", parked: true }),
+      item({ block: "7", title: "Stuck", parked: true }),
+      item({ block: "8", title: "Asks you", parked: true, status: "blocked" }),
+    ]);
+    const list = root.querySelector(".list")!;
+    expect(list.textContent).toContain("Visible");
+    expect(list.textContent).not.toContain("Put away");
+    // Waiting on you, it stays on the list, marked as parked.
+    expect(list.querySelector('a[href="#/b/8"] .parked-mark')).not.toBeNull();
+    expect(list.querySelector('a[href="#/b/5"] .parked-mark')).toBeNull();
+    await click(root.querySelector('[aria-label="New omp in a project"]'));
+    await click([...root.querySelectorAll('[role="tab"]')].find((t) => t.textContent === "Parked"));
+    expect(root.querySelector(".sheet-head")?.textContent).toContain("3 parked");
+    await input(".sheet-filter", "put");
+    const rows = root.querySelectorAll(".sheet-list .row");
+    expect([...rows].map((r) => r.textContent)).toEqual([expect.stringContaining("Put away")]);
+    await click(rows[0]);
+    expect(net.to("/api/blocks/6/unpark")).toEqual([{}]);
+    expect(location.hash).toBe("#/b/6");
+    location.hash = "";
+    await click(root.querySelector('[aria-label="New omp in a project"]'));
+    expect(root.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Parked");
+    await click([...root.querySelectorAll(".sheet-list .row")].find((r) => r.textContent?.includes("Stuck")));
+    expect(alerts).toEqual(["Unpark failed: Tern didn't unpark it"]);
+    expect(location.hash).toBe("");
+  });
+
   test("Closed tab says when it can't load and retries; a failed dismissal puts the row back; a resume the server doubts asks first", async () => {
     localStorage.setItem("tern-mobile:new-sheet-tab", "closed");
     let down = true;

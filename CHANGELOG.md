@@ -10,6 +10,7 @@
 - After its first load, an open chat receives only the entries that changed, so following a working turn uses far less mobile data.
 - A static demo of the app with sample sessions runs in any browser without Tern or omp (`bun run build:demo`, deployed to GitHub Pages).
 - The session wheel opens on the session you're in, with a short buzz, so a quick swipe moves to the next or previous session and a turn up or down picks from there.
+- Park a session from its header to put it away in Tern with its program still running. Parked panes leave the list, except while they wait on you or have news you haven't seen, and show in a new **Parked** tab of the **+ omp** sheet, where a tap brings one back into a tab of its own and opens it. Needs the tern-awui Tern plugin: run `bun install.ts` again.
 
 ### Fixes
 

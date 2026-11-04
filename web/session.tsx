@@ -130,16 +130,40 @@ export function Session({ block }: { block: string }) {
                 {"\u{e0a0}"} {item.branch}
               </span>
             )}
+            {item?.parked && <span class="muted">parked</span>}
             {!online && <span class="c-blocked">offline</span>}
           </div>
         </div>
-        <button class="icon-btn" title="Show this pane on the desktop" aria-label="Show this pane on the desktop" onClick={() => post(`/api/blocks/${block}/focus`, {})}>
-          {/* A monitor with an arrow out of its corner, like an "open elsewhere" link: show this pane at the desk. */}
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <path d="M10.5 3.5H4.3a1.8 1.8 0 0 0-1.8 1.8v6.4a1.8 1.8 0 0 0 1.8 1.8h11.4a1.8 1.8 0 0 0 1.8-1.8V9.5M7 17h6M10 13.5V17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-            <path d="M8 10.5 15.5 3M11.5 3h4v4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
+        {item && (
+          <button
+            class={`icon-btn${item.parked ? " on" : ""}`}
+            title={item.parked ? "Unpark: back into a tab of its own in Tern" : "Park: put it away in Tern, still running"}
+            aria-label={item.parked ? "Unpark this pane" : "Park this pane"}
+            onClick={async () => {
+              const action = item.parked ? "unpark" : "park";
+              const err = await post(`/api/blocks/${block}/${action}`, {});
+              if (err) alert(`${item.parked ? "Unpark" : "Park"} failed: ${err}`);
+              // Parked, it leaves the list: back there, as after Close.
+              else if (action === "park" && location.hash === `#/b/${block}`) goBack({ view: "session", block });
+            }}
+          >
+            {/* A parking sign, lit while the pane is parked. */}
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <rect x="3" y="3" width="14" height="14" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
+              <path d="M8.2 14V6h2.6a2.3 2.3 0 0 1 0 4.6H8.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+        )}
+        {/* A parked pane is in no tab, so the desktop can't show it until it is unparked. */}
+        {!item?.parked && (
+          <button class="icon-btn" title="Show this pane on the desktop" aria-label="Show this pane on the desktop" onClick={() => post(`/api/blocks/${block}/focus`, {})}>
+            {/* A monitor with an arrow out of its corner, like an "open elsewhere" link: show this pane at the desk. */}
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M10.5 3.5H4.3a1.8 1.8 0 0 0-1.8 1.8v6.4a1.8 1.8 0 0 0 1.8 1.8h11.4a1.8 1.8 0 0 0 1.8-1.8V9.5M7 17h6M10 13.5V17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M8 10.5 15.5 3M11.5 3h4v4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+        )}
         {item && (
           <button
             class="icon-btn danger"

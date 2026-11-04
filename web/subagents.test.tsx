@@ -39,6 +39,7 @@ function item(jobs: Job[]): Item {
     starting: false,
     doc: null,
     unseen: null,
+    parked: false,
   };
 }
 const job = (agent: string, type = "task"): Job => ({ id: `j-${agent || type}`, type, label: "", agent, since: NOW - 42_000 });

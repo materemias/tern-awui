@@ -61,8 +61,8 @@ describe("plan: linux", () => {
   const actions = plan(linux);
   const [, unit] = writes(actions);
 
-  test("builds, links the extension, retires the old tern-mobile unit, links bun as tern-awui, writes the unit, starts it, serves it", () => {
-    expect(actions.map((a) => a.kind)).toEqual(["run", "symlink", "write", "run", "remove", "symlink", "write", "run", "run", "run", "run"]);
+  test("builds, links the extension and the Tern plugin, retires the old tern-mobile unit, links bun as tern-awui, writes the unit, starts it, serves it", () => {
+    expect(actions.map((a) => a.kind)).toEqual(["run", "symlink", "write", "run", "run", "remove", "symlink", "write", "run", "run", "run", "run"]);
     expect(actions[0]).toEqual({ kind: "run", argv: ["/home/ann/.bun/bin/bun", "build.ts"], cwd: linux.repo });
     expect(actions[1]).toEqual({
       kind: "symlink",
@@ -70,10 +70,11 @@ describe("plan: linux", () => {
       target: "/home/ann/My Code/tern-awui/omp-extension/tern-mobile.ts",
     });
     expect(unit.path).toBe("/home/ann/.config/systemd/user/tern-awui.service");
-    expect(actions[4]).toEqual({ kind: "remove", path: "/home/ann/.config/systemd/user/tern-mobile.service" });
+    expect(actions[3]).toEqual({ kind: "run", argv: ["/home/ann/.local/bin/tern", "plugin", "link", "/home/ann/My Code/tern-awui/tern-plugin"], mayFail: true });
+    expect(actions[5]).toEqual({ kind: "remove", path: "/home/ann/.config/systemd/user/tern-mobile.service" });
     // A process named bun is what scheduler rules (ananicy-cpp: nice 16, SCHED_IDLE) push to the back.
-    expect(actions[5]).toEqual({ kind: "symlink", path: "/home/ann/.config/tern-mobile/tern-awui", target: "/home/ann/.bun/bin/bun" });
-    expect(runs(actions).slice(1)).toEqual([
+    expect(actions[6]).toEqual({ kind: "symlink", path: "/home/ann/.config/tern-mobile/tern-awui", target: "/home/ann/.bun/bin/bun" });
+    expect(runs(actions).slice(2)).toEqual([
       ["systemctl", "--user", "disable", "--now", "tern-mobile.service"],
       ["systemctl", "--user", "daemon-reload"],
       ["systemctl", "--user", "enable", "tern-awui.service"],
@@ -122,7 +123,7 @@ describe("plan: linux", () => {
     expect(appUrl("box.tail1234.ts.net", 4380)).toBe("https://box.tail1234.ts.net:4380/");
   });
 
-  test("uninstall stops and removes the unit, the extension link and the serve entry", () => {
+  test("uninstall stops and removes the unit, the extension link, the Tern plugin and the serve entry", () => {
     expect(plan({ ...linux, uninstall: true })).toEqual([
       { kind: "run", argv: ["systemctl", "--user", "disable", "--now", "tern-awui.service"], mayFail: true },
       { kind: "remove", path: "/home/ann/.config/systemd/user/tern-awui.service" },
@@ -136,6 +137,7 @@ describe("plan: linux", () => {
         path: "/home/ann/.config/tern-mobile/bridge.json",
         ifContent: '{"endpoint":"ws://127.0.0.1:4380/bridge","tokenFile":"/home/ann/.config/tern-mobile/bridge-token"}\n',
       },
+      { kind: "run", argv: ["/home/ann/.local/bin/tern", "plugin", "unlink", "tern-awui"], mayFail: true },
       { kind: "run", argv: ["/usr/bin/tailscale", "serve", "--https=4380", "off"], mayFail: true },
     ]);
   });
@@ -153,6 +155,7 @@ describe("plan: darwin", () => {
     });
     expect(plist.path).toBe("/Users/ann/Library/LaunchAgents/dev.tern-awui.plist");
     expect(runs(actions).slice(1)).toEqual([
+      ["/usr/local/bin/tern", "plugin", "link", "/Users/ann/Code & Stuff/<tern>/tern-plugin"],
       ["launchctl", "bootout", "gui/501/dev.tern-awui"],
       ["launchctl", "bootstrap", "gui/501", "/Users/ann/Library/LaunchAgents/dev.tern-awui.plist"],
       ["/Applications/Tailscale.app/Contents/MacOS/Tailscale", "serve", "--bg", "--https=4380", "http://127.0.0.1:4380"],
@@ -188,6 +191,7 @@ describe("plan: darwin", () => {
         path: "/Users/ann/.config/tern-mobile/bridge.json",
         ifContent: '{"endpoint":"ws://127.0.0.1:4380/bridge","tokenFile":"/Users/ann/.config/tern-mobile/bridge-token"}\n',
       },
+      { kind: "run", argv: ["/usr/local/bin/tern", "plugin", "unlink", "tern-awui"], mayFail: true },
       { kind: "run", argv: ["/Applications/Tailscale.app/Contents/MacOS/Tailscale", "serve", "--https=4380", "off"], mayFail: true },
     ]);
   });
@@ -208,16 +212,17 @@ describe("plan: win32", () => {
 
   test("registers the task from XML, restarting a running server, then serves it", () => {
     const r = runs(actions);
-    expect(r[1]).toEqual(["schtasks", "/End", "/TN", "tern-awui"]);
-    expect(r[2][0]).toBe("powershell.exe");
-    expect(r[2].at(-1)).toBe(
+    expect(r[1]).toEqual(["C:\\Program Files\\Tern\\tern.exe", "plugin", "link", "C:\\Users\\Ann\\My Code\\tern-awui\\tern-plugin"]);
+    expect(r[2]).toEqual(["schtasks", "/End", "/TN", "tern-awui"]);
+    expect(r[3][0]).toBe("powershell.exe");
+    expect(r[3].at(-1)).toBe(
       windowsStopScript(4380, {
         bun: "C:\\Users\\Ann\\.bun\\bin\\bun.exe",
         server: "C:\\Users\\Ann\\My Code\\tern-awui\\server.ts",
         launcher: "C:\\Users\\Ann\\.config\\tern-mobile\\tern-awui.vbs",
       }, true),
     );
-    expect(r.slice(3)).toEqual([
+    expect(r.slice(4)).toEqual([
       ["schtasks", "/Create", "/TN", "tern-awui", "/XML", "C:\\Users\\Ann\\.config\\tern-mobile\\tern-awui-task.xml", "/F"],
       ["schtasks", "/Run", "/TN", "tern-awui"],
       ["C:\\Program Files\\Tailscale\\tailscale.exe", "serve", "--bg", "--https=4380", "http://127.0.0.1:4380"],
@@ -257,6 +262,7 @@ describe("plan: win32", () => {
       "schtasks /End /TN tern-awui",
       "powershell.exe",
       "schtasks /Delete /TN tern-awui /F",
+      "C:\\Program Files\\Tern\\tern.exe plugin unlink tern-awui",
       "C:\\Program Files\\Tailscale\\tailscale.exe serve --https=4380 off",
     ]);
     expect(u.flatMap((a) => (a.kind === "remove" ? [a.path] : []))).toEqual([

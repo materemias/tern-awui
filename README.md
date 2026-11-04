@@ -48,6 +48,7 @@ It has no login of its own. You reach it over a private network you control, suc
 ## Works with Tern
 
 - **Close** a session from the web, and its pane closes in Tern.
+- **Park** a session from its header to put it away in Tern, still running. It leaves the list, except while it waits on you or has news you haven't seen. The **Parked** tab of the **+ omp** sheet lists parked panes, and a tap brings one back into a tab of its own and opens it.
 - **+ omp** opens a new omp tab in Tern in any project folder and jumps to it.
 - **Closed** in the same sheet lists the omp sessions you typed into that no Tern pane runs any more, newest first, with their title, recap and folder. Typing searches all your omp sessions on the server, plus Claude Code and Codex sessions; a tool's name (`claude`, `codex`, `omp`) shows only that tool's. A tap reopens one in a new Tern tab in its folder (`omp --resume`, `claude --resume`, `codex resume`), and × hides it from the list.
 - **The monitor button** in a session's header focuses that pane in the Tern window on the desktop.
@@ -135,6 +136,7 @@ What it does protect against, and why, is in [how it works](docs/architecture.md
 - Claude Code and Codex sessions show up only in a search, only if you typed into them (their `history.jsonl`) and only while their transcript is on disk; Claude Code deletes transcripts after 30 days by default. Neither tool says whether a session is running, so a search lists running ones too; resuming one opens the Tern tab whose command names it, and asks first if a tab runs the tool in its folder. A resumed Claude Code or Codex session shows here as a plain terminal.
 - Voice calls end when the session screen closes. With the screen off, Android keeps playing the voice but silences the phone's microphone until you unlock, so use the black screen instead of the power button. Phones may also cut a call when the app goes to the background (iOS Safari does), and the call stays on the phone that started it.
 - Swiping between sessions follows the list's hidden-old and folded projects, but not a filter typed in the desktop sidebar. A swipe that starts on something that scrolls sideways (a wide code block or table), or within 24 px of the screen edge, scrolls or goes back instead.
+- Parking needs Tern's plugins and the tern-awui plugin the installer links. When no Tern window is open, parking or unparking starts one.
 
 ## More
 

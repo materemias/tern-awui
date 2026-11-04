@@ -66,6 +66,7 @@ function item(live: Partial<Live> | null, status = "idle"): Item {
     starting: false,
     doc: null,
     unseen: null,
+    parked: false,
   };
 }
 

@@ -65,6 +65,7 @@ function item(over: Partial<Item> = {}): Item {
     starting: false,
     doc: null,
     unseen: null,
+    parked: false,
     ...over,
   };
 }
@@ -403,8 +404,14 @@ describe("listProjects", () => {
   ];
   const blocks = (ps: Project[]) => ps.map((p) => [p.name, p.items.map((i) => i.block)]);
 
-  test("no filter, nothing hidden: the list as is", () => {
-    expect(listProjects(projects, "", false, NOW, null)).toBe(projects);
+  test("parked panes stay off the list, filter matches included, unless they need you; projects left empty go", () => {
+    const withParked: Project[] = [
+      { name: "app", items: [item({ block: "1", title: "Fix login" }), item({ block: "5", title: "Fix parked", parked: true })] },
+      { name: "away", items: [item({ block: "6", parked: true, status: "working" })] },
+      { name: "waiting", items: [item({ block: "7", parked: true, status: "blocked" }), item({ block: "8", parked: true, unseen: "done" })] },
+    ];
+    expect(blocks(listProjects(withParked, "", false, NOW, null))).toEqual([["app", ["1"]], ["waiting", ["7", "8"]]]);
+    expect(blocks(listProjects(withParked, "fix", false, NOW, null))).toEqual([["app", ["1"]]]);
   });
   test("hiding old drops them and projects left empty", () => {
     expect(blocks(listProjects(projects, "", true, NOW, null))).toEqual([["app", ["2"]]]);
@@ -444,6 +451,13 @@ describe("swipeOrder", () => {
     expect(order({ ...opts, keep: new Set(["2"]) })).toEqual(["1", "2", "3", "4"]);
     expect(order({ ...opts, collapsed: new Set(["infra"]), keep: new Set(["4"]) })).toEqual(["1", "3", "4"]);
     expect(order({ ...opts, hideOld: true, keep: new Set(["4", "3"]) })).toEqual(["1", "3", "4"]);
+  });
+  test("parked sessions drop out unless kept (the parked session that is open) or waiting on you", () => {
+    const parked: Project[] = [
+      { name: "app", items: [item({ block: "1", agent: agent() }), item({ block: "5", agent: agent(), parked: true }), item({ block: "6", agent: agent(), parked: true, status: "blocked" })] },
+    ];
+    expect(swipeOrder(parked, { ...opts, keep: new Set() }).map((i) => i.block)).toEqual(["1", "6"]);
+    expect(swipeOrder(parked, { ...opts, keep: new Set(["5"]) }).map((i) => i.block)).toEqual(["1", "5", "6"]);
   });
 });
 

@@ -57,6 +57,8 @@ const SERVICE_NAME = "tern-awui";
 const LEGACY_SERVICE_NAME = "tern-mobile";
 const LAUNCHD_LABEL = "dev.tern-awui";
 const TASK_NAME = "tern-awui";
+/** The Tern plugin's id (tern-plugin/plugin.toml). */
+const TERN_PLUGIN_ID = "tern-awui";
 const DESCRIPTION = "tern-awui: phone control surface for Tern panes";
 /** Settings passed through from the installer's environment into the service when set. */
 const PASSTHROUGH_ENV = [
@@ -251,6 +253,7 @@ export function plan(input: PlanInput): Action[] {
   })}\n`;
   const serveOn: Action = { kind: "run", argv: [input.tailscale, "serve", "--bg", `--https=${input.port}`, `http://127.0.0.1:${input.port}`] };
   const serveOff: Action = { kind: "run", argv: [input.tailscale, "serve", `--https=${input.port}`, "off"], mayFail: true };
+  const ternPlugin = (verb: "link" | "unlink", what: string): Action => ({ kind: "run", argv: [input.tern, "plugin", verb, what], mayFail: true });
 
   const unit = p.join(input.home, ".config", "systemd", "user", `${SERVICE_NAME}.service`);
   const systemctl = (...args: string[]): Extract<Action, { kind: "run" }> => ({ kind: "run", argv: ["systemctl", "--user", ...args] });
@@ -284,7 +287,13 @@ export function plan(input: PlanInput): Action[] {
               { kind: "remove", path: launcher },
               { kind: "remove", path: taskXml },
             ];
-    return [...service, { kind: "remove", path: extension, keepLinkAwayFrom: extensionSource }, { kind: "remove", path: discovery, ifContent: discoveryContent }, serveOff];
+    return [
+      ...service,
+      { kind: "remove", path: extension, keepLinkAwayFrom: extensionSource },
+      { kind: "remove", path: discovery, ifContent: discoveryContent },
+      ternPlugin("unlink", TERN_PLUGIN_ID),
+      serveOff,
+    ];
   }
 
   const actions: Action[] = [
@@ -293,6 +302,8 @@ export function plan(input: PlanInput): Action[] {
       ? { kind: "copy", from: extensionSource, to: extension }
       : { kind: "symlink", path: extension, target: extensionSource },
     { kind: "write", path: discovery, content: discoveryContent },
+    // Parks and unparks panes for the phone. An older Tern without plugins only loses that.
+    ternPlugin("link", p.join(input.repo, "tern-plugin")),
   ];
   if (input.platform === "linux") {
     actions.push(
@@ -483,9 +494,9 @@ export function main(deps: MainDeps): void {
   const explicit = args.port ?? (env.TERN_AWUI_PORT ? parsePort(env.TERN_AWUI_PORT, "TERN_AWUI_PORT") : undefined);
   const port = explicit ?? (args.uninstall ? installedPort : undefined) ?? 4380;
   const tailscale = which("tailscale", platform, env.PATH, args.uninstall);
-  let tern = "", omp = "", dnsName = "", allow: string[] = [], hosts: string[] = [];
+  const tern = which("tern", platform, env.PATH, args.uninstall);
+  let omp = "", dnsName = "", allow: string[] = [], hosts: string[] = [];
   if (!args.uninstall) {
-    tern = which("tern", platform, env.PATH);
     omp = which("omp", platform, env.PATH);
     const r = Bun.spawnSync([tailscale, "status", "--json"], { env, stderr: "pipe" });
     if (r.exitCode !== 0) throw new Error(`tailscale status failed: ${r.stderr.toString()}`);

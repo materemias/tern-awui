@@ -1,0 +1,7 @@
+schema = 1
+id = "tern-awui"
+name = "tern-awui"
+version = "0.1.0"
+description = "Parks and unparks panes for tern-awui, the phone app, which Tern's command line can't"
+icon = "smartphone"
+window = "window.luau"

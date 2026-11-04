@@ -3,6 +3,7 @@
 // Prompts stream a canned reply as omp's would (`live`, then the `chat` entry), asks resolve, and
 // new sessions, closes and drafts behave; what needs a real omp answers "isn't in the demo".
 import type { AskQuestion, ChatEntry, ContextUse, Run, State } from "./api";
+import { onList } from "./lib";
 import {
   ANSWER_REPLY,
   CONTEXT_WINDOW,
@@ -92,7 +93,8 @@ export class DemoServer {
     const projects = new Map<string, Session["item"][]>();
     for (const s of this.sessions) projects.set(s.item.project, [...(projects.get(s.item.project) ?? []), s.item]);
     const items = this.sessions.map((s) => s.item);
-    const count = (status: string) => items.filter((i) => i.status === status).length;
+    // The counts follow the list, as the server's do: a parked session only while it needs you.
+    const count = (status: string) => items.filter((i) => i.status === status && onList(i)).length;
     return {
       projects: [...projects].map(([name, list]) => ({ name, items: list })),
       counts: { working: count("working"), blocked: count("blocked"), idle: count("idle") },
@@ -166,6 +168,11 @@ export class DemoServer {
       case "close":
         this.cancel(s);
         this.sessions = this.sessions.filter((x) => x !== s);
+        this.emitState();
+        return ok;
+      case "park":
+      case "unpark":
+        s.item.parked = action === "park";
         this.emitState();
         return ok;
       case "submit": {
@@ -444,7 +451,7 @@ export class DemoServer {
     const project = this.sessions.find((s) => s.item.cwd === cwd)?.item.project ?? cwd.split("/").filter(Boolean).at(-1) ?? "home";
     const now = this.clock.now();
     const s: Session = {
-      item: { block, icon: null, tag: null, title: "New session", cwd, project, branch: "main", agent: null, live: null, status: null, starting: true, since: now, doc: null, unseen: null },
+      item: { block, icon: null, tag: null, title: "New session", cwd, project, branch: "main", agent: null, live: null, status: null, starting: true, since: now, doc: null, unseen: null, parked: false },
       chat: [],
       screen: "",
       subagents: [],

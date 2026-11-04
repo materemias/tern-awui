@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { post, postJson, type Closed, type Item } from "./api";
 import { keepsTool, matchesWords, parseSearch } from "../lib/search";
-import { age, folderLabel, isOld, jobsSummary, listProjects, parseStoredList, rowText, toggled } from "./lib";
+import { age, folderLabel, isOld, jobsSummary, listProjects, onList, parseStoredList, rowText, toggled } from "./lib";
 import { Dot, PiMark } from "./parts";
 import { ExtensionBanner } from "./extension";
 import { useExitGuard, useNow, useStream } from "./hooks";
@@ -31,13 +31,22 @@ function TitleRow({ icon, tag, title }: { icon: Icon | null; tag: string | null;
   );
 }
 
-function Row({ item, now, selected }: { item: Item; now: number; selected?: boolean }) {
+/** A session row; with `onPick` (the Parked tab's rows) a tap runs it instead of opening the session. */
+function Row({ item, now, selected, onPick }: { item: Item; now: number; selected?: boolean; onPick?: (item: Item) => void }) {
   const state = item.status ?? undefined;
   const { sub, recap, stale } = rowText(item, now);
   return (
     <a
       class={`row st-${state ?? "shell"}${item.doc ? " doc-row" : ""}${stale ? " stale" : ""}${item.unseen ? ` unseen-${item.unseen}` : ""}${selected ? " selected" : ""}`}
       href={`#/b/${item.block}`}
+      title={onPick && "Unpark into a tab of its own and open it"}
+      onClick={
+        onPick &&
+        ((e) => {
+          e.preventDefault();
+          onPick(item);
+        })
+      }
     >
       <Dot state={state} />
       <div class="row-main">
@@ -50,6 +59,12 @@ function Row({ item, now, selected }: { item: Item; now: number; selected?: bool
       {item.live?.mismatch && (
         <span class="ext-mark" title={`Runs ${item.live.mismatch === "newer" ? "a newer" : "an older"} tern-mobile extension: open it for the fix`}>
           !
+        </span>
+      )}
+      {/* On the list a parked pane shows only while it needs you (onList): say why it is out of Tern's tabs. */}
+      {item.parked && !onPick && (
+        <span class="parked-mark" title="Parked in Tern: open it to unpark">
+          P
         </span>
       )}
       <span class={`age${state === "working" ? " age-hot" : state === "blocked" ? " age-blocked" : ""}`}>
@@ -138,6 +153,7 @@ function PushButton({ push: [push, togglePush] }: { push: [PushState, () => void
 }
 
 const SHEET_TAB_KEY = "tern-mobile:new-sheet-tab";
+type SheetTab = "folder" | "parked" | "closed";
 /** Typing pauses this long before the Closed tab asks the server to search. */
 const SEARCH_DELAY_MS = 300;
 /** Claude Code and Codex rows: the tool's name, its mark and colour. */
@@ -148,24 +164,32 @@ const OTHER_AGENTS: Record<Exclude<Closed["agent"], "omp">, { name: string; icon
 
 /**
  * The new-omp sheet. Folder: where a new omp can open (open blocks and past omp sessions, newest
- * first). Closed: omp sessions no pane runs now, which a tap resumes in a new tab. Both filter as
- * you type; Closed also asks the server, which searches every omp session and Claude Code's and
- * Codex's too. The tab last used is remembered on this device.
+ * first). Parked: panes parked in Tern, which a tap unparks into a tab of their own. Closed: omp
+ * sessions no pane runs now, which a tap resumes in a new tab. All filter as you type; Closed also
+ * asks the server, which searches every omp session and Claude Code's and Codex's too. The tab
+ * last used is remembered on this device.
  */
 function NewSheet({
   open,
+  parked,
   now,
   onPick,
+  onUnpark,
   onResume,
   onClose,
 }: {
   open: Set<string>;
+  parked: Item[];
   now: number;
   onPick: (dir: string) => void;
+  onUnpark: (item: Item) => void;
   onResume: (s: Closed) => void;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<"folder" | "closed">(() => (localStorage.getItem(SHEET_TAB_KEY) === "closed" ? "closed" : "folder"));
+  const [tab, setTab] = useState<SheetTab>(() => {
+    const stored = localStorage.getItem(SHEET_TAB_KEY);
+    return stored === "closed" || stored === "parked" ? stored : "folder";
+  });
   const [projects, setProjects] = useState<string[] | null>(null);
   const [closed, setClosed] = useState<Closed[] | null>(null);
   const [closedError, setClosedError] = useState("");
@@ -216,7 +240,7 @@ function NewSheet({
       abort.abort();
     };
   }, [tab, query]);
-  function show(next: "folder" | "closed") {
+  function show(next: SheetTab) {
     localStorage.setItem(SHEET_TAB_KEY, next);
     setTab(next);
     // Tapping Closed after a failed load tries again.
@@ -238,6 +262,7 @@ function NewSheet({
     alert(err);
   }
   const shownProjects = (projects ?? []).filter((p) => matchesWords(q, p));
+  const shownParked = parked.filter((i) => matchesWords(q, `${i.project} ${i.tag ?? ""} ${i.title} ${i.agent?.lastPrompt ?? ""} ${i.cwd}`));
   // Until the server answers, the loaded rows (all omp's) filter as you type, tool names as the server reads them.
   const searched = query && found?.q === query ? found : null;
   const local = parseSearch(q);
@@ -247,6 +272,7 @@ function NewSheet({
   const list = tab === "folder" ? projects : closed;
   const count =
     tab === "folder" ? (projects ? `${shownProjects.length} projects` : "loading")
+    : tab === "parked" ? `${shownParked.length} parked`
     : query ? (searched ? (searched.error ? "search failed" : `${shownClosed.length} found`) : "searching")
     : closed ? `${shownClosed.length} closed`
     : closedError ? ""
@@ -259,6 +285,9 @@ function NewSheet({
             <button type="button" role="tab" aria-selected={tab === "folder"} class={tab === "folder" ? "on" : ""} onClick={() => show("folder")}>
               New omp in…
             </button>
+            <button type="button" role="tab" aria-selected={tab === "parked"} class={tab === "parked" ? "on" : ""} onClick={() => show("parked")}>
+              Parked
+            </button>
             <button type="button" role="tab" aria-selected={tab === "closed"} class={tab === "closed" ? "on" : ""} onClick={() => show("closed")}>
               Closed
             </button>
@@ -269,7 +298,7 @@ function NewSheet({
           class="sheet-filter"
           type="search"
           autoFocus
-          placeholder={tab === "folder" ? "Filter projects" : "Search sessions, Claude Code and Codex too"}
+          placeholder={tab === "folder" ? "Filter projects" : tab === "parked" ? "Filter parked panes" : "Search sessions, Claude Code and Codex too"}
           value={q}
           onInput={(e) => setQ(e.currentTarget.value)}
         />
@@ -287,6 +316,8 @@ function NewSheet({
                 </button>
               );
             })}
+          {tab === "parked" && shownParked.map((i) => <Row key={i.block} item={i} now={now} onPick={onUnpark} />)}
+          {tab === "parked" && parked.length === 0 && <div class="empty">Nothing is parked. Park a pane from its top bar.</div>}
           {tab === "closed" &&
             shownClosed.map((s) => {
               const other = s.agent === "omp" ? null : OTHER_AGENTS[s.agent];
@@ -357,9 +388,10 @@ export function Home({
     localStorage.setItem(HIDE_OLD_KEY, hideOld ? "off" : "on");
     setHideOld(!hideOld);
   }
-  const oldCount = state ? state.projects.reduce((n, p) => n + p.items.filter((i) => isOld(i, now, selected)).length, 0) : 0;
+  const items = state ? state.projects.flatMap((p) => p.items) : [];
+  const oldCount = items.filter((i) => onList(i) && isOld(i, now, selected)).length;
   // Sessions whose omp runs another extension build than the server's (rows marked with !).
-  const outdated = state ? state.projects.reduce((n, p) => n + p.items.filter((i) => i.live?.mismatch).length, 0) : 0;
+  const outdated = items.filter((i) => onList(i) && i.live?.mismatch).length;
   const projects = useMemo(
     () => (state ? listProjects(state.projects, needle, hideOld, now, selected) : []),
     [state, needle, hideOld, now, selected],
@@ -400,12 +432,21 @@ export function Home({
 
   const sheet = picker && (
     <NewSheet
-      open={new Set(state?.projects.flatMap((p) => p.items.map((i) => i.cwd)) ?? [])}
+      open={new Set(items.map((i) => i.cwd))}
+      parked={items.filter((i) => i.parked)}
       now={now}
       onClose={() => setPicker(false)}
       onPick={(dir) => {
         setPicker(false);
         void launch("/api/new", { cwd: dir }, dir);
+      }}
+      onUnpark={async (i) => {
+        setPicker(false);
+        const from = location.hash;
+        const err = await post(`/api/blocks/${i.block}/unpark`, {});
+        if (err) alert(`Unpark failed: ${err}`);
+        // A slow Tern: opening something else meanwhile wins over this jump.
+        else if (location.hash === from) location.hash = `#/b/${i.block}`;
       }}
       onResume={(s) => {
         setPicker(false);

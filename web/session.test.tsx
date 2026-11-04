@@ -223,6 +223,23 @@ test("closing a waiting block warns and returns to the list on success", async (
   expect(location.hash).toBe("#/");
 });
 
+test("Park asks nothing and returns to the list; a parked pane offers Unpark instead of the desktop button and stays", async () => {
+  const prompts: string[] = [];
+  window.confirm = (message) => { prompts.push(String(message)); return true; };
+  await open(item({ status: "working" }));
+  await click('[aria-label="Park this pane"]');
+  expect(prompts).toEqual([]);
+  expect(net.to("/api/blocks/5/park")).toEqual([{}]);
+  expect(location.hash).toBe("#/");
+  history.replaceState(null, "", "#/b/5");
+  await emit("state", state([item({ status: "working", parked: true })]));
+  expect(root.querySelector('[title="Show this pane on the desktop"]')).toBeNull();
+  expect(root.querySelector(".row-meta")!.textContent).toContain("parked");
+  await click('[aria-label="Unpark this pane"]');
+  expect(net.to("/api/blocks/5/unpark")).toEqual([{}]);
+  expect(location.hash).toBe("#/b/5");
+});
+
 test("a delayed close reply does not leave a different session opened in the meantime", async () => {
   await open(item());
   const pending = Promise.withResolvers<Response>();

@@ -61,6 +61,7 @@ function omp(block: string, project: string, title: string, over: Partial<Item>)
     since: 0,
     doc: null,
     unseen: null,
+    parked: false,
     ...over,
   };
 }
@@ -205,6 +206,7 @@ export function demoSessions(now: number): DemoSession[] {
         since: t(30),
         doc: null,
         unseen: null,
+        parked: false,
       },
       chat: [],
       screen: [

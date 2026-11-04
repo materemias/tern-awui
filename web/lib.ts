@@ -286,27 +286,36 @@ export function isOld(i: Item, now: number, selected: string | null): boolean {
 }
 
 /**
- * The projects the list shows. A filter (lowercase `needle`) matches project, tag, title and last
- * prompt, hidden old sessions included; otherwise `hideOld` drops old ones. Empty projects go.
+ * Whether the list shows the row: every pane in a tab, and a parked one only while it needs you
+ * (waiting on you, or an update not seen yet); the rest are in the new-omp sheet's Parked tab.
+ * The server counts the same rows.
+ */
+export function onList(i: Item): boolean {
+  return !i.parked || i.status === "blocked" || !!i.unseen;
+}
+
+/**
+ * The projects the list shows (`onList`). A filter (lowercase `needle`) matches project, tag, title
+ * and last prompt, hidden old sessions included; otherwise `hideOld` drops old ones. Empty projects go.
  */
 export function listProjects(projects: Project[], needle: string, hideOld: boolean, now: number, selected: string | null): Project[] {
-  if (!needle && !hideOld) return projects;
   const keep = (p: Project, i: Item) =>
-    needle
+    onList(i) &&
+    (needle
       ? [p.name, i.tag ?? "", i.title, i.agent?.lastPrompt ?? ""].join(" ").toLowerCase().includes(needle)
-      : !isOld(i, now, selected);
+      : !hideOld || !isOld(i, now, selected));
   return projects.map((p) => ({ ...p, items: p.items.filter((i) => keep(p, i)) })).filter((p) => p.items.length);
 }
 
 /**
  * The sessions a sideways swipe steps through: the list's omp rows in its order, without old ones
  * while the list hides them and without collapsed projects' rows. Blocks in `keep` always stay (the
- * open one and those a run of swipes passed), so a session opened from elsewhere (a notification,
- * a collapsed project) still has neighbours, and swiping back still reaches it.
+ * open one and those a run of swipes passed), so a session opened from elsewhere (a notification, a
+ * collapsed project, the Parked tab) still has neighbours, and swiping back still reaches it.
  */
 export function swipeOrder(projects: Project[], o: { hideOld: boolean; collapsed: Set<string>; now: number; keep: Set<string> }): Item[] {
   return projects.flatMap((p) =>
-    p.items.filter((i) => o.keep.has(i.block) || (i.agent && !o.collapsed.has(p.name) && !(o.hideOld && isOld(i, o.now, null)))),
+    p.items.filter((i) => o.keep.has(i.block) || (i.agent && onList(i) && !o.collapsed.has(p.name) && !(o.hideOld && isOld(i, o.now, null)))),
   );
 }
 

@@ -9,14 +9,6 @@ A Run button on shell code blocks in omp's answers runs the block in the pane's 
 - Runs arbitrary commands, so it asks for confirmation first and shows the command in full.
 - Needs a timeout and a Stop, like every other external call.
 
-## Park instead of Close, and parked sessions
-
-A non-destructive "put away" next to Close. Tern 0.6.0 added parked panes that keep running out of sight; users asked for this instead of closing omp sessions and running `/resume` later.
-
-- Check what the CLI offers first (`tern dock` is the likely command) and whether `tern ls --json` reports parked panes.
-- Show parked sessions in the list, marked as parked, and offer bringing one back.
-- Stays close to multiplexer territory: keep it to park and unpark, no layout control.
-
 ## Better shell handling
 
 Plain terminals are second-class today: a screen view and a key bar.

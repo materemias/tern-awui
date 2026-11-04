@@ -12,7 +12,7 @@ import { Database } from "bun:sqlite";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { existsSync, readFileSync, statSync, watch, type FSWatcher } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, watch, writeFileSync, type FSWatcher } from "node:fs";
 import type { Server, ServerWebSocket, Subprocess } from "bun";
 import webpush, { type PushSubscription, type RequestOptions } from "web-push";
 import { arr, num, obj, str, type Obj } from "./lib/json";
@@ -503,6 +503,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     doc: string | null;
     /** An update the phone hasn't opened: a finished turn or a wait on the user. */
     unseen: "done" | "blocked" | null;
+    /** Parked in Tern: out of every tab, its program still running. The list leaves it out; the new-omp sheet's Parked tab shows it. */
+    parked: boolean;
   };
 
   type State = {
@@ -620,7 +622,10 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     const counts: Record<string, number> = { working: 0, blocked: 0, idle: 0 };
     // What a session's extension should be: this server's protocol and the checkout's file.
     const current = { protocol: PROTOCOL, build: extension.build() };
-    const blocks = arr(tree.sessions).flatMap((s) => arr(obj(s).tabs).flatMap((t) => arr(obj(t).blocks).map(obj)));
+    // Parked panes are listed apart from the tabs, as `detached`.
+    const detached = arr(tree.detached).map(obj);
+    const parked = new Set(detached.map((b) => String(b.id)));
+    const blocks = [...arr(tree.sessions).flatMap((s) => arr(obj(s).tabs).flatMap((t) => arr(obj(t).blocks).map(obj))), ...detached];
     // Every distinct cwd at once; only a cwd seen for the first time waits for git.
     const cwds = [...new Set(blocks.map((b) => str(b.cwd, HOME)))];
     const repos = new Map(await Promise.all(cwds.map((cwd) => repoOf(cwd, HOME, invalidateState).then((r) => [cwd, r] as const))));
@@ -640,7 +645,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
       const status = bridge?.state.status || null;
       // The bridge's clock starts at its connect; an idle session dates from its last entry.
       const since = status === "idle" && agent?.lastActivity ? agent.lastActivity : (bridge?.state.since ?? 0);
-      if (status) counts[status] = (counts[status] ?? 0) + 1;
+      // The counts follow the list: a parked pane shows there only while it needs you (web/lib.ts onList).
+      if (status && (!parked.has(id) || status === "blocked" || unseen.has(id))) counts[status] = (counts[status] ?? 0) + 1;
       // A bridge that hasn't reported yet (no status) has nothing to compare.
       const mismatch = bridge?.state.status ? sessionMismatch(bridge.state, current) : null;
       if (bridge && mismatch === "older") askRestart(bridge);
@@ -674,6 +680,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
         since,
         doc,
         unseen: unseen.get(id) ?? null,
+        parked: parked.has(id),
       });
       groups.set(project, list);
     }
@@ -832,6 +839,59 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   async function findItem(block: string): Promise<Item | undefined> {
     const s = await getState();
     for (const p of s.projects) for (const i of p.items) if (i.block === block) return i;
+  }
+
+  /** Park requests running per block: a second tap joins the first, an opposite one waits for it. */
+  const parking = new Map<string, { park: boolean; done: Promise<string | null> }>();
+
+  /** Parks a pane in Tern, or unparks it into a tab of its own; null once `tern ls` shows it there. */
+  function parkPane(block: string, park: boolean): Promise<string | null> {
+    const running = parking.get(block);
+    if (running?.park === park) return running.done;
+    const entry = { park, done: (running?.done ?? Promise.resolve(null)).then(() => requestPark(block, park)) };
+    parking.set(block, entry);
+    void entry.done.then(() => parking.get(block) === entry && parking.delete(block));
+    return entry.done;
+  }
+
+  /**
+   * Tern's CLI can't park or unpark: tern-awui's Tern plugin (tern-plugin/) does, claiming a `tern
+   * open` of a request file. Without the plugin that open would show the file, so it is checked first.
+   */
+  async function requestPark(block: string, park: boolean): Promise<string | null> {
+    const verb = park ? "park" : "unpark";
+    const plugins = await tern(["plugin", "list", "--json"]);
+    let plugin: Obj | undefined;
+    try {
+      plugin = arr(obj(JSON.parse(plugins.out)).plugins).map(obj).find((p) => p.id === "tern-awui");
+    } catch {
+      return `tern plugin list failed (${plugins.error ?? "unreadable list"}): parking needs a Tern with plugins`;
+    }
+    if (!plugin) return `To ${verb} panes, Tern needs tern-awui's plugin: run \`bun install.ts\` again`;
+    if (plugin.status !== "ready") return `tern-awui's Tern plugin isn't ready (${str(plugin.status, "no status")}): see \`tern plugin list\``;
+    const dir = join(CONFIG_DIR, "tern-awui-requests");
+    const file = join(dir, `${verb}-${block}`);
+    try {
+      mkdirSync(dir, { recursive: true });
+      // The plugin acts only on a file holding exactly this line.
+      writeFileSync(file, `${verb} ${block}\n`);
+      // The plugin claims the open, so tern reports that no file block opened: only the list tells.
+      await tern(["open", file]);
+      for (let tries = 0; tries < 10; tries++) {
+        const ls = await tern(["ls", "--json"]);
+        if (ls.error) return ls.error;
+        const tree = obj(JSON.parse(ls.out));
+        const there = park ? arr(tree.detached) : arr(tree.sessions).flatMap((s) => arr(obj(s).tabs).flatMap((t) => arr(obj(t).blocks)));
+        if (there.some((b) => String(obj(b).id) === block)) return null;
+        await Bun.sleep(150);
+      }
+      return `Tern didn't ${verb} it`;
+    } catch (err) {
+      return `${verb}: ${err instanceof Error ? err.message : String(err)}`;
+    } finally {
+      rmSync(file, { force: true });
+      invalidateTree();
+    }
   }
 
   // ---------- transcript ----------
@@ -1375,9 +1435,9 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
 
     // Cross-site forms cannot set custom headers; this keeps the POSTs same-origin.
     if (req.headers.get("x-tern-mobile") !== "1") return json({ error: "missing header" }, 403);
-    const m = /^\/api\/blocks\/(\d+)\/(keys|type|submit|draft|answer|model|models|thinking|tier|focus|abort|btw|close|complete|completion|rewind|stretch|voice|hangup)$/.exec(path);
+    const m = /^\/api\/blocks\/(\d+)\/(keys|type|submit|draft|answer|model|models|thinking|tier|focus|abort|btw|close|park|unpark|complete|completion|rewind|stretch|voice|hangup)$/.exec(path);
     // Commands with no arguments may omit the body; payload-bearing actions must send JSON.
-    const bodyless = req.body === null && /^(models|focus|abort|close|hangup)$/.test(m?.[2] ?? "");
+    const bodyless = req.body === null && /^(models|focus|abort|close|park|unpark|hangup)$/.test(m?.[2] ?? "");
     const raw: unknown = bodyless ? {} : await req.json().catch(() => null);
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return json({ error: "expected a JSON object" }, 400);
     const body = obj(raw);
@@ -1462,6 +1522,11 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           invalidateTree();
           return done(err);
         }
+        case "park":
+        case "unpark":
+          // Already where it was asked to go (a second tap, another phone): nothing to do.
+          if (item.parked === (action === "park")) return json({ ok: true });
+          return done(await parkPane(block, action === "park"));
         case "keys":
           return done(await sendKeys(block, arr(body.keys).map((k) => str(k))));
         case "type": {

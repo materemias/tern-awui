@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { appendFileSync, chmodSync, copyFileSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { Database } from "bun:sqlite";
 import { resolve } from "node:path";
 import { arr, obj } from "../lib/json";
@@ -616,6 +616,58 @@ test("tern events invalidate cached state and new/focus/close route to the CLI",
   await s.action(2, "focus");
   await s.action(2, "close");
   expect(s.calls()).toEqual([["new", "tab", "--cwd", `${s.home}/alpha`, "--json", "--", "omp"], ["focus", "2"], ["close", "2"]]);
+});
+
+test("park and unpark go through tern-awui's Tern plugin, never opening the request file without it", async () => {
+  const tabbed = JSON.stringify(s.tree);
+  const tabs = arr(obj(arr(s.tree.sessions)[0]).tabs);
+  const blocks = arr(obj(tabs[0]).blocks);
+  const parked = { ...s.tree, sessions: [{ tabs: [{ blocks: blocks.filter((b) => obj(b).id !== 2) }] }], detached: blocks.filter((b) => obj(b).id === 2) };
+  try {
+    s.clearCalls();
+    // Without the plugin, `tern open` would show the request file in a block: nothing runs.
+    const missing = await s.action(2, "park");
+    expect(missing.status).toBe(502);
+    expect(String(obj(await missing.json()).error)).toContain("bun install.ts");
+    expect(s.calls()).toEqual([]);
+
+    writeFileSync(`${s.home}/plugins.json`, JSON.stringify({ plugins: [{ id: "tern-awui", status: "error" }] }));
+    expect(await (await s.action(2, "park")).json()).toEqual({ error: "tern-awui's Tern plugin isn't ready (error): see `tern plugin list`" });
+    expect(s.calls()).toEqual([]);
+
+    writeFileSync(`${s.home}/plugins.json`, JSON.stringify({ plugins: [{ id: "tern-awui", status: "ready" }] }));
+    writeFileSync(`${s.home}/open-tree.json`, JSON.stringify(parked));
+    // A double tap: one request reaches Tern, both taps succeed.
+    const taps = await Promise.all([s.action(2, "park"), s.action(2, "park")]);
+    expect(await Promise.all(taps.map((r) => r.json()))).toEqual([{ ok: true }, { ok: true }]);
+    expect(s.calls().length).toBe(1);
+    const [[verb, file]] = s.calls();
+    expect(verb).toBe("open");
+    expect(file).toEndWith("/tern-awui-requests/park-2");
+    expect(existsSync(file)).toBe(false);
+    expect(item(await s.state(), 2).parked).toBe(true);
+    // Already parked: a second tap asks Tern nothing.
+    s.clearCalls();
+    expect((await s.action(2, "park")).status).toBe(200);
+    expect(s.calls()).toEqual([]);
+
+    writeFileSync(`${s.home}/open-tree.json`, tabbed);
+    expect((await s.action(2, "unpark")).status).toBe(200);
+    expect(s.calls().map((c) => c[1])).toEqual([file.replace(/park-2$/, "unpark-2")]);
+    expect(item(await s.state(), 2).parked).toBe(false);
+
+    // The plugin didn't move the pane: Tern's list says so.
+    rmSync(`${s.home}/open-tree.json`);
+    const stuck = await s.action(2, "park");
+    expect(stuck.status).toBe(502);
+    expect(await stuck.json()).toEqual({ error: "Tern didn't park it" });
+  } finally {
+    rmSync(`${s.home}/plugins.json`, { force: true });
+    rmSync(`${s.home}/open-tree.json`, { force: true });
+    s.tree = JSON.parse(tabbed);
+    s.saveTree();
+    s.signal();
+  }
 });
 
 test("blocked updates set an unseen badge; viewing clears it, settled completion sets it again", async () => {

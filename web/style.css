@@ -644,6 +644,7 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .ext-chip { display: inline-flex; align-items: center; gap: 4px; padding: 0 7px; border-radius: 999px; background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); font-weight: 600; font-variant-numeric: tabular-nums; }
 .ext-chip b { font: 700 11px/1 var(--mono); }
 .ext-mark { flex: none; align-self: flex-start; display: grid; place-items: center; width: 15px; height: 15px; margin-top: 2px; border-radius: 50%; background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); font: 700 10px/1 var(--mono); }
+.parked-mark { flex: none; align-self: flex-start; display: grid; place-items: center; width: 15px; height: 15px; margin-top: 2px; border: 1.3px solid var(--muted); border-radius: 4px; color: var(--muted); font: 700 10px/1 var(--mono); }
 
 /* Sheets: a bottom sheet on phones, capped in width and height everywhere so a desktop window
    gets a panel, not a full-width strip. */

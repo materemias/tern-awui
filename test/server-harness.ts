@@ -71,11 +71,14 @@ export class Sandbox {
     writeFileSync(`${this.home}/bin/tern`, `#!/bin/bash
 case "$1" in
   ls) cat "$TERN_FAKE_DIR/tree.json" ;;
+  plugin) if [ -f "$TERN_FAKE_DIR/plugins.json" ]; then cat "$TERN_FAKE_DIR/plugins.json"; else printf '{"plugins":[]}'; fi ;;
   capture) if [ "$3" = --surfaces ] && [ -f "$TERN_FAKE_DIR/surfaces" ]; then cat "$TERN_FAKE_DIR/surfaces"; else printf '<pre>terminal output</pre>'; fi ;;
   events) exec /usr/bin/tail --pid="$PPID" --sleep-interval=0.05 -n +1 -F "$TERN_FAKE_DIR/events" ;;
   *) printf '%s\\0' "$@" >> "$TERN_FAKE_DIR/calls"; printf '\\0' >> "$TERN_FAKE_DIR/calls"
      if [ -f "$TERN_FAKE_DIR/fail" ]; then cat "$TERN_FAKE_DIR/fail" >&2; fi
      if [ "$1" = new ]; then if [ -f "$TERN_FAKE_DIR/new-out" ]; then cat "$TERN_FAKE_DIR/new-out"; else printf '{"block":99}'; fi; fi
+     # What the tern-awui plugin does with an opened request file: the tree it leaves behind.
+     if [ "$1" = open ] && [ -f "$TERN_FAKE_DIR/open-tree.json" ]; then cp "$TERN_FAKE_DIR/open-tree.json" "$TERN_FAKE_DIR/tree.json"; printf 'tern open: cannot open in a file block\\n' >&2; exit 1; fi
      if [ -f "$TERN_FAKE_DIR/exit" ]; then exit "$(cat "$TERN_FAKE_DIR/exit")"; fi ;;
 esac
 `);
