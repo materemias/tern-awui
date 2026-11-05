@@ -117,7 +117,9 @@ export type ChatEntry =
   /** omp rules injected mid-turn; `text` is the rule body, "" when the transcript has only the name. */
   | { role: "rule"; rules: { name: string; text: string }[]; ts: number }
   /** omp's idle recap, merged in by time (see lib/recaps.ts). */
-  | { role: "recap"; text: string; ts: number };
+  | { role: "recap"; text: string; ts: number }
+  /** omp's cache-miss marker: `tokens` of prompt sent again in full (see lib/transcript.ts). */
+  | { role: "cacheMiss"; tokens: number; ts: number };
 export type AdvisorNote = { advisor: string; severity: string; note: string };
 export type Img = { src: string };
 /** `imageSources`: a markdown file's local images (relative to it or absolute) as `/api/blob/…` URLs. */

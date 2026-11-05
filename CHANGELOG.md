@@ -11,6 +11,7 @@
 - A static demo of the app with sample sessions runs in any browser without Tern or omp (`bun run build:demo`, deployed to GitHub Pages).
 - The session wheel opens on the session you're in, with a short buzz, so a quick swipe moves to the next or previous session and a turn up or down picks from there.
 - Park a session or shell from its header to put it away in Tern with its program still running. Parked panes leave the list, except while they wait on you or have news you haven't seen, and show in a new **Parked** tab of the **+ omp** sheet, where a tap brings one back into a tab of its own and opens it. Files and notes have no Park button. Needs the tern-awui Tern plugin: run `bun install.ts` again.
+- The chat marks omp's cache misses like Tern does, `Cache miss · 124k tokens` above the reply that sent its whole prompt again.
 
 ### Fixes
 

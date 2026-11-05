@@ -179,6 +179,9 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .chat-recap-mark { flex: none; font-style: normal; color: var(--accent); opacity: .8; }
 .chat-recap .md { min-width: 0; }
 .chat-recap .md p { margin: 0; }
+/* omp's cache-miss marker: a quiet mono line over the reply that resent its prompt. */
+.cache-miss { display: flex; gap: 6px; align-items: center; margin: 2px 0 8px; font: 12px var(--mono); color: var(--muted); }
+.cache-miss svg { flex: none; width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.3; }
 /* Body text a step below white so bold reads as emphasis; hyphenation follows each message's lang. */
 .msg.md { font-size: 14.5px; line-height: 1.62; color: #cfd3da; hyphens: auto; -webkit-hyphens: auto; }
 .md strong, .md b { color: var(--fg); font-weight: 600; }

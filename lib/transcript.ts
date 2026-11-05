@@ -38,7 +38,9 @@ export type ChatEntry =
   /** omp rules injected mid-turn (TTSR); `text` is the rule body when omp wrote it to the transcript, else "". */
   | { role: "rule"; rules: InjectedRule[]; ts: number }
   /** omp's idle recap of the session (history.db), merged in by time; see lib/recaps.ts. */
-  | { role: "recap"; text: string; ts: number };
+  | { role: "recap"; text: string; ts: number }
+  /** omp's cache-miss marker: the reply's prompt cache was rebuilt, `tokens` of prompt sent again in full. */
+  | { role: "cacheMiss"; tokens: number; ts: number };
 export type AskEntry = { role: "ask"; id: string; questions: AskQuestion[]; answer: string | null; ts: number };
 /** A note from omp's advisor model: `Key:`/`Evidence:`/`Impact:`/`Fix:` lines. */
 export type AdvisorNote = { advisor: string; severity: string; note: string };
@@ -57,6 +59,17 @@ function noteRules(entries: ChatEntry[], rules: InjectedRule[], ts: number): voi
     if (!known) entry.rules.push(rule);
     else if (!known.text) known.text = rule.text;
   }
+}
+
+type Usage = { input: number; cacheRead: number; cacheWrite: number };
+/** omp's threshold (tui/src/chat/cache-invalidation-marker.ts) for both the earlier read and the rewrite. */
+const CACHE_MIN_TOKENS = 2048;
+
+/** omp's cache-miss rule: the cache read before was rebuilt now; the tokens sent again, else null. */
+function cacheMiss(prev: Usage | null, now: Usage): number | null {
+  if (!prev || prev.cacheRead < CACHE_MIN_TOKENS || now.cacheRead > 0 || now.cacheWrite <= 0) return null;
+  const tokens = now.cacheWrite + now.input;
+  return tokens < CACHE_MIN_TOKENS ? null : tokens;
 }
 
 // `title` is eval's intent; `code` (its first line) only when a call carries nothing better.
@@ -324,6 +337,9 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
   for (; parentOf.has(id) && !active.has(id); id = parentOf.get(id) ?? "") active.add(id);
   // A turn runs from a user prompt to the assistant message that stops without calling tools.
   let turnStart: number | null = null;
+  // Every cache miss, as Tern marks them live: omp's reload hides the ones after a compaction, a
+  // model switch or a plan-mode toggle, but those still resend the whole prompt.
+  let lastUsage: Usage | null = null;
   for (const row of rows) {
     const advisor = row.type === "custom_message" && row.customType === "advisor";
     const injection = row.type === "ttsr_injection";
@@ -360,6 +376,11 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
       if (text || images.length) entries.push({ role: "user", id: str(row.id), text, images, ts });
       turnStart = ts;
     } else if (msg.role === "assistant") {
+      const u = obj(msg.usage);
+      const usage = { input: num(u.input), cacheRead: num(u.cacheRead), cacheWrite: num(u.cacheWrite) };
+      const missed = cacheMiss(lastUsage, usage);
+      if (missed) entries.push({ role: "cacheMiss", tokens: missed, ts });
+      if (usage.input + usage.cacheRead + usage.cacheWrite > 0) lastUsage = usage;
       for (const [index, part] of arr(msg.content).map(obj).entries()) {
         const text = str(part.text);
         if (part.type === "text" && text.trim()) {

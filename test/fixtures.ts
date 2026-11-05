@@ -34,8 +34,8 @@ export class Transcript {
     return this.entry({ type: "message", message: { role: "user", content: parts, timestamp: T0 + at } }, at, parent);
   }
 
-  assistant(parts: Part[], at: number, opts: { stop?: string; model?: string; parent?: string } = {}): string {
-    const message = { role: "assistant", content: parts, model: opts.model ?? "claude-test", stopReason: opts.stop ?? "stop", timestamp: T0 + at };
+  assistant(parts: Part[], at: number, opts: { stop?: string; model?: string; parent?: string; usage?: Row } = {}): string {
+    const message = { role: "assistant", content: parts, model: opts.model ?? "claude-test", stopReason: opts.stop ?? "stop", timestamp: T0 + at, ...(opts.usage && { usage: opts.usage }) };
     return this.entry({ type: "message", message }, at, opts.parent);
   }
 
@@ -63,6 +63,11 @@ export class Transcript {
 
   custom(at: number): string {
     return this.entry({ type: "custom", customType: "plannotator", data: { phase: "idle" } }, at);
+  }
+
+  /** A session event row such as `compaction`, `model_change` or `mode_change`. */
+  event(fields: Row, at: number): string {
+    return this.entry(fields, at);
   }
 
   lines(): string[] {

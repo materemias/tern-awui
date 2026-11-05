@@ -226,6 +226,58 @@ describe("parseChat turns", () => {
   });
 });
 
+describe("parseChat cache misses", () => {
+  const warm = { input: 2, cacheRead: 50_000, cacheWrite: 300 };
+  const cold = { input: 4, cacheRead: 0, cacheWrite: 124_000 };
+  const reply = (t: Transcript, at: number, usage: Record<string, number>) => t.assistant([text(`r${at}`)], at, { usage });
+
+  test("a reply that rewrote the cache after one that read it is marked above it, with the resent tokens", () => {
+    const t = new Transcript();
+    t.user("one", 0);
+    reply(t, 10, warm);
+    t.user("whats new", 20);
+    reply(t, 30, cold);
+    const entries = parseChat(t.lines(), "", 80).entries;
+    expect(roles(entries)).toEqual(["user", "assistant", "turn", "user", "cacheMiss", "assistant", "turn"]);
+    expect(only(entries, "cacheMiss")[0]).toEqual({ role: "cacheMiss", tokens: 124_004, ts: T0 + 30 });
+  });
+
+  test("no mark for a first reply, a small previous read, any read now, or a small rewrite", () => {
+    const cases = [
+      [cold],
+      [{ ...warm, cacheRead: 2047 }, cold],
+      [warm, { ...cold, cacheRead: 1 }],
+      [warm, { input: 1000, cacheRead: 0, cacheWrite: 1000 }],
+      [warm, { input: 90_000, cacheRead: 0, cacheWrite: 0 }],
+    ];
+    for (const usages of cases) {
+      const t = new Transcript();
+      t.user("q", 0);
+      usages.forEach((u, i) => reply(t, 10 + i, u));
+      expect(only(parseChat(t.lines(), "", 80).entries, "cacheMiss")).toEqual([]);
+    }
+  });
+
+  test("a reply without usage (aborted) keeps the earlier read as the baseline", () => {
+    const t = new Transcript();
+    t.user("q", 0);
+    reply(t, 10, warm);
+    reply(t, 20, { input: 0, cacheRead: 0, cacheWrite: 0 });
+    reply(t, 30, cold);
+    expect(only(parseChat(t.lines(), "", 80).entries, "cacheMiss").map((e) => e.ts)).toEqual([T0 + 30]);
+  });
+
+  test("a miss right after a compaction is still marked, as Tern shows it live", () => {
+    const t = new Transcript();
+    t.user("q", 0);
+    reply(t, 10, warm);
+    t.event({ type: "compaction", summary: "s" }, 15);
+    t.user("whats new", 20);
+    reply(t, 30, cold);
+    expect(only(parseChat(t.lines(), "", 80).entries, "cacheMiss").map((e) => e.ts)).toEqual([T0 + 30]);
+  });
+});
+
 describe("parseChat tool groups", () => {
   test("consecutive calls share a group; text between them starts a new one", () => {
     const t = new Transcript();

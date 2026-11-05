@@ -5,7 +5,7 @@ import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } fro
 import type { Mermaid } from "mermaid";
 import { drawCharts } from "./charts";
 import { post, type AdvisorNote, type Ask, type ChatEntry, type Img, type TodoPhase, type ToolCall } from "./api";
-import { askAnswers, askReady, clock, duration, langOf, parseAdvisorNote, prettyModel, type AskPick } from "./lib";
+import { askAnswers, askReady, clock, duration, langOf, parseAdvisorNote, prettyModel, tokensShort, type AskPick } from "./lib";
 import { renderMarkdown } from "./markdown";
 import { highlightFences } from "./highlight";
 import { buzz, CopyButton, Thumbs, Todo, UserMsg } from "./parts";
@@ -543,6 +543,16 @@ export function Chat({ entries, block, rewind, readOnly = false }: { entries: Ch
             <div key={n} class="chat-recap" title={`omp's recap · ${clock(e.ts)}`}>
               <span class="chat-recap-mark">※</span>
               <Markdown class="md" text={e.text} />
+            </div>
+          );
+        if (e.role === "cacheMiss")
+          return (
+            <div key={n} class="cache-miss" title={`Prompt cache rebuilt · ${clock(e.ts)}`}>
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <ellipse cx="8" cy="3.5" rx="5.5" ry="2" />
+                <path d="M2.5 3.5v9c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2v-9M2.5 8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2" />
+              </svg>
+              Cache miss · {tokensShort(e.tokens)} tokens
             </div>
           );
         if (e.role === "tools")
