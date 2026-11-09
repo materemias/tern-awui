@@ -428,6 +428,26 @@ describe("ask cards", () => {
     expect(buzzes).toEqual([]);
   });
 
+  test("an answer omp doesn't take within 10 s says so and unlocks the card to send again", async () => {
+    // Run the card's 10 s wait at once; shorter timers keep their delay.
+    const realTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = ((fn: () => void, ms?: number) => realTimeout(fn, ms === 10_000 ? 0 : ms)) as typeof setTimeout;
+    try {
+      await show([ask(FULL)]);
+      await click(button("Send answer"));
+      expect(root.querySelector(".ask.sent")).not.toBeNull();
+      await act(() => sleep(20));
+      expect(root.querySelector(".ask .err")!.textContent).toStartWith("omp hasn't taken the answer.");
+      expect(root.querySelector(".ask.sent")).toBeNull();
+      expect(root.querySelector<HTMLFieldSetElement>(".ask-form")!.disabled).toBe(false);
+      await click(button("Send answer"));
+      expect(answers()).toHaveLength(2);
+      expect(root.querySelector(".ask .err")).toBeNull();
+    } finally {
+      globalThis.setTimeout = realTimeout;
+    }
+  });
+
   test("answered asks show omp's answer lines; one followed by talk shows its question went unanswered", async () => {
     await show([ask(DB, "Which DB?: SQLite"), { ...ask(FULL), id: "a2" }, user("never mind")]);
     expect(texts(".ask.done .ask-answer")).toEqual(["Which DB?: SQLite", "not answered"]);

@@ -396,6 +396,12 @@ function groupInputs(form: HTMLFormElement, name: string): HTMLInputElement[] {
 }
 
 /**
+ * How long a sent answer waits for omp's result before the card says omp didn't take it. omp
+ * writes the result the moment its form closes; the transcript reaches the phone within seconds.
+ */
+const ANSWER_TAKEN_MS = 10_000;
+
+/**
  * An open ask: omp's HTML form with the phone's own controls, plus the "Other" text omp gives a
  * radio or checkbox group. A form that is one radio group sends on the first tap.
  */
@@ -406,6 +412,8 @@ function AskCard({ ask, block, pending }: { ask: Ask; block: string; pending: bo
   const submitted = useRef(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Sent, but no result came: omp's own checks (`minlength`, a field the desktop emptied) refused it.
+  const [refused, setRefused] = useState(false);
   const open = ask.answer === null && pending;
   const named = ask.fields.filter((f) => f.name);
   const lone = named.length === 1 ? named[0] : undefined;
@@ -435,6 +443,16 @@ function AskCard({ ask, block, pending }: { ask: Ask; block: string; pending: bo
       (last.closest("label") ?? last).after(other);
     }
   }, [ask.id, open]);
+
+  useEffect(() => {
+    if (!sent || !open) return;
+    const timer = setTimeout(() => {
+      submitted.current = false;
+      setSent(false);
+      setRefused(true);
+    }, ANSWER_TAKEN_MS);
+    return () => clearTimeout(timer);
+  }, [sent, open]);
 
   if (!open) {
     return (
@@ -467,6 +485,7 @@ function AskCard({ ask, block, pending }: { ask: Ask; block: string; pending: bo
     submitted.current = true;
     // Read before the fieldset locks: a disabled fieldset's controls aren't in FormData.
     const answer = { id: ask.id, ...formAnswer(form, ask.fields) };
+    setRefused(false);
     setSending(true);
     const err = await post(`/api/blocks/${block}/answer`, answer);
     setSending(false);
@@ -521,6 +540,9 @@ function AskCard({ ask, block, pending }: { ask: Ask; block: string; pending: bo
         {formBody}
       </fieldset>
       {error && <div class="err small">{error}</div>}
+      {refused && (
+        <div class="err small">omp hasn't taken the answer. Its form may show an error in the Tern pane: fix it there, or change the answer here and send again.</div>
+      )}
       {sent ? (
         <div class="muted small">Sent, waiting for omp…</div>
       ) : (
