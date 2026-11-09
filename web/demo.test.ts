@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import type { ChatEntry, Run, State } from "./api";
 import { DemoServer, demoEventSource, type Clock } from "./demo-backend";
 import { isOld } from "./lib";
+import { ASK_FORM } from "./demo-fixtures";
+import { parseAskForm } from "../lib/ask-form";
 
 /** A clock the test moves by hand: timers run in time order as `advance` passes them. */
 class ManualClock implements Clock {
@@ -92,12 +94,16 @@ describe("demo backend", () => {
     const clock = new ManualClock();
     const server = new DemoServer(clock);
     const { last } = open(server, clock, "12");
-    expect(await (await post(server, "/api/blocks/12/answer", { id: "ask-12", answers: [{ option: 1, picks: [] }] })).json()).toEqual({ ok: true });
-    expect(last("chat").entries.find((e) => e.role === "ask")).toMatchObject({ answer: "Hand-rolled" });
+    expect(await (await post(server, "/api/blocks/12/answer", { id: "ask-12", values: { push: "hand-rolled" }, other: {} })).json()).toEqual({ ok: true });
+    expect(last("chat").entries.find((e) => e.role === "ask")).toMatchObject({ answer: "Which push library should the server use?: Hand-rolled" });
     clock.advance(60_000);
     expect(last("chat").entries.findLast((e) => e.role === "assistant")).toMatchObject({ text: expect.stringContaining("Hand-rolled") });
     // A second answer finds no open question.
-    expect((await post(server, "/api/blocks/12/answer", { id: "ask-12", answers: [{ option: 0, picks: [] }] })).status).toBe(409);
+    expect((await post(server, "/api/blocks/12/answer", { id: "ask-12", values: { push: "skip" }, other: {} })).status).toBe(409);
+  });
+
+  test("the demo's ask fields are what the server parses from its form", () => {
+    expect(parseAskForm(ASK_FORM.html)).toEqual(ASK_FORM.fields);
   });
 
   test("a prompt waits for the open ask to be answered; images aren't taken", async () => {

@@ -69,7 +69,7 @@ try {
   await textarea.pressSequentially(DRAFT_WEB, { delay: 45 });
   await sleep(400);
   await click(pages.web.getByRole("button", { name: "Send", exact: true }));
-  await pages.web.locator(".ask .opt").first().waitFor({ timeout: 8000 });
+  await pages.web.locator(".ask label").first().waitFor({ timeout: 8000 });
   await sleep(1400);
 
   // On the phone: the session waits for an answer.
@@ -77,7 +77,7 @@ try {
   await cut("phone");
   await sleep(900);
   await tap(row(pages.phone));
-  const option = pages.phone.locator(".ask .opt").filter({ hasText: WHERE.options[0] }).first();
+  const option = pages.phone.locator(".ask label").filter({ hasText: WHERE.options[0] }).first();
   await option.waitFor();
   caption("On your phone", "One tap answers.");
   await sleep(1500);

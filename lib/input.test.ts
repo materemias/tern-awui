@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { answerSteps, KEYS, MAX_IMAGE_CHARS, MAX_PROMPT_IMAGES, promptImages, type Step } from "./input";
-import type { AskEntry, AskQuestion } from "./transcript";
+import { parseAskForm } from "./ask-form";
+import type { AskEntry } from "./transcript";
 
 describe("promptImages", () => {
   const png = { data: "iVBORw0KGgo=", mimeType: "image/png" };
@@ -33,85 +34,91 @@ describe("promptImages", () => {
 });
 
 describe("answerSteps", () => {
-  const q = (options: number, multi = false): AskQuestion => ({
-    question: "?",
-    multi,
-    recommended: 0,
-    options: Array.from({ length: options }, (_, i) => ({ label: `o${i}`, description: "" })),
-  });
-  const ask = (...questions: AskQuestion[]): AskEntry => ({ role: "ask", id: "ask1", questions, answer: null, ts: 0 });
-  const steps = (a: AskEntry, answers: unknown[]) => answerSteps(a, { id: "ask1", answers }) as Step[];
-  const up = (n: number) => Array(n).fill("Up");
-  const down = (n: number) => Array(n).fill("Down");
+  const ask = (html: string): AskEntry => ({ role: "ask", id: "ask1", html, fields: parseAskForm(html), question: "", answer: null, ts: 0 });
+  const steps = (a: AskEntry, values: Record<string, unknown>, other: Record<string, string> = {}) => answerSteps(a, { id: "ask1", values, other });
+  const n = (key: string, times: number) => Array(times).fill(key);
+  const radios = ask(`<fieldset><legend>Store</legend>
+    <label><input type="radio" name="store" value="sqlite" checked> SQLite</label>
+    <label><input type="radio" name="store" value="redis"> Redis</label>
+    <label><input type="radio" name="store" value="pg"> Postgres</label></fieldset>`);
+  // The reset every answer starts with: Up ends the draft guard, Shift+Tab per field (plus one) reaches the first.
+  const top = (fields: number) => ["Up", ...n("shift+Tab", fields + 1)];
 
-  test("refuses a missing, answered or different ask", () => {
-    expect(answerSteps(undefined, { id: "ask1", answers: [{ option: 0 }] })).toBe("this question is no longer open");
-    expect(answerSteps({ ...ask(q(2)), answer: "done" }, { id: "ask1", answers: [{ option: 0 }] })).toBe("this question is no longer open");
-    expect(answerSteps(ask(q(2)), { id: "other", answers: [{ option: 0 }] })).toBe("this question is no longer open");
-  });
-
-  test("needs one answer per question", () => {
-    expect(answerSteps(ask(q(2), q(2)), { id: "ask1", answers: [{ option: 0 }] })).toBe("answer every question");
-    expect(answerSteps(ask(q(2)), { id: "ask1" })).toBe("answer every question");
+  test("refuses a missing, answered or different ask, and a body with no values", () => {
+    expect(answerSteps(undefined, { id: "ask1", values: {} })).toBe("this question is no longer open");
+    expect(answerSteps({ ...radios, answer: "done" }, { id: "ask1", values: {} })).toBe("this question is no longer open");
+    expect(answerSteps(radios, { id: "other", values: {} })).toBe("this question is no longer open");
+    // Without values it would submit the model's own picks as if the phone had chosen them.
+    expect(answerSteps(radios, { id: "ask1" })).toBe("no answer given");
+    expect(answerSteps(ask(`<label><input type="checkbox" name="x" value="a"> A</label>`), { id: "ask1", values: { x: "a" } })).toBe("x takes a list");
   });
 
-  test("names the first question without a valid answer", () => {
-    const a = ask(q(2), q(3), q(2, true));
-    expect(answerSteps(a, { id: "ask1", answers: [{ option: 0 }, { option: 3 }, { picks: [] }] })).toBe("question 2 has no valid answer");
-    expect(answerSteps(a, { id: "ask1", answers: [{ option: -1 }, { option: 0 }, { picks: [] }] })).toBe("question 1 has no valid answer");
-    expect(answerSteps(a, { id: "ask1", answers: [{ option: "1" }, { option: 0 }, { picks: [] }] })).toBe("question 1 has no valid answer");
-    expect(answerSteps(a, { id: "ask1", answers: [{ option: 0 }, { option: 0 }, { picks: 1 }] })).toBe("question 3 has no valid answer");
-    // Typed text answers any question, even without an option.
-    expect(answerSteps(a, { id: "ask1", answers: [{ other: "mine" }, { option: 2 }, { other: "x" }] })).toBeArray();
-    expect(answerSteps(a, { id: "ask1", answers: [{ other: "   " }, { option: 0 }, { picks: [] }] })).toBe("question 1 has no valid answer");
+  test("a radio: Down to its row, Space, then Tab to Submit and Enter, the preselected one too", () => {
+    expect(steps(radios, { store: "pg" })).toEqual([{ keys: [...top(1), ...n("Down", 2), "space", "Tab", "Enter"] }]);
+    // The desktop may have picked another one meanwhile: Space sets the phone's pick regardless.
+    expect(steps(radios, { store: "sqlite" })).toEqual([{ keys: [...top(1), "space", "Tab", "Enter"] }]);
   });
 
-  test("fractional option indices cannot select a different answer", () => {
-    for (const option of [0.5, 1.5, NaN, Infinity])
-      expect(answerSteps(ask(q(3)), { id: "ask1", answers: [{ option }] })).toBe("question 1 has no valid answer");
-    expect(steps(ask(q(3, true)), [{ picks: [0.5, 1.5, 2] }])).toEqual([{ keys: [...up(3), ...down(2), "space", "Enter"] }]);
-  });
-
-  test("a single option: Up to the top whatever the cursor, Down to it, Enter", () => {
-    expect(steps(ask(q(3)), [{ option: 2 }])).toEqual([{ keys: [...up(3), ...down(2), "Enter"] }]);
-    expect(steps(ask(q(3)), [{ option: 0 }])).toEqual([{ keys: [...up(3), "Enter"] }]);
-  });
-
-  test("typed text: to the Other row, Enter, the text, Enter", () => {
-    expect(steps(ask(q(2)), [{ other: "  my own  " }])).toEqual([{ keys: [...up(2), ...down(2), "Enter"] }, { text: "my own" }, { keys: ["Enter"] }]);
-  });
-
-  test("multi picks toggle each row once in order, then Enter", () => {
-    expect(steps(ask(q(4, true)), [{ picks: [3, 1, 3, 9, -1, "2"] }])).toEqual([{ keys: [...up(4), ...down(1), "space", ...down(2), "space", "Enter"] }]);
-    // No picks still resets the cursor before Enter.
-    expect(steps(ask(q(2, true)), [{ picks: [] }])).toEqual([{ keys: [...up(2), "Enter"] }]);
-  });
-
-  test("a lone multi question with typed text ends on Review, which Enter submits", () => {
-    expect(steps(ask(q(3, true)), [{ picks: [1], other: "extra" }])).toEqual([
-      { keys: [...up(3), ...down(1), "space", ...down(2), "Enter"] },
-      { text: "extra" },
-      { keys: ["Enter"] },
-      { keys: ["Enter"] },
+  test("Other's text answers a radio group: past the options to its input, emptied, typed", () => {
+    expect(steps(radios, { store: "redis" }, { store: "  MySQL  " })).toEqual([
+      { keys: [...top(1), ...n("Down", 3), "ctrl+e", "ctrl+u"] },
+      { text: "MySQL" },
+      { keys: ["Tab", "Enter"] },
     ]);
   });
 
-  test("several questions answer in order and finish on the Review tab", () => {
-    expect(steps(ask(q(2), q(2, true), q(1)), [{ option: 1 }, { picks: [0], other: "and this" }, { other: "typed" }])).toEqual([
-      { keys: [...up(2), ...down(1), "Enter"] },
-      { keys: [...up(2), "space", ...down(2), "Enter"] },
-      { text: "and this" },
-      { keys: ["Enter"] },
-      { keys: [...up(1), ...down(1), "Enter"] },
-      { text: "typed" },
-      { keys: ["Enter"] },
-      { keys: ["Enter"] },
+  test("checkboxes toggle only what differs from the form's own checks; Other's text adds to them", () => {
+    const boxes = ask(`<label><input type="checkbox" name="x" value="a" checked> A</label>
+      <label><input type="checkbox" name="x" value="b" disabled> B</label>
+      <label><input type="checkbox" name="x" value="c"> C</label>`);
+    // Disabled rows aren't stops: C is the second row.
+    expect(steps(boxes, { x: ["c"] })).toEqual([{ keys: [...top(1), "space", "Down", "space", "Tab", "Enter"] }]);
+    expect(steps(boxes, { x: ["a"] }, { x: "D" })).toEqual([{ keys: [...top(1), ...n("Down", 2), "ctrl+e", "ctrl+u"] }, { text: "D" }, { keys: ["Tab", "Enter"] }]);
+  });
+
+  test("a dropdown steps Left to its first enabled option, then Right to the pick", () => {
+    const select = ask(`<select name="db"><option>pg<option selected>sqlite<option disabled>oracle<option>mysql</select>`);
+    expect(steps(select, { db: "mysql" })).toEqual([{ keys: [...top(1), ...n("Left", 3), ...n("Right", 2), "Tab", "Enter"] }]);
+    expect(steps(select, { db: "sqlite" })).toEqual([{ keys: [...top(1), ...n("Left", 3), "Right", "Tab", "Enter"] }]);
+    expect(steps(select, { db: "oracle" })).toBe('db has no option "oracle"');
+  });
+
+  test("text replaces the starting value; a textarea is emptied line by line", () => {
+    const form = ask(`<label>Days <input type="number" name="days" value="30"></label>
+      <textarea name="notes">one
+two</textarea>`);
+    expect(steps(form, { days: "7\n", notes: "a\nb" })).toEqual([
+      { keys: [...top(2), "ctrl+e", "ctrl+u"] },
+      { text: "7 " },
+      { keys: ["Tab", "ctrl+e", ...n("ctrl+u", 6), ...n("ctrl+k", 6)] },
+      { text: "a\nb" },
+      { keys: ["Tab", "Enter"] },
     ]);
+    // Unchanged text, or a field left out, is left alone; emptying needs no typing.
+    expect(steps(form, { days: "30" })).toEqual([{ keys: [...top(2), "Tab", "Tab", "Enter"] }]);
+    expect(steps(form, { days: "" })).toEqual([{ keys: [...top(2), "ctrl+e", "ctrl+u", "Tab", "Tab", "Enter"] }]);
+  });
+
+  test("fields walk in document order; hidden inputs, buttons and option-less dropdowns aren't stops", () => {
+    const form = ask(`<input type="hidden" name="h" value="1"><input type="submit"><select name="none"><option disabled>x</select>
+      <label>Name <input name="who"></label>${radios.html}`);
+    expect(steps(form, { who: "Ann", store: "redis" })).toEqual([
+      { keys: [...top(2), "ctrl+e", "ctrl+u"] },
+      { text: "Ann" },
+      { keys: ["Tab", "Down", "space", "Tab", "Enter"] },
+    ]);
+  });
+
+  test("names values the form can't take", () => {
+    expect(steps(radios, { store: ["redis"] })).toBe('store has no option ["redis"]');
+    expect(steps(radios, { store: "nope" })).toBe('store has no option "nope"');
+    expect(steps(ask(`<input name="t">`), { t: 3 })).toBe("t takes text");
   });
 
   test("every key it produces is one /keys accepts", () => {
-    const all = steps(ask(q(5), q(5, true), q(3, true)), [{ option: 4 }, { picks: [0, 2, 4], other: "t" }, { picks: [1] }]);
-    const keys = all.flatMap((s) => ("keys" in s ? s.keys : []));
-    expect(keys.filter((k) => !KEYS[k])).toEqual([]);
+    const form = ask(`${radios.html}<label><input type="checkbox" name="x" value="a"> A</label><label><input type="checkbox" name="x" value="b"> B</label>
+      <select name="s"><option>a<option>b</select><textarea name="t">x</textarea>`);
+    const all = steps(form, { store: "pg", x: ["b"], s: "b", t: "y" }, { x: "z" }) as Step[];
+    expect(all.flatMap((s) => ("keys" in s ? s.keys : [])).filter((k) => !KEYS[k])).toEqual([]);
   });
 });

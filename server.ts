@@ -183,7 +183,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     const ask = kind === "blocked" ? entries.findLast((e) => e.role === "ask") : undefined;
     const said = entries.findLast((e) => e.role === "assistant");
     const detail =
-      ask?.role === "ask" ? ask.questions[0]?.question : said?.role === "assistant" ? said.text.replace(/[*`#_>]/g, "") : "";
+      ask?.role === "ask" ? ask.question : said?.role === "assistant" ? said.text.replace(/[*`#_>]/g, "") : "";
     const body = `${kind === "blocked" ? "Needs you" : "Finished"}${detail ? ` · ${detail.trim().slice(0, 160)}` : ""}`;
     // `badge`: the app icon's count of unseen updates, set by the service worker while the app is closed.
     const payload = JSON.stringify({ title, body, block: pane, badge: unseen.size });

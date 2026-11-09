@@ -65,15 +65,10 @@ export const STEPS = {
       name: "ask",
       input: {
         i: "Choosing the rate limit key",
-        questions: [{
-          id: "key",
-          question: WHERE.question,
-          options: [
-            { label: WHERE.options[0], description: "Fair to every customer" },
-            { label: WHERE.options[1], description: "Also covers anonymous calls" },
-          ],
-          recommended: 0,
-        }],
+        html: `<form><fieldset><legend>${WHERE.question}</legend>
+  <label><input type="radio" name="key" value="api-key" checked> ${WHERE.options[0]}: fair to every customer</label>
+  <label><input type="radio" name="key" value="ip"> ${WHERE.options[1]}: also covers anonymous calls</label>
+</fieldset></form>`,
       },
     },
   },

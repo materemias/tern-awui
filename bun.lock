@@ -6,6 +6,7 @@
       "name": "tern-mobile",
       "dependencies": {
         "dompurify": "^3.4.16",
+        "entities": "^7.0.1",
         "highlight.js": "^11.12.0",
         "marked": "^18.1.0",
         "mermaid": "^12.1.0",

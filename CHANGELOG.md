@@ -18,6 +18,7 @@
 - A sideways swipe low on the screen no longer buzzes on and on: a session wheel that a drifting finger opens no longer steps by itself from the edge it opened at.
 - Resending an image or follow-up prompt after a failed send no longer runs it twice when the first send had gone through. omp sessions need `/restart` to load the updated extension.
 - Opened Markdown files show their embedded images, including ones given relative to the file such as a README's `docs/demo.gif`.
+- Asks work again with omp 18.18.3, whose `ask` tool writes one HTML form instead of a list of questions. Before, such an ask showed as an ordinary tool call, with no card to answer and no question in the "Needs you" notification. The card now shows the form with the phone's own radios, boxes, dropdowns and text fields, plus omp's free-text Other for each choice group. The answer is typed into omp's form dialog on the desktop. A form with just one choice still sends on a tap, including a tap on the preselected option. Asks from an older omp show as tool calls.
 
 ### Docs
 

@@ -2,6 +2,8 @@ import { afterAll, afterEach, beforeEach, describe, expect, mock, spyOn, test, t
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import type { Ask, ChatEntry } from "./api";
 import { Net, settle, sleep, specDom } from "./fakes";
+import { parseAskForm } from "../lib/ask-form";
+import { answerSteps } from "../lib/input";
 
 GlobalRegistrator.register({ url: "http://localhost/" });
 // The sanitizer runs as in a browser, so rendered markdown keeps its figures.
@@ -297,106 +299,125 @@ describe("injected rules", () => {
 });
 
 describe("ask cards", () => {
-  const ask = (questions: Ask["questions"], answer: string | null = null): Ask => ({ role: "ask", id: "a1", questions, answer, ts: TS });
-  const which = { question: "Which DB?", options: [{ label: "Postgres", description: "the usual" }, { label: "SQLite", description: "" }], multi: false, recommended: 1 };
-  const extras = { question: "Extras?", options: [{ label: "Cache", description: "" }, { label: "Logs", description: "" }, { label: "Metrics", description: "" }], multi: true, recommended: -1 };
+  const ask = (html: string, answer: string | null = null): Ask => {
+    const fields = parseAskForm(html);
+    return { role: "ask", id: "a1", html, fields, question: fields[0]?.question ?? "", answer, ts: TS };
+  };
+  const DB = `<fieldset><legend>Which DB?</legend>
+    <label><input type="radio" name="db" value="pg"> Postgres</label>
+    <label><input type="radio" name="db" value="sqlite"> SQLite</label></fieldset>`;
+  const FULL = `<form action="https://evil.example"><script>window.hacked = 1</script>${DB}
+    <label>Days <input type="number" name="action" value="30" required></label>
+    <p>Extras?</p>
+    <label><input type="checkbox" name="x" value="cache" checked> Cache</label>
+    <label><input type="checkbox" name="x" value="logs"> Logs</label>
+    <label for="s">Size</label><select id="s" name="size"><option>s<option selected>m</select>
+    <button>Go</button></form>`;
   const answers = () => net.to("/api/blocks/5/answer");
+  const input = (sel: string) => root.querySelector<HTMLInputElement>(sel)!;
+  const radio = (value: string) => input(`input[type=radio][value="${value}"]`);
+  const type = async (el: HTMLInputElement, value: string) => {
+    el.value = value;
+    await act(() => void el.dispatchEvent(new Event("input", { bubbles: true })));
+  };
 
-  test("one single-choice question sends on the first tap and then locks", async () => {
-    await show([user("go"), ask([which])]);
-    expect(texts(".opt-label")).toEqual(["Postgres", "SQLiterecommended", "Other…"]);
-    expect(button("Send answer")).toBeUndefined();
-    await click(button("SQLite"));
-    expect(answers()).toEqual([{ id: "a1", answers: [{ option: 1, picks: [] }] }]);
+  test("the form shows sanitized: no script, its own form or buttons; names and label targets prefixed", async () => {
+    await show([ask(FULL)]);
+    expect(root.querySelector("script")).toBeNull();
+    expect(root.querySelectorAll("form")).toHaveLength(1);
+    expect(root.querySelector("form")!.getAttribute("action")).toBeNull();
+    expect(button("Go")).toBeUndefined();
+    // A field named like a form property keeps its name, prefixed so it can't shadow one.
+    expect(input("input[type=number]").name).toBe("user-content-action");
+    expect(root.querySelector("label[for]")!.getAttribute("for")).toBe(root.querySelector("select")!.id);
+  });
+
+  test("controls inside a button and button-like inputs go, as omp skips them; id references get the prefix too", async () => {
+    await show([ask(`<button><input name="hidden_in_button"></button><input type="reset"><input type="submit" value="Ship">
+      <p id="hint">Days</p><input name="d" aria-describedby="hint">`)]);
+    expect(root.querySelector("input[name=user-content-hidden_in_button], input[type=reset], input[type=submit]")).toBeNull();
+    expect(input("input[name=user-content-d]").getAttribute("aria-describedby")).toBe(root.querySelector("p")!.id);
+  });
+
+  test("a required box group needs one box or Other's text, not every box", async () => {
+    const boxes = ["lint", "types", "tests"].map((v) => `<label><input type="checkbox" name="checks" value="${v}" required> ${v}</label>`).join("");
+    await show([ask(`<fieldset><legend>Checks</legend>${boxes}</fieldset><input name="note">`)]);
+    await click(button("Send answer"));
+    expect(answers()).toEqual([]);
+    await type(input("input[data-other=checks]"), "fmt");
+    await click(input("input[value=types]"));
+    await click(button("Send answer"));
+    expect(answers()).toEqual([{ id: "a1", values: { checks: ["types"], note: "" }, other: { checks: "fmt" } }]);
+  });
+
+  test("a form that is one radio group sends on the first tap and then locks", async () => {
+    await show([user("go"), ask(DB)]);
+    await click(radio("sqlite"));
+    expect(answers()).toEqual([{ id: "a1", values: { db: "sqlite" }, other: {} }]);
     expect(root.querySelector(".ask.sent")).not.toBeNull();
     expect(root.textContent).toContain("Sent, waiting for omp…");
-    expect([...root.querySelectorAll<HTMLButtonElement>(".opt")].every((b) => b.disabled)).toBe(true);
+    expect(root.querySelector<HTMLFieldSetElement>(".ask-form")!.disabled).toBe(true);
     expect(buzzes).toEqual([12]);
   });
 
-  test("Other… opens a text answer that sends on Enter only once typed", async () => {
-    await show([ask([which])]);
-    await click(button("Other…"));
-    const send = button("Send answer")!;
-    expect(send.disabled).toBe(true);
-    const input = root.querySelector<HTMLInputElement>(".other-input")!;
-    await act(() => void input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
-    expect(answers()).toEqual([]);
-    input.value = "  MySQL ";
-    await act(() => void input.dispatchEvent(new Event("input", { bubbles: true })));
-    expect(button("Send answer")!.disabled).toBe(false);
-    await act(async () => {
-      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-      await settle();
-    });
-    expect(answers()).toEqual([{ id: "a1", answers: [{ other: "MySQL", picks: [] }] }]);
+  test("tapping the option the model preselected sends it too", async () => {
+    await show([ask(DB.replace('value="pg"', 'value="pg" checked'))]);
+    await click(radio("pg"));
+    expect(answers()).toEqual([{ id: "a1", values: { db: "pg" }, other: {} }]);
   });
 
-  test("Other answers submit once while pending and after success, but can retry a refusal", async () => {
+  test("an option value written with an HTML entity posts as the browser decodes it, and the server takes it", async () => {
+    const entry = ask(`<label><input type="radio" name="drink" value="caf&eacute;"> Caf&eacute;</label><label><input type="radio" name="drink" value="tea"> Tea</label>`);
+    await show([entry]);
+    await click(radio("café"));
+    const [body] = answers() as Record<string, unknown>[];
+    expect(body).toEqual({ id: "a1", values: { drink: "café" }, other: {} });
+    expect(answerSteps(entry, body)).toBeArray();
+  });
+
+  test("a radio group's Other text replaces its pick; emptied, the form's own pick is back", async () => {
+    await show([ask(DB.replace('value="pg"', 'value="pg" checked'))]);
+    const other = input("input[data-other=db]");
+    expect(other.getAttribute("aria-label")).toBe("Which DB?: other");
+    await type(other, "  MySQL ");
+    expect(radio("pg").checked).toBe(false);
+    await type(other, "");
+    expect(radio("pg").checked).toBe(true);
+    await type(other, "  MySQL ");
+    await click(button("Send answer"));
+    expect(answers()).toEqual([{ id: "a1", values: {}, other: { db: "MySQL" } }]);
+  });
+
+  test("Send carries every field: text, boxes (even none), the dropdown, and Other for boxes", async () => {
+    await show([ask(FULL)]);
+    await type(input("input[data-other=db]"), "zzz");
+    // A picked radio drops its group's Other text.
+    await click(radio("pg"));
+    expect(input("input[data-other=db]").value).toBe("");
+    // Several fields: a tap never sends by itself.
+    expect(answers()).toEqual([]);
+    await type(input("input[type=number]"), "7");
+    await click(input("input[value=cache]"));
+    await type(input("input[data-other=x]"), "metrics");
+    await click(button("Send answer"));
+    expect(answers()).toEqual([{ id: "a1", values: { db: "pg", action: "7", x: [], size: "m" }, other: { x: "metrics" } }]);
+  });
+
+  test("required fields hold the answer back until filled", async () => {
+    await show([ask(FULL)]);
+    await type(input("input[type=number]"), "");
+    await click(button("Send answer"));
+    expect(answers()).toEqual([]);
+  });
+
+  test("Sending… while in flight, once; a refusal shows and leaves the card answerable", async () => {
     const held = Promise.withResolvers<Response>();
     net.reply = () => held.promise;
-    await show([ask([which])]);
-    await click(button("Other…"));
-    const input = root.querySelector<HTMLInputElement>(".other-input")!;
-    input.value = "MySQL";
-    await act(() => void input.dispatchEvent(new Event("input", { bubbles: true })));
-    const enter = () => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    await act(() => {
-      enter();
-      enter();
-    });
+    await show([ask(FULL)]);
+    await click(button("Send answer"));
+    await click(button("Sending…"));
     expect(answers()).toHaveLength(1);
-    expect(input.disabled).toBe(true);
-    await act(async () => {
-      held.resolve(Response.json({ error: "try again" }, { status: 409 }));
-      await settle();
-    });
-    expect(input.disabled).toBe(false);
-    net.reply = () => Response.json({ ok: true });
-    await act(async () => {
-      enter();
-      enter();
-      await settle();
-    });
-    expect(answers()).toHaveLength(2);
-    expect(input.disabled).toBe(true);
-    await act(() => void enter());
-    expect(answers()).toHaveLength(2);
-    expect(buzzes).toEqual([12]);
-  });
-
-  test("picking an option closes Other again", async () => {
-    await show([ask([which, extras])]);
-    await click(button("Other…"));
-    expect(root.querySelector(".other-input")).not.toBeNull();
-    await click(button("Postgres"));
-    expect(root.querySelector(".other-input")).toBeNull();
-    expect(root.querySelector(".opt.on")!.textContent).toContain("Postgres");
-    expect(answers()).toEqual([]);
-  });
-
-  test("several questions: boxes toggle, Send waits until every single choice is made", async () => {
-    await show([ask([which, extras])]);
-    expect(texts(".muted.small")).toContain("Pick any");
-    expect(button("Send answer")!.disabled).toBe(true);
-    await click(button("Cache"));
-    await click(button("Metrics"));
-    await click(button("Cache"));
-    expect(button("Send answer")!.disabled).toBe(true);
-    await click(button("Postgres"));
-    // Picking in a multi-question card never sends by itself.
-    expect(answers()).toEqual([]);
-    await click(button("Send answer"));
-    expect(answers()).toEqual([{ id: "a1", answers: [{ option: 0, picks: [] }, { option: null, picks: [2] }] }]);
-  });
-
-  test("Sending… while the answer is in flight; a refusal shows and leaves the card answerable", async () => {
-    const held = Promise.withResolvers<Response>();
-    net.reply = () => held.promise;
-    await show([ask([which, extras])]);
-    await click(button("Postgres"));
-    await click(button("Send answer"));
-    expect(button("Sending…")!.disabled).toBe(true);
+    expect(root.querySelector<HTMLFieldSetElement>(".ask-form")!.disabled).toBe(true);
     await act(async () => {
       held.resolve(Response.json({ error: "ask expired" }, { status: 409 }));
       await settle();
@@ -407,10 +428,11 @@ describe("ask cards", () => {
     expect(buzzes).toEqual([]);
   });
 
-  test("answered asks show the answer; one followed by talk shows it went unanswered", async () => {
-    await show([ask([which], "SQLite"), { ...ask([extras]), id: "a2" }, user("never mind")]);
-    expect(texts(".ask.done .ask-answer")).toEqual(["SQLite", "not answered"]);
-    expect(root.querySelector(".opt")).toBeNull();
+  test("answered asks show omp's answer lines; one followed by talk shows its question went unanswered", async () => {
+    await show([ask(DB, "Which DB?: SQLite"), { ...ask(FULL), id: "a2" }, user("never mind")]);
+    expect(texts(".ask.done .ask-answer")).toEqual(["Which DB?: SQLite", "not answered"]);
+    expect(texts(".ask.done .ask-q")).toEqual(["Which DB?"]);
+    expect(root.querySelector("input")).toBeNull();
   });
 });
 

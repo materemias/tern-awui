@@ -127,7 +127,7 @@ try {
 
   // The waiting session: its ask, answered with one tap.
   await tap(row("Fix checkout tax"));
-  const option = phone.locator(".ask .opt").filter({ hasText: "Once per order" }).first();
+  const option = phone.locator(".ask label").filter({ hasText: "Once per order" }).first();
   await option.waitFor();
   caption("One tap", "Answer it from anywhere.");
   await sleep(1600);

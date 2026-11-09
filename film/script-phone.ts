@@ -76,15 +76,10 @@ export const SESSIONS: Session[] = [
           name: "ask",
           input: {
             i: "Choosing where to round",
-            questions: [{
-              id: "round",
-              question: "Where should tax be rounded?",
-              options: [
-                { label: "Once per order", description: "Matches the receipt" },
-                { label: "Per line", description: "Matches each item's price" },
-              ],
-              recommended: 0,
-            }],
+            html: `<form><fieldset><legend>Where should tax be rounded?</legend>
+  <label><input type="radio" name="round" value="order" checked> Once per order: matches the receipt</label>
+  <label><input type="radio" name="round" value="line"> Per line: matches each item's price</label>
+</fieldset></form>`,
           },
         },
       },

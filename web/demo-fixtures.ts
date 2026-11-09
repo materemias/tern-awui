@@ -1,6 +1,6 @@
 // The demo's sample sessions (see demo-backend.ts): three projects with omp sessions in every state
 // and a plain shell. Times are relative to `now`, so the list reads "2m ago" whenever it is opened.
-import type { Agent, AskQuestion, ChatEntry, Item, Job, Live, Role, Subagent } from "./api";
+import type { Agent, Ask, ChatEntry, Item, Job, Live, Role, Subagent } from "./api";
 
 export type DemoSession = {
   item: Item;
@@ -81,19 +81,35 @@ const MIN = 60_000;
 /** A day in the minutes `t()` takes. */
 const DAY = 24 * 60;
 
-/** The ask the blocked session waits on. */
-export const ASK_QUESTIONS: AskQuestion[] = [
-  {
-    question: "Which push library should the server use?",
-    options: [
-      { label: "web-push", description: "Mature, VAPID built in; one small dependency." },
-      { label: "Hand-rolled", description: "No dependency, but the payload encryption is ours to get right." },
-      { label: "Skip push for now", description: "Ship the rest; the badge still counts unseen sessions." },
-    ],
-    multi: false,
-    recommended: 0,
-  },
+/** The ask the blocked session waits on: omp's form, and its fields as the server parses them. */
+const PUSH_OPTIONS = [
+  { value: "web-push", label: "web-push", note: "mature, VAPID built in; one small dependency." },
+  { value: "hand-rolled", label: "Hand-rolled", note: "no dependency, but the payload encryption is ours to get right." },
+  { value: "skip", label: "Skip push for now", note: "ship the rest; the badge still counts unseen sessions." },
 ];
+export const ASK_FORM: Pick<Ask, "html" | "fields" | "question"> = {
+  html: `<form>
+  <ul>
+${PUSH_OPTIONS.map((o) => `    <li><b>${o.label}</b>: ${o.note}</li>`).join("\n")}
+  </ul>
+  <fieldset>
+    <legend>Which push library should the server use?</legend>
+${PUSH_OPTIONS.map((o, i) => `    <label><input type="radio" name="push" value="${o.value}"${i === 0 ? " checked" : ""}> ${o.label}</label>`).join("\n")}
+  </fieldset>
+</form>`,
+  fields: [
+    {
+      kind: "choice",
+      name: "push",
+      question: "Which push library should the server use?",
+      multi: false,
+      select: false,
+      other: true,
+      options: PUSH_OPTIONS.map((o, i) => ({ value: o.value, label: o.label, checked: i === 0, disabled: false })),
+    },
+  ],
+  question: "Which push library should the server use?",
+};
 
 const DRIVER_TABLE = `Here's how the three SQLite drivers compare for the API server:
 
@@ -182,7 +198,7 @@ export function demoSessions(now: number): DemoSession[] {
       chat: [
         user("u12a", "notify my phone when a session finishes", t(9)),
         tools(t(8), ["read", "Reading server.ts"], ["web_search", "Web Push and VAPID on iOS Safari"], ["read", "Reading web/sw.js"]),
-        { role: "ask", id: "ask-12", questions: ASK_QUESTIONS, answer: null, ts: t(2) },
+        { role: "ask", id: "ask-12", ...ASK_FORM, answer: null, ts: t(2) },
       ],
       screen: "",
       subagents: [],

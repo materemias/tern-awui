@@ -235,21 +235,24 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .ask.done { border-color: var(--line); background: none; gap: 2px; padding: 8px 12px; font-size: 13px; }
 .ask.done .ask-q { font-weight: 500; color: var(--muted); }
 .ask-answer { white-space: pre-wrap; }
-.ask-block { display: flex; flex-direction: column; gap: 6px; }
 .ask-q { font-weight: 600; }
-.opts { display: flex; flex-direction: column; gap: 6px; }
-.opt { display: flex; gap: 10px; align-items: flex-start; text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--raise); }
-.opt.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--raise)); }
-.opt:disabled { opacity: .6; }
-.mark { flex: none; width: 16px; height: 16px; margin-top: 2px; border-radius: 50%; border: 1.5px solid var(--muted); }
-.mark.box { border-radius: 4px; }
-.opt.on .mark { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 45%, transparent 50%); }
-.opt.on .mark.box { background: var(--accent); }
-.opt-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.opt-label { font-weight: 500; }
-.opt-desc { font-size: 12.5px; color: var(--muted); }
-.rec { margin-left: 8px; font-size: 11px; color: var(--accent); }
-.other-input { padding: 9px 12px; border-radius: 10px; border: 1px solid var(--accent); background: var(--bg); color: var(--fg); font: inherit; outline: none; }
+/* omp's form as the model wrote it: option labels become tap rows, inputs take the full width. */
+.ask-form { border: 0; margin: 0; padding: 0; min-width: 0; }
+.ask-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.ask-body fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ask-body legend, .ask-body h1, .ask-body h2, .ask-body h3, .ask-body h4 { font-weight: 600; font-size: inherit; margin: 0 0 2px; padding: 0; }
+.ask-body p, .ask-body ul, .ask-body ol, .ask-body pre { margin: 0; }
+.ask-body pre { overflow-x: auto; font-size: 12.5px; }
+.ask-body img, .ask-body svg { max-width: 100%; height: auto; }
+.ask-body table { border-collapse: collapse; font-size: 13px; display: block; overflow-x: auto; }
+.ask-body th, .ask-body td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; }
+.ask-body label { display: flex; flex-direction: column; gap: 4px; }
+.ask-body label:has(> input[type=radio], > input[type=checkbox]) { flex-direction: row; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--raise); }
+.ask-body label:has(> input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--raise)); }
+.ask-body input[type=radio], .ask-body input[type=checkbox] { flex: none; margin: 2px 0 0; accent-color: var(--accent); width: 16px; height: 16px; }
+.ask-body input:not([type=radio], [type=checkbox]), .ask-body select, .ask-body textarea, .other-input { padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit; min-width: 0; }
+.ask-body :is(input, select, textarea):focus-visible, .other-input:focus-visible { border-color: var(--accent); outline: none; }
+.ask-form:disabled { opacity: .6; }
 .primary { align-self: flex-end; padding: 8px 16px; border-radius: 10px; border: 0; background: var(--accent); color: #0b0d10; font-weight: 600; }
 .primary:disabled { opacity: .45; }
 .working { color: var(--working); font-size: 12px; animation: blink 1.6s ease-in-out infinite; }

@@ -57,3 +57,32 @@ export function renderMarkdown(text: string, imageSources?: Record<string, strin
 export function screenHtml(html: string): string {
   return purify().sanitize(html, { ALLOWED_TAGS: ["pre", "span", "b", "i", "u"], ALLOWED_ATTR: ["style"] });
 }
+
+/** What the sanitizer puts before every `id` and `name` of an ask form (see `askFormHtml`). */
+export const FORM_NAME_PREFIX = "user-content-";
+
+/**
+ * An omp `ask` form as safe HTML: its controls, labels, text, tables, pictures. Its own `<form>`
+ * and styles go, and buttons with everything in them, as omp skips them. Field names are free text
+ * (`action`, `title`), so instead of dropping names that shadow document or form properties,
+ * every `id` and `name` is prefixed, and every attribute that points at an id with it.
+ */
+export function askFormHtml(html: string): DocumentFragment {
+  const clean = purify().sanitize(html, {
+    ALLOWED_URI_REGEXP: SAFE_URI,
+    FORBID_TAGS: ["form", "style"],
+    FORBID_ATTR: ["style", "form", "formaction", "autofocus"],
+    SANITIZE_DOM: false,
+    SANITIZE_NAMED_PROPS: true,
+    RETURN_DOM_FRAGMENT: true,
+  });
+  // Buttons, and inputs that act like one or pick files: omp skips them, and a reset would wipe the picks.
+  const buttonLike = ["submit", "reset", "image", "button", "file"];
+  for (const el of clean.querySelectorAll<HTMLInputElement>("button, input")) if (el.tagName === "BUTTON" || buttonLike.includes(el.type)) el.remove();
+  for (const attr of ["for", "list", "aria-labelledby", "aria-describedby", "aria-controls"]) {
+    for (const el of clean.querySelectorAll(`[${attr}]`)) {
+      el.setAttribute(attr, el.getAttribute(attr)!.trim().split(/\s+/).map((id) => FORM_NAME_PREFIX + id).join(" "));
+    }
+  }
+  return clean;
+}

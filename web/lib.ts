@@ -1,5 +1,5 @@
 // The app's pure logic: formatting, list filtering, model search, and the payloads it sends.
-import type { AskQuestion, Caps, CatalogModel, Install, Item, Job, Live, Project, Role, TodoPhase } from "./api";
+import type { Caps, CatalogModel, Install, Item, Job, Live, Project, Role, TodoPhase } from "./api";
 
 // ---------- formatting ----------
 
@@ -403,21 +403,6 @@ export function parseAdvisorNote(note: string): { key: string | null; lines: { l
   });
   const key = lines.find((l) => l.label === "Key")?.text ?? null;
   return { key, lines: lines.filter((l) => l.label !== "Key") };
-}
-
-/** One question's state in an open ask card. */
-export type AskPick = { option: number | null; picks: number[]; other: string; otherOpen: boolean };
-
-/** Every question answered: an option picked, any boxes (multi), or Other's text typed. */
-export function askReady(questions: AskQuestion[], picks: AskPick[]): boolean {
-  return picks.every((p, i) => (p.otherOpen ? p.other.trim() !== "" : questions[i].multi ? true : p.option !== null));
-}
-
-/** The answers as the server's `answer` endpoint takes them. */
-export function askAnswers(picks: AskPick[]) {
-  return picks.map((p) =>
-    p.otherOpen && p.other.trim() ? { other: p.other.trim(), picks: p.picks } : { option: p.option, picks: p.picks },
-  );
 }
 
 // ---------- the composer ----------

@@ -426,41 +426,45 @@ describe("parseChat images", () => {
 });
 
 describe("parseChat asks and advisor notes", () => {
-  const ask = (id: string) =>
-    call(id, "ask", {
-      questions: [
-        { question: "Which?", options: [{ label: "A", description: "first" }, "B"], recommended: 1 },
-        { question: "Also?", options: [{ label: "x" }], multi: true },
-      ],
-    });
+  const FORM = `<form><fieldset><legend>Which?</legend>
+    <label><input type="radio" name="pick" value="a" checked> A</label>
+    <label><input type="radio" name="pick" value="b"> B</label>
+  </fieldset></form>`;
+  const ask = (id: string) => call(id, "ask", { i: "Choosing", html: FORM });
 
-  test("an open ask carries its questions; plain-string options become labels", () => {
+  test("an open ask carries its form, the fields omp walks and the first question", () => {
     const t = new Transcript();
     t.user("decide", 0);
     t.assistant([ask("q1")], 10, { stop: "toolUse" });
     const [entry] = only(parseChat(t.lines(), "", 80).entries, "ask");
-    expect(entry).toMatchObject({ id: "q1", answer: null });
-    expect(entry.questions).toEqual([
-      { question: "Which?", multi: false, recommended: 1, options: [{ label: "A", description: "first" }, { label: "B", description: "" }] },
-      { question: "Also?", multi: true, recommended: 0, options: [{ label: "x", description: "" }] },
-    ]);
+    expect(entry).toMatchObject({ id: "q1", html: FORM, question: "Which?", answer: null });
+    expect(entry.fields.map((f) => f.name)).toEqual(["pick"]);
   });
 
-  test("its result answers it; an empty result still counts as answered", () => {
+  test("its result answers it: omp's answers as question lines, a timeout noted, else the text", () => {
     const t = new Transcript();
     t.user("decide", 0);
     t.assistant([ask("q1")], 10, { stop: "toolUse" });
-    t.result("q1", "ask", 11, { content: "User picked: A" });
+    t.result("q1", "ask", 11, { content: "User answers: …", details: { answers: [{ name: "pick", question: "Which?", answer: "B" }, { name: "n", question: "Note", answer: "" }] } });
     t.assistant([ask("q2")], 20, { stop: "toolUse" });
-    t.result("q2", "ask", 21, { content: [] });
+    t.result("q2", "ask", 21, { details: { answers: [{ name: "pick", question: "Which?", answer: "A" }], timedOut: true } });
+    t.assistant([ask("q3")], 30, { stop: "toolUse" });
+    t.result("q3", "ask", 31, { content: "Ask tool was cancelled by the user", isError: true });
+    t.assistant([ask("q4")], 40, { stop: "toolUse" });
+    t.result("q4", "ask", 41, { content: [] });
     const asks = only(parseChat(t.lines(), "", 80).entries, "ask");
-    expect(asks.map((a) => a.answer)).toEqual(["User picked: A", "answered"]);
+    expect(asks.map((a) => a.answer)).toEqual([
+      "Which?: B\nNote: (no answer)",
+      "No answer in time; omp sent the form's own values\nWhich?: A",
+      "Ask tool was cancelled by the user",
+      "answered",
+    ]);
   });
 
-  test("an ask without a questions array is an ordinary tool call", () => {
+  test("an ask without an html form (omp before 18.18.3) is an ordinary tool call", () => {
     const t = new Transcript();
     t.user("decide", 0);
-    t.assistant([call("q", "ask", { question: "loose" })], 10, { stop: "toolUse" });
+    t.assistant([call("q", "ask", { questions: [{ question: "Which?", options: [{ label: "A" }] }] })], 10, { stop: "toolUse" });
     expect(roles(parseChat(t.lines(), "", 80).entries)).toEqual(["user", "tools"]);
   });
 

@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { Extension, type Sandbox } from "../server-harness";
+import { ASK_HTML, Extension, type Sandbox } from "../server-harness";
 import { Transcript, call } from "../fixtures";
 import { CHROMIUM, bodies, closeBrowser, openApp, startSandbox, texts, until, type App } from "./helpers";
 
@@ -22,7 +22,7 @@ describe.skipIf(!CHROMIUM)("phone session", () => {
       ] }] } });
       t.say("## Build report\n\nThe **compiler** needs a fix.\n\n- Keep the API\n- Add tests", 5000);
       t.user("Which route?", 6000);
-      s.leaf = t.assistant([call("ask1", "ask", { questions: [{ question: "Choose", options: ["A", "B"], recommended: 1 }] })], 7000, { stop: "toolUse" });
+      s.leaf = t.assistant([call("ask1", "ask", { html: ASK_HTML })], 7000, { stop: "toolUse" });
       writeFileSync(s.transcriptPath, t.text());
     });
     agent = new Extension(s);
@@ -58,9 +58,9 @@ describe.skipIf(!CHROMIUM)("phone session", () => {
     await texts(page.locator(".todo-task"), []);
     expect(await page.locator(".todo-count").textContent()).toBe("1/3");
     await page.locator(".todo-head").click();
-    await texts(page.locator(".ask-q"), ["Choose"]);
-    expect(await page.locator(".opt", { hasText: "B" }).locator(".rec").textContent()).toBe("recommended");
-    expect(await page.locator(".ask button").first().isEnabled()).toBe(true);
+    await texts(page.locator(".ask legend"), ["Choose"]);
+    expect(await page.locator(".ask input[type=radio]").first().isEnabled()).toBe(true);
+    expect(await page.locator(".ask input[data-other=route]").getAttribute("placeholder")).toBe("Other: type your own");
   });
 
   test("typing mirrors a draft to omp; send presses Enter once and clears the composer", async () => {
@@ -101,15 +101,15 @@ describe.skipIf(!CHROMIUM)("phone session", () => {
     expect(s.calls()).toEqual([["send", "1", "keys", "Enter"]]);
   });
 
-  test("a single-choice ask sends the selected option and the matching Tern dialog keys", async () => {
+  test("a one-group ask sends the tapped option and the matching Tern form keys", async () => {
     s.clearCalls();
     const response = app.page.waitForResponse((r) => r.url().endsWith("/answer"));
-    await app.page.locator(".ask .opt").nth(1).click();
+    await app.page.locator(".ask label", { hasText: "B" }).click();
     expect((await response).status()).toBe(200);
-    expect(bodies(app, "/api/blocks/1/answer")).toEqual([{ id: "ask1", answers: [{ option: 1, picks: [] }] }]);
-    expect(s.calls()).toEqual([["send", "1", "keys", "Up", "Up", "Down", "Enter"]]);
+    expect(bodies(app, "/api/blocks/1/answer")).toEqual([{ id: "ask1", values: { route: "b" }, other: {} }]);
+    expect(s.calls()).toEqual([["send", "1", "keys", "Up", "shift+Tab", "shift+Tab", "Down", "space", "Tab", "Enter"]]);
     await app.page.locator(".ask.sent").waitFor();
-    expect(await app.page.locator(".ask .opt").first().isDisabled()).toBe(true);
+    expect(await app.page.locator(".ask input[type=radio]").first().isDisabled()).toBe(true);
   });
 
   test("model picker sends effort, priority, role and catalog model selections", async () => {
@@ -217,14 +217,14 @@ describe.skipIf(!CHROMIUM)("phone session", () => {
     const sub = new Transcript("scout", `${s.home}/alpha`);
     sub.user("Inspect the build", 1000);
     sub.say("The **config** is wrong.", 2000);
-    sub.assistant([call("sub-ask", "ask", { questions: [{ question: "Subagent question", options: ["yes", "no"] }] })], 3000, { stop: "toolUse" });
+    sub.assistant([call("sub-ask", "ask", { html: ASK_HTML })], 3000, { stop: "toolUse" });
     writeFileSync(`${dir}/Scout.jsonl`, sub.text());
     agent.report({ jobs: [{ id: "job-1", type: "task", label: "Inspect build", agent: "Scout", since: Date.now() }] });
     await page.locator("a.job-open", { hasText: "Scout" }).click();
     await texts(page.locator(".sub-bar .title"), ["Scout"]);
     await texts(page.locator(".assistant strong"), ["config"]);
     expect(await page.locator(".sub-bar .row-meta").textContent()).toContain("running");
-    expect(await page.locator("textarea, .composer, .user-acts, .ask button").count()).toBe(0);
+    expect(await page.locator("textarea, .composer, .user-acts, .ask button, .ask input").count()).toBe(0);
     expect(await page.locator(".ask-answer").textContent()).toBe("not answered");
     sub.say("Inspection done", 4000);
     appendFileSync(`${dir}/Scout.jsonl`, sub.lines().at(-1)! + "\n");

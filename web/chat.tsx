@@ -4,9 +4,9 @@ import { createContext, type ComponentChildren } from "preact";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Mermaid } from "mermaid";
 import { drawCharts } from "./charts";
-import { post, type AdvisorNote, type Ask, type ChatEntry, type Img, type TodoPhase, type ToolCall } from "./api";
-import { askAnswers, askReady, clock, duration, langOf, parseAdvisorNote, prettyModel, tokensShort, type AskPick } from "./lib";
-import { renderMarkdown } from "./markdown";
+import { post, type AdvisorNote, type Ask, type AskField, type ChatEntry, type Img, type TodoPhase, type ToolCall } from "./api";
+import { clock, duration, langOf, parseAdvisorNote, prettyModel, tokensShort } from "./lib";
+import { askFormHtml, FORM_NAME_PREFIX, renderMarkdown } from "./markdown";
 import { highlightFences } from "./highlight";
 import { buzz, CopyButton, Thumbs, Todo, UserMsg } from "./parts";
 import {
@@ -372,123 +372,163 @@ function Tools({
   );
 }
 
-/** An open ask: tap to answer, like omp's own dialog. One single-choice question sends on tap. */
+/** The form's answer as the server's `answer` endpoint takes it: values by field name, Other's text apart. */
+function formAnswer(form: HTMLFormElement, fields: AskField[]) {
+  const data = new FormData(form);
+  // No prototype: a field may be called `__proto__`.
+  const values: Record<string, string | string[]> = Object.create(null);
+  const other: Record<string, string> = Object.create(null);
+  const typed = [...form.querySelectorAll<HTMLInputElement>("input[data-other]")];
+  for (const f of fields) {
+    if (!f.name) continue;
+    const got = data.getAll(FORM_NAME_PREFIX + f.name).filter((v): v is string => typeof v === "string");
+    if (f.kind === "choice" && f.multi) values[f.name] = got;
+    else if (got.length) values[f.name] = got[0];
+    const text = typed.find((i) => i.dataset.other === f.name)?.value.trim();
+    if (text) other[f.name] = text;
+  }
+  return { values, other };
+}
+
+/** The radios or boxes of a group, by field name. */
+function groupInputs(form: HTMLFormElement, name: string): HTMLInputElement[] {
+  return [...form.querySelectorAll<HTMLInputElement>("input[type=radio], input[type=checkbox]")].filter((i) => i.name === FORM_NAME_PREFIX + name);
+}
+
+/**
+ * An open ask: omp's HTML form with the phone's own controls, plus the "Other" text omp gives a
+ * radio or checkbox group. A form that is one radio group sends on the first tap.
+ */
 function AskCard({ ask, block, pending }: { ask: Ask; block: string; pending: boolean }) {
-  const [picks, setPicks] = useState<AskPick[]>(() =>
-    ask.questions.map(() => ({ option: null, picks: [], other: "", otherOpen: false })),
-  );
+  const formRef = useRef<HTMLFormElement>(null);
+  const body = useRef<HTMLDivElement>(null);
   const [sending, setSending] = useState(false);
   const submitted = useRef(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const open = ask.answer === null && pending;
+  const named = ask.fields.filter((f) => f.name);
+  const lone = named.length === 1 ? named[0] : undefined;
+  const instant = lone?.kind === "choice" && !lone.multi && !lone.select;
+  // Rendered once per ask: Preact never diffs this node, so the injected form keeps its state.
+  const formBody = useMemo(() => <div ref={body} class="ask-body" />, [ask.id]);
 
-  if (ask.answer !== null || !pending) {
+  useLayoutEffect(() => {
+    const el = body.current;
+    const form = formRef.current;
+    if (!el || !form) return;
+    el.replaceChildren(askFormHtml(ask.html));
+    for (const f of ask.fields) {
+      if (f.kind !== "choice" || f.select) continue;
+      const group = groupInputs(form, f.name);
+      const last = group[group.length - 1];
+      if (!last) continue;
+      for (const input of group) input.dataset.required = String(input.required);
+      // Required boxes go group-level (see `checkGroups`).
+      if (f.multi) for (const input of group) input.required = false;
+      if (!f.other) continue;
+      const other = document.createElement("input");
+      other.className = "other-input";
+      other.placeholder = "Other: type your own";
+      other.dataset.other = f.name;
+      other.setAttribute("aria-label", `${f.question}: other`);
+      (last.closest("label") ?? last).after(other);
+    }
+  }, [ask.id, open]);
+
+  if (!open) {
     return (
       <div class="ask done">
-        {ask.questions.map((q, k) => (
-          <div key={k} class="ask-q">{q.question}</div>
-        ))}
+        {ask.answer === null && <div class="ask-q">{ask.question}</div>}
         <div class="ask-answer">{ask.answer ?? "not answered"}</div>
       </div>
     );
   }
 
-  const instant = ask.questions.length === 1 && !ask.questions[0].multi;
-  const ready = askReady(ask.questions, picks);
+  /**
+   * A required box group, as in omp, needs one box or Other's text, not every box. Rechecked on
+   * every input too: the browser checks validity before a submit reaches `send`.
+   */
+  function checkGroups(form: HTMLFormElement) {
+    for (const f of ask.fields) {
+      if (f.kind !== "choice" || !f.multi || f.select) continue;
+      const group = groupInputs(form, f.name);
+      const typed = [...form.querySelectorAll<HTMLInputElement>("input[data-other]")].some((i) => i.dataset.other === f.name && i.value.trim());
+      const missing = group.some((i) => i.dataset.required === "true") && !typed && !group.some((i) => i.checked);
+      group[0]?.setCustomValidity(missing ? "Pick at least one" : "");
+    }
+  }
 
-  async function send(next: AskPick[]) {
-    if (submitted.current) return;
+  async function send() {
+    const form = formRef.current;
+    if (!form || submitted.current) return;
+    checkGroups(form);
+    if (!form.reportValidity()) return;
     submitted.current = true;
+    // Read before the fieldset locks: a disabled fieldset's controls aren't in FormData.
+    const answer = { id: ask.id, ...formAnswer(form, ask.fields) };
     setSending(true);
-    const answers = askAnswers(next);
-    const err = await post(`/api/blocks/${block}/answer`, { id: ask.id, answers });
+    const err = await post(`/api/blocks/${block}/answer`, answer);
     setSending(false);
     setError(err);
     if (err) submitted.current = false;
-    if (!err) {
+    else {
       buzz();
       setSent(true);
     }
   }
 
-  function update(i: number, change: Partial<AskPick>, submitNow = false) {
-    const next = picks.map((p, k) => (k === i ? { ...p, ...change } : p));
-    setPicks(next);
-    if (submitNow) void send(next);
+  // As in omp: Other's text answers a radio group in place of its options, and a picked radio drops
+  // it. Emptying the text brings back the form's own pick, which omp still holds.
+  function onInput(e: Event) {
+    const form = formRef.current;
+    if (form) checkGroups(form);
+    const t = e.target as HTMLInputElement;
+    const field = ask.fields.find((f) => f.name === t.dataset.other);
+    if (!form || field?.kind !== "choice" || field.multi) return;
+    const typed = t.value.trim() !== "";
+    for (const input of groupInputs(form, field.name)) {
+      input.checked = !typed && input.defaultChecked;
+      input.required = !typed && input.dataset.required === "true";
+    }
+  }
+  // A click, not a change: tapping the radio the model preselected must send too.
+  function onClick(e: Event) {
+    const form = formRef.current;
+    const t = e.target as HTMLInputElement;
+    if (!form || t.tagName !== "INPUT" || t.type !== "radio" || !t.checked) return;
+    const name = t.name.slice(FORM_NAME_PREFIX.length);
+    const other = [...form.querySelectorAll<HTMLInputElement>("input[data-other]")].find((i) => i.dataset.other === name);
+    if (other?.value) {
+      other.value = "";
+      for (const input of groupInputs(form, name)) input.required = input.dataset.required === "true";
+    }
+    if (instant) void send();
   }
 
   return (
-    <div class={`ask${sent ? " sent" : ""}`}>
-      {ask.questions.map((q, i) => {
-        const p = picks[i];
-        return (
-          <div key={i} class="ask-block">
-            <div class="ask-q">{q.question}</div>
-            {q.multi && <div class="muted small">Pick any</div>}
-            <div class="opts">
-              {q.options.map((o, j) => {
-                const on = q.multi ? p.picks.includes(j) : p.option === j && !p.otherOpen;
-                return (
-                  <button
-                    key={j}
-                    class={`opt${on ? " on" : ""}`}
-                    disabled={sending || sent}
-                    onClick={() =>
-                      q.multi
-                        ? update(i, { picks: on ? p.picks.filter((x) => x !== j) : [...p.picks, j] })
-                        : update(i, { option: j, otherOpen: false }, instant)
-                    }
-                  >
-                    <span class={`mark${q.multi ? " box" : ""}`} />
-                    <span class="opt-text">
-                      <span class="opt-label">
-                        {o.label}
-                        {q.recommended === j && <span class="rec">recommended</span>}
-                      </span>
-                      {o.description && <span class="opt-desc">{o.description}</span>}
-                    </span>
-                  </button>
-                );
-              })}
-              <button
-                class={`opt${p.otherOpen ? " on" : ""}`}
-                disabled={sending || sent}
-                onClick={() => update(i, { otherOpen: !p.otherOpen, option: null })}
-              >
-                <span class={`mark${q.multi ? " box" : ""}`} />
-                <span class="opt-text">
-                  <span class="opt-label">Other…</span>
-                  <span class="opt-desc">Type your own answer</span>
-                </span>
-              </button>
-              {p.otherOpen && (
-                <input
-                  class="other-input"
-                  autoFocus
-                  placeholder="Your answer"
-                  value={p.other}
-                  disabled={sending || sent}
-                  onInput={(e) => update(i, { other: e.currentTarget.value })}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && ready) void send(picks);
-                  }}
-                />
-              )}
-            </div>
-          </div>
-        );
-      })}
+    <form
+      ref={formRef}
+      class={`ask${sent ? " sent" : ""}`}
+      onSubmit={(e) => {
+        e.preventDefault();
+        void send();
+      }}
+      onInput={onInput}
+      onClick={onClick}
+    >
+      <fieldset class="ask-form" disabled={sending || sent}>
+        {formBody}
+      </fieldset>
       {error && <div class="err small">{error}</div>}
       {sent ? (
         <div class="muted small">Sent, waiting for omp…</div>
       ) : (
-        (!instant || picks[0].otherOpen) && (
-          <button class="primary" disabled={!ready || sending} onClick={() => send(picks)}>
-            {sending ? "Sending…" : "Send answer"}
-          </button>
-        )
+        <button class="primary" type="submit" disabled={sending}>
+          {sending ? "Sending…" : "Send answer"}
+        </button>
       )}
-    </div>
+    </form>
   );
 }
 

@@ -82,9 +82,10 @@ const s = await startSandbox((s) => {
 
   const rates = new Log("rates", `${code}/webshop`, NOW - 90 * min);
   rates.user("Add rate limiting to the orders API.", NOW - 90 * min);
-  rates.assistant([tool("a1", "ask", { questions: [{ question: "Where should the limit apply?", options: [
-    { label: "Per API key", description: "Fair to every customer" }, { label: "Per IP address", description: "Also covers anonymous calls" },
-  ], recommended: 0 }] })], NOW - 12 * min, "toolUse");
+  rates.assistant([tool("a1", "ask", { html: `<form><fieldset><legend>Where should the limit apply?</legend>
+  <label><input type="radio" name="key" value="api-key" checked> Per API key: fair to every customer</label>
+  <label><input type="radio" name="key" value="ip"> Per IP address: also covers anonymous calls</label>
+</fieldset></form>` })], NOW - 12 * min, "toolUse");
 
   const backup = new Log("backup", `${code}/homelab`, NOW - 5 * 60 * min);
   backup.user("Check that last night's backups completed and can be restored.", NOW - 5 * 60 * min);

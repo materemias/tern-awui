@@ -48,7 +48,7 @@ describe("SubagentChat", () => {
   const entries: ChatEntry[] = [
     { role: "user", id: "e1", text: "Run sleep 20", images: [], ts: NOW - 60_000 },
     { role: "tools", calls: [{ name: "bash", intent: "Sleeping 20 s" }], images: [], todo: null, ts: NOW - 50_000 },
-    { role: "ask", id: "a1", questions: [{ question: "Which?", options: [{ label: "A", description: "" }], multi: false, recommended: 0 }], answer: null, ts: NOW - 40_000 },
+    { role: "ask", id: "a1", html: `<label><input type="radio" name="p" value="a"> A</label>`, fields: [], question: "Which?", answer: null, ts: NOW - 40_000 },
   ];
   let backs = 0;
   const screen = (jobs: Job[], shown: ChatEntry[] | null = entries) => (
@@ -62,9 +62,9 @@ describe("SubagentChat", () => {
     expect(root.querySelector("form, textarea, .composer-wrap")).toBeNull();
     expect(root.querySelector(".user-acts")).toBeNull();
     expect(texts("button").filter((t) => /Rewind|Copy|Send/.test(t ?? ""))).toEqual([]);
-    // The open ask shows as a question without options to pick.
+    // The open ask shows as its question, with nothing to fill in.
     expect(root.querySelector(".ask.done .ask-answer")!.textContent).toBe("not answered");
-    expect(root.querySelector(".opt")).toBeNull();
+    expect(root.querySelector("input")).toBeNull();
   });
 
   test("the header names the subagent, its parent and whether it runs", async () => {

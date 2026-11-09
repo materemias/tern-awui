@@ -99,13 +99,12 @@ export type Btw = { id: string; question: string; text: string; done: boolean; e
 
 export type ToolCall = { name: string; intent: string; error?: boolean };
 export type TodoPhase = { name: string; tasks: { content: string; status: string; blocker?: string }[] };
-export type AskQuestion = {
-  question: string;
-  options: { label: string; description: string }[];
-  multi: boolean;
-  recommended: number;
-};
-export type Ask = { role: "ask"; id: string; questions: AskQuestion[]; answer: string | null; ts: number };
+/** A field of an ask form (lib/ask-form.ts): `other` groups get a free-text Other answer. */
+export type AskField =
+  | { kind: "text"; name: string; question: string; multiline: boolean; value: string }
+  | { kind: "choice"; name: string; question: string; multi: boolean; select: boolean; other: boolean; options: { value: string; label: string; checked: boolean; disabled: boolean }[] };
+/** An `ask` call: one HTML form; `answer` one `question: answer` line per field once omp has it. */
+export type Ask = { role: "ask"; id: string; html: string; fields: AskField[]; question: string; answer: string | null; ts: number };
 export type ChatEntry =
   | { role: "user"; id: string; text: string; images: Img[]; ts: number }
   /** `block`: the stretchtext id of a reply holding `{{short|long}}` markup (see lib/transcript.ts). */

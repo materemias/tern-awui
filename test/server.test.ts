@@ -538,10 +538,10 @@ test("completion, side question and abort endpoints speak the extension protocol
 
 test("answer keys follow the open ask; rewind validates the entry and requires idle", async () => {
   s.clearCalls();
-  expect((await s.action(1, "answer", { id: "stale", answers: [{ option: 1 }] })).status).toBe(502);
+  expect((await s.action(1, "answer", { id: "stale", values: { route: "b" } })).status).toBe(502);
   expect(s.calls()).toEqual([]);
-  expect((await s.action(1, "answer", { id: "ask1", answers: [{ option: 1 }] })).status).toBe(200);
-  expect(s.calls()).toEqual([["send", "1", "keys", "Up", "Up", "Down", "Enter"]]);
+  expect((await s.action(1, "answer", { id: "ask1", values: { route: "b" }, other: {} })).status).toBe(200);
+  expect(s.calls()).toEqual([["send", "1", "keys", "Up", "shift+Tab", "shift+Tab", "Down", "space", "Tab", "Enter"]]);
   expect((await s.action(1, "rewind", { entry: "../bad" })).status).toBe(400);
   expect((await s.action(2, "rewind", { entry: s.prompt })).status).toBe(409);
   expect((await s.action(1, "rewind", { entry: s.prompt })).status).toBe(409);

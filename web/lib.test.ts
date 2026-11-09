@@ -4,8 +4,6 @@ import type { Caps, CatalogModel, Install, Item, Job, Live, Project, Role } from
 import {
   OLD_MS,
   age,
-  askAnswers,
-  askReady,
   backStep,
   btwCommand,
   can,
@@ -43,7 +41,6 @@ import {
   trackOrigin,
   vapidBytes,
   withRecent,
-  type AskPick,
   type Route,
 } from "./lib";
 
@@ -612,29 +609,6 @@ describe("parseAdvisorNote", () => {
     const n = parseAdvisorNote("Evidence: x\nFix: y");
     expect(n.key).toBeNull();
     expect(n.lines.map((l) => l.label)).toEqual(["Evidence", "Fix"]);
-  });
-});
-
-describe("ask answers", () => {
-  const q = (multi: boolean) => ({ question: "?", options: [{ label: "A", description: "" }], multi, recommended: 0 });
-  const pick = (over: Partial<AskPick> = {}): AskPick => ({ option: null, picks: [], other: "", otherOpen: false, ...over });
-  test("single choice needs an option; multi is ready with none", () => {
-    expect(askReady([q(false)], [pick()])).toBe(false);
-    expect(askReady([q(false)], [pick({ option: 0 })])).toBe(true);
-    expect(askReady([q(true)], [pick()])).toBe(true);
-    expect(askReady([q(false), q(false)], [pick({ option: 0 }), pick()])).toBe(false);
-  });
-  test("Other needs non-blank text", () => {
-    expect(askReady([q(false)], [pick({ otherOpen: true, other: "  " })])).toBe(false);
-    expect(askReady([q(true)], [pick({ otherOpen: true })])).toBe(false);
-    expect(askReady([q(false)], [pick({ otherOpen: true, other: "mine" })])).toBe(true);
-  });
-  test("payload: trimmed Other text, else the picked option; picks always go along", () => {
-    expect(askAnswers([pick({ otherOpen: true, other: " mine ", picks: [1] }), pick({ option: 2 }), pick({ otherOpen: true, other: " " })])).toEqual([
-      { other: "mine", picks: [1] },
-      { option: 2, picks: [] },
-      { option: null, picks: [] },
-    ]);
   });
 });
 

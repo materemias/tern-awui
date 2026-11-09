@@ -4,17 +4,26 @@ import { Extension, type Sandbox } from "../server-harness";
 import { Transcript, call } from "../fixtures";
 import { CHROMIUM, bodies, closeBrowser, openApp, startSandbox, type App } from "./helpers";
 
-describe.skipIf(!CHROMIUM)("multi-question ask", () => {
+const FORM = `<form>
+  <fieldset><legend>Which checks?</legend>
+    <label><input type="checkbox" name="checks" value="lint"> Lint</label>
+    <label><input type="checkbox" name="checks" value="types" checked> Types</label>
+    <label><input type="checkbox" name="checks" value="tests"> Tests</label>
+  </fieldset>
+  <fieldset><legend>When?</legend>
+    <label><input type="radio" name="when" value="now" required> Now</label>
+    <label><input type="radio" name="when" value="later"> Later</label>
+  </fieldset>
+</form>`;
+
+describe.skipIf(!CHROMIUM)("ask form", () => {
   let s: Sandbox;
   let app: App;
   beforeAll(async () => {
     s = await startSandbox((s) => {
       const t = s.transcript = new Transcript(s.session, `${s.home}/alpha`);
       t.user("Choose checks and timing", 1000);
-      s.leaf = t.assistant([call("checks", "ask", { questions: [
-        { question: "Which checks?", multi: true, options: ["Lint", "Types", "Tests"] },
-        { question: "When?", options: ["Now", "Later"] },
-      ] })], 2000, { stop: "toolUse" });
+      s.leaf = t.assistant([call("checks", "ask", { html: FORM })], 2000, { stop: "toolUse" });
       writeFileSync(s.transcriptPath, t.text());
     });
     const agent = new Extension(s);
@@ -28,33 +37,24 @@ describe.skipIf(!CHROMIUM)("multi-question ask", () => {
     await s?.close();
   });
 
-  test("checkbox toggles and Other serialize actual picks, with no POST until every question is ready", async () => {
+  test("a required group holds Send back until Other's text answers it; boxes and text reach omp as keys", async () => {
     const { page } = app;
     const send = page.getByRole("button", { name: "Send answer" });
     await send.waitFor();
-    expect(await send.isDisabled()).toBe(true);
-    const checks = page.locator(".ask-block").first();
-    await checks.getByRole("button", { name: /^Lint/ }).click();
-    await checks.getByRole("button", { name: "Types", exact: true }).click();
-    await checks.getByRole("button", { name: "Types", exact: true }).click();
-    await checks.getByRole("button", { name: "Tests", exact: true }).click();
-    expect(await checks.locator(".opt.on").count()).toBe(2);
-    expect(await send.isDisabled()).toBe(true);
-    await page.locator(".ask-block").nth(1).getByRole("button", { name: /Other/ }).click();
-    await page.getByPlaceholder("Your answer").fill("   ");
-    expect(await send.isDisabled()).toBe(true);
+    await page.getByLabel("Lint").check();
+    await page.getByLabel("Types").uncheck();
+    await send.click();
+    // The browser's own check stops the unanswered required group: nothing is posted.
     expect(bodies(app, "/api/blocks/1/answer")).toEqual([]);
-    await page.getByPlaceholder("Your answer").fill("  After review  ");
+    await page.getByRole("textbox", { name: "When?: other" }).fill("  After review  ");
     const response = page.waitForResponse((r) => r.url().endsWith("/answer"));
     await send.click();
     expect((await response).status()).toBe(200);
-    expect(bodies(app, "/api/blocks/1/answer")).toEqual([{
-      id: "checks", answers: [{ option: null, picks: [0, 2] }, { other: "After review", picks: [] }],
-    }]);
+    expect(bodies(app, "/api/blocks/1/answer")).toEqual([{ id: "checks", values: { checks: ["lint"] }, other: { when: "After review" } }]);
     expect(s.calls()).toContainEqual(["send", "1", "text", "--", "After review"]);
-    expect(s.calls().at(-1)).toEqual(["send", "1", "keys", "Enter"]);
+    expect(s.calls().at(-1)).toEqual(["send", "1", "keys", "Tab", "Enter"]);
     await page.locator(".ask.sent").waitFor();
-    expect(await checks.getByRole("button", { name: /^Lint/ }).isDisabled()).toBe(true);
+    expect(await page.getByLabel("Lint").isDisabled()).toBe(true);
     expect(app.errors).toEqual([]);
   });
 });

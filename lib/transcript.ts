@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { dirname, extname, isAbsolute, resolve } from "node:path";
 import { marked } from "marked";
 import { arr, num, obj, str, type Obj } from "./json";
+import { parseAskForm, type AskField } from "./ask-form";
 
 /** Only the tail of a transcript is read: older entries never reach the phone. */
 const CHAT_TAIL_BYTES = 4 * 1024 * 1024;
@@ -12,12 +13,6 @@ const CHAT_TAIL_BYTES = 4 * 1024 * 1024;
 export type ToolCall = { name: string; intent: string; error?: boolean };
 /** omp's todo list after a `todo` call: phases of tasks (pending, in_progress, completed, blocked…). */
 export type TodoPhase = { name: string; tasks: { content: string; status: string; blocker?: string }[] };
-export type AskQuestion = {
-  question: string;
-  options: { label: string; description: string }[];
-  multi: boolean;
-  recommended: number;
-};
 /**
  * An image the session saw, as a URL for <img>: omp keeps most bytes in ~/.omp/agent/blobs/<hash>
  * (served by /api/blob), and small ones inline in the transcript (sent as a data: URL).
@@ -41,7 +36,11 @@ export type ChatEntry =
   | { role: "recap"; text: string; ts: number }
   /** omp's cache-miss marker: the reply's prompt cache was rebuilt, `tokens` of prompt sent again in full. */
   | { role: "cacheMiss"; tokens: number; ts: number };
-export type AskEntry = { role: "ask"; id: string; questions: AskQuestion[]; answer: string | null; ts: number };
+/**
+ * An `ask` call (omp ≥ 18.18.3: one HTML form). `html` as the model wrote it, `fields` as omp's
+ * dialog walks them, `question` the first field's; `answer` one `question: answer` line per field.
+ */
+export type AskEntry = { role: "ask"; id: string; html: string; fields: AskField[]; question: string; answer: string | null; ts: number };
 /** A note from omp's advisor model: `Key:`/`Evidence:`/`Impact:`/`Fix:` lines. */
 export type AdvisorNote = { advisor: string; severity: string; note: string };
 type InjectedRule = { name: string; text: string };
@@ -94,6 +93,19 @@ export function textOf(content: unknown): string {
     .filter((p) => p.type === "text")
     .map((p) => str(p.text))
     .join("\n");
+}
+
+/**
+ * What an ask's result says was answered: omp's `details.answers` as `question: answer` lines
+ * (a timeout notes that omp took the form's own values), else the result's text (cancelled, errors).
+ */
+function askAnswer(msg: Obj): string {
+  const details = obj(msg.details);
+  const lines = arr(details.answers)
+    .map(obj)
+    .map((a) => `${str(a.question, str(a.name))}: ${str(a.answer) || "(no answer)"}`);
+  if (!lines.length) return textOf(msg.content).trim();
+  return details.timedOut === true ? ["No answer in time; omp sent the form's own values", ...lines].join("\n") : lines.join("\n");
 }
 
 export const IMAGE_MIMES: Record<string, true> = { "image/png": true, "image/jpeg": true, "image/webp": true, "image/gif": true };
@@ -388,14 +400,10 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
         }
         if (part.type !== "toolCall") continue;
         const args = obj(part.arguments);
-        if (part.name === "ask" && Array.isArray(args.questions)) {
-          const questions = arr(args.questions).map(obj).map((q) => ({
-            question: str(q.question),
-            multi: q.multi === true,
-            recommended: num(q.recommended),
-            options: arr(q.options).map((o) => ({ label: str(obj(o).label, str(o)), description: str(obj(o).description) })),
-          }));
-          const ask = { role: "ask" as const, id: str(part.id), questions, answer: null, ts };
+        if (part.name === "ask" && typeof args.html === "string") {
+          const fields = parseAskForm(args.html);
+          const question = fields.find((f) => f.name)?.question ?? "";
+          const ask = { role: "ask" as const, id: str(part.id), html: args.html, fields, question, answer: null, ts };
           asksById.set(ask.id, ask);
           entries.push(ask);
           continue;
@@ -420,7 +428,7 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
       }
     } else if (msg.role === "toolResult") {
       const ask = asksById.get(str(msg.toolCallId));
-      if (ask) ask.answer = textOf(msg.content).trim() || "answered";
+      if (ask) ask.answer = askAnswer(msg) || "answered";
       const call = callsById.get(str(msg.toolCallId));
       if (call && msg.isError === true) call.error = true;
       const group = groupByCall.get(str(msg.toolCallId));

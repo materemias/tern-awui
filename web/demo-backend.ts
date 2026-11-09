@@ -2,7 +2,7 @@
 // from the sample sessions in demo-fixtures.ts, so the real app runs with no Tern, omp or server.
 // Prompts stream a canned reply as omp's would (`live`, then the `chat` entry), asks resolve, and
 // new sessions, closes and drafts behave; what needs a real omp answers "isn't in the demo".
-import type { AskQuestion, ChatEntry, ContextUse, Run, State } from "./api";
+import type { AskField, ChatEntry, ContextUse, Run, State } from "./api";
 import { onList } from "./lib";
 import {
   ANSWER_REPLY,
@@ -57,17 +57,18 @@ function json(data: unknown, status = 200): Response {
   return Response.json(data, { status });
 }
 
-/** The answer text omp would record for an ask, from the app's `answers` (see askAnswers in lib.ts). */
-function answerText(questions: AskQuestion[], answers: unknown): string {
-  const list = Array.isArray(answers) ? answers : [];
-  return questions
-    .map((q, i) => {
-      const a = (list[i] ?? {}) as { option?: number | null; picks?: number[]; other?: string };
-      if (typeof a.other === "string" && a.other) return a.other;
-      if (q.multi) return (a.picks ?? []).map((p) => q.options[p]?.label).filter(Boolean).join(", ");
-      return typeof a.option === "number" ? q.options[a.option]?.label ?? "" : "";
-    })
-    .join("; ");
+/** What omp would record for an ask, from the app's `values` and `other`: each answered field's question and answer. */
+function formAnswers(fields: AskField[], body: Record<string, unknown>): { question: string; answer: string }[] {
+  const values = (body.values ?? {}) as Record<string, unknown>;
+  const other = (body.other ?? {}) as Record<string, unknown>;
+  return fields.flatMap((f) => {
+    if (!f.name) return [];
+    const typed = typeof other[f.name] === "string" ? (other[f.name] as string) : "";
+    const picked = [values[f.name]].flat().filter((v): v is string => typeof v === "string" && v !== "");
+    const labels = f.kind === "choice" ? picked.map((v) => f.options.find((o) => o.value === v)?.label ?? v) : picked;
+    const answer = typed ? [...(f.kind === "choice" && f.multi ? labels : []), `Other: ${typed}`] : labels;
+    return answer.length ? [{ question: f.question, answer: answer.join(", ") }] : [];
+  });
 }
 
 export class DemoServer {
@@ -424,9 +425,10 @@ export class DemoServer {
   private answer(s: Session, body: Record<string, unknown>): Response {
     const ask = s.chat.findLast((e) => e.role === "ask");
     if (!ask || ask.role !== "ask" || ask.answer !== null || ask.id !== body.id) return json({ error: "no open question" }, 409);
-    const text = answerText(ask.questions, body.answers);
-    if (!text) return json({ error: "no answer picked" }, 400);
-    s.chat = s.chat.map((e) => (e === ask ? { ...ask, answer: text } : e));
+    const answers = formAnswers(ask.fields, body);
+    if (!answers.length) return json({ error: "no answer picked" }, 400);
+    const text = answers.map((a) => a.answer).join("; ");
+    s.chat = s.chat.map((e) => (e === ask ? { ...ask, answer: answers.map((a) => `${a.question}: ${a.answer}`).join("\n") } : e));
     const started = this.clock.now();
     this.work(s, "Wiring up the answer");
     this.emitDetail(s);

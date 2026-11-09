@@ -9,6 +9,11 @@ import { applyStatePatch } from "../lib/state-patch";
 import { applyChatPatch } from "../lib/chat-patch";
 
 const DEFAULT_SERVER = `${import.meta.dir}/../server.ts`;
+/** The open ask every sandbox session waits on: one radio group, "Choose", A or B. */
+export const ASK_HTML = `<form><fieldset><legend>Choose</legend>
+  <label><input type="radio" name="route" value="a"> A</label>
+  <label><input type="radio" name="route" value="b"> B</label>
+</fieldset></form>`;
 
 export async function until<T>(fn: () => T | Promise<T>, description: string, timeout = 2000): Promise<NonNullable<T>> {
   const end = Date.now() + timeout;
@@ -52,7 +57,7 @@ export class Sandbox {
     this.prompt = this.transcript.user("Fix the build", 1000);
     this.transcript.say("Fixed", 2000);
     this.transcript.user("Which route?", 3000);
-    this.leaf = this.transcript.assistant([call("ask1", "ask", { questions: [{ question: "Choose", options: ["A", "B"], recommended: 1 }] })], 4000, { stop: "toolUse" });
+    this.leaf = this.transcript.assistant([call("ask1", "ask", { html: ASK_HTML })], 4000, { stop: "toolUse" });
     writeFileSync(this.transcriptPath, this.transcript.text());
     const db = new Database(`${this.home}/.omp/agent/history.db`);
     db.run("CREATE TABLE session_recaps (id INTEGER PRIMARY KEY, session_id TEXT, recap TEXT, created_at INTEGER)");
