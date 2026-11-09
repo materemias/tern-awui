@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Docs
+
+- The phone film no longer opens on an "outdated extension" warning.
+
 ## 0.10.0 (2026-11-09)
 
 ### Features

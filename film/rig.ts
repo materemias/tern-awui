@@ -5,7 +5,7 @@
 // for the whole take, often while the camera is on one, a few times a second while it only shows
 // small, and writes the frames, pointer moves, taps, touches, captions and scene changes to
 // WORK/timeline.json for compose.py.
-import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { BrowserContext, CDPSession, Locator, Page } from "playwright-core";
@@ -66,8 +66,10 @@ export async function setUp(o: { work: string; script: string; folders: Folder[]
     join(agent, "config.yml"),
     `setupVersion: 2\nmodelRoles:\n  default: anthropic/claude-opus-5-5\nsymbolPreset: nerd\nhideThinkingBlock: true\nstartup:\n  changelogMode: "off"\nmarketplace:\n  autoUpdate: "off"\n`,
   );
-  // A re-export, not a symlink: the module's own relative imports resolve from where it really is.
-  writeFileSync(join(agent, "extensions/tern-mobile.ts"), `export { default } from ${JSON.stringify(o.extension ?? join(REPO, "omp-extension/tern-mobile.ts"))};\n`);
+  // Installed as install.ts does, a link to this checkout's file, so the app's extension check passes.
+  // omp loads the take's own extension (`-e`, the phone take's wrapper) instead of discovering this one.
+  symlinkSync(join(REPO, "omp-extension/tern-mobile.ts"), join(agent, "extensions/tern-mobile.ts"));
+  const extensionFlag = ` --no-extensions -e ${o.extension ?? join(REPO, "omp-extension/tern-mobile.ts")}`;
   // omp-stretch writes replies as stretches; a take that opens or deepens them loads it.
   let stretchFlag = "";
   const config = join(work, "tern-config");
@@ -106,7 +108,7 @@ export async function setUp(o: { work: string; script: string; folders: Folder[]
   }
   Object.assign(env, { TERN_DAEMON_SOCKET: join(work, "d.sock"), TERN_CONFIG_DIR: config });
   // `ctl run` takes one word. HOME points omp at the film's home, the bridge at the film's server.
-  const omp = `HOME=${home} TERN_AWUI_BRIDGE=ws://127.0.0.1:${SERVER_PORT}/bridge exec omp --model anthropic/claude-opus-5-5${stretchFlag}`;
+  const omp = `HOME=${home} TERN_AWUI_BRIDGE=ws://127.0.0.1:${SERVER_PORT}/bridge exec omp --model anthropic/claude-opus-5-5${extensionFlag}${stretchFlag}`;
   writeFileSync(join(work, "omp.sh"), `#!/bin/sh\ncd ${dirs[0]} && ${omp}\n`, { mode: 0o755 });
   // The other folders' tabs start omp in the folder Tern opens them in.
   writeFileSync(join(work, "omp-here.sh"), `#!/bin/sh\n${omp}\n`, { mode: 0o755 });
