@@ -22,8 +22,33 @@ const SHORTEST: Record<Level, string> = {
 };
 
 export function guideFor(level: Level): string {
-  return GUIDE_TEMPLATE.replace("{{shortest}}", SHORTEST[level]);
+  return GUIDE_TEMPLATE.replace("{{shortest}}", () => SHORTEST[level]).replace("{{example}}", () =>
+    level === "section" ? SECTION_EXAMPLE : PARAGRAPH_EXAMPLE,
+  );
 }
+
+const PARAGRAPH_EXAMPLE = `{{CI fails on a stale cache.|CI fails, about one run in five, on a stale cache keyed only by \`package.json\`.}}
+
+- **Fix:** {{key it on the lockfile too.|key it on the lockfile, \`bun.lock\`, too, so a dependency bump misses the cache.}}
+- **Cost:** {{one cold build per bump.|one cold build, about four minutes, per dependency bump.}}
+
+Should I make the change?`;
+
+// A worked example of the section rule: one stretch per section, paragraph stretches inside it.
+const SECTION_EXAMPLE = `## Cause
+
+{{CI fails on a stale cache.|{{CI fails on a stale cache.|CI fails, about one run in five, on a stale cache keyed only by \`package.json\`.}}
+
+{{Dependency bumps keep the old key.|Dependency bumps change \`bun.lock\` but keep the old key, so a restore brings back old modules.}}}}
+
+## Fix
+
+{{Key the cache on the lockfile too.|Key the cache on the lockfile too:
+
+- **Change:** {{add \`bun.lock\` to the key.|add \`bun.lock\` to the key, next to \`package.json\`.}}
+- **Cost:** {{one cold build per bump.|one cold build, about four minutes, per dependency bump.}}}}
+
+Should I make the change?`;
 
 const GUIDE_TEMPLATE = `# Stretchtext replies
 
@@ -43,12 +68,7 @@ The reader's screen draws each stretch \`{{short|long}}\` in your reply as its s
 
 An example reply:
 
-{{CI fails on a stale cache.|CI fails, about one run in five, on a stale cache keyed only by \`package.json\`.}}
-
-- **Fix:** {{key it on the lockfile too.|key it on the lockfile, \`bun.lock\`, too, so a dependency bump misses the cache.}}
-- **Cost:** {{one cold build per bump.|one cold build, about four minutes, per dependency bump.}}
-
-Should I make the change?
+{{example}}
 
 With each of the reader's messages you are told which stretches they opened. Do not assume they read a long form they did not open; if it matters to what they asked, say it again.`;
 
@@ -66,7 +86,8 @@ export type Stretch = {
   end?: number;
 };
 
-type Frame = { stretch: Stretch; siblings: Set<string> };
+/** `lead`: the words before a wordless short form that it took on, and the short form as written. */
+type Frame = { stretch: Stretch; siblings: Set<string>; lead?: { text: string; short: string } };
 
 export const KEY_SEPARATOR = " › ";
 
@@ -74,9 +95,14 @@ export function isOpenable(stretch: Stretch): boolean {
   return stretch.isClosed && stretch.long !== undefined;
 }
 
-/** Openable with a one-line short form: the only stretches the reader can open. */
+/** Openable with a one-line short form that shows something to press: the only stretches the reader can open. */
 export function isLinkable(stretch: Stretch): stretch is Stretch & { long: Segment[] } {
-  return isOpenable(stretch) && !stretch.short.includes("\n");
+  return isOpenable(stretch) && !stretch.short.includes("\n") && !isWordless(stretch.short);
+}
+
+/** A short form of sentence punctuation or nothing (`.`, ``) is too small to press: it takes on the words before it. */
+function isWordless(short: string): boolean {
+  return /^[ \t.!?,;:…]*$/.test(short);
 }
 
 /**
@@ -133,23 +159,41 @@ export function parse(text: string): Segment[] {
       continue;
     }
     if (isInShort && text[i] === "|") {
-      frame.stretch.key = keyOf(frame.stretch.short, stack.at(-2), rootSiblings);
-      frame.stretch.long = [];
       const parent = stack.at(-2);
-      dropRepeat(parent?.stretch.long ?? root, frame.stretch.short, parent === undefined);
+      const container = parent?.stretch.long ?? root;
+      const written = frame.stretch.short;
+      const lead = isWordless(written) ? takeLeadIn(container, frame.stretch) : undefined;
+      if (lead === undefined) dropRepeat(container, written, parent === undefined);
+      else frame.lead = { text: lead, short: written };
+      frame.stretch.key = keyOf(frame.stretch.short, parent, rootSiblings);
+      frame.stretch.long = [];
       i += 1;
       continue;
     }
     if (frame && text.startsWith("}}", i)) {
-      frame.stretch.isClosed = true;
-      frame.stretch.end = i;
+      const { stretch, lead } = frame;
       stack.pop();
       i += 2;
+      // An empty long form has nothing to open: its short form is plain text, and its key is free again.
+      if (stretch.long?.every(part => typeof part === "string" && part.trim() === "")) {
+        const parent = stack.at(-1);
+        (parent?.stretch.long ?? root).pop();
+        (parent?.siblings ?? rootSiblings).delete(parent ? stretch.key.slice(parent.stretch.key.length + KEY_SEPARATOR.length) : stretch.key);
+        write(lead === undefined ? stretch.short : lead.text + lead.short);
+        continue;
+      }
+      stretch.isClosed = true;
+      stretch.end = i - 2;
+      if (lead !== undefined) prependLead(stretch.long!, lead.text);
+      // A multi-line short form is never shown (only linkable stretches are), so its long form stands alone.
+      if (stretch.long !== undefined && !stretch.short.includes("\n")) keepShort(stretch.short, stretch.long);
       continue;
     }
     write(text[i] ?? "");
     i += 1;
   }
+  // A reply cut off inside a stretch: its long form is drawn open, so it needs its borrowed words too.
+  for (const { stretch, lead } of stack) if (lead !== undefined && stretch.long !== undefined) prependLead(stretch.long, lead.text);
   return root;
 }
 
@@ -164,7 +208,7 @@ export function parse(text: string): Segment[] {
 function dropRepeat(segments: Segment[], short: string, isRoot: boolean): void {
   const before = segments.at(-2);
   if (typeof before !== "string") return;
-  const want = short.split(/\s+/).map(bare).filter(word => word !== "");
+  const want = wordsOf(short);
   if (want.length === 0) return;
   const lineStart = before.lastIndexOf("\n") + 1;
   if (lineStart === 0 && !(isRoot && segments.length === 2)) return;
@@ -181,10 +225,74 @@ function dropRepeat(segments: Segment[], short: string, isRoot: boolean): void {
   const cut = lineStart + words[k + 1]!.index!;
   if (before.includes("`", cut)) return;
   const unpaired = before.slice(cut).replace(/(\*\*|__|~~|\*|_)(?=\S)(.*?\S)\1/g, "$2");
-  if (/[*_~]/.test(unpaired)) return;
+  if (/[*~]|(?<![\p{L}\p{N}])_|_(?![\p{L}\p{N}])/u.test(unpaired)) return;
   const lead = before.slice(lineStart, cut).trim();
   if (lead !== "" && !/^([-*+>]|\d+[.)]|#+)$/.test(lead) && !/[.!?:;]$/.test(lead)) return;
   segments[segments.length - 2] = before.slice(0, cut);
+}
+
+/**
+ * A wordless short form (`ago{{.|…}}`, `Done. {{|…}}`) takes on the words before it, back to the start
+ * of their sentence on that line: they leave `segments` and become its short form, so they open it
+ * and name it in the read note; `prependLead` puts them back at the start of its long form once it
+ * closes. The last word before it is taken even when it ends a sentence, since a stretch after
+ * `Done. ` extends that sentence, and then the short form's own punctuation is not added again.
+ * Words holding code, links, markup brackets or a table pipe stop the walk, as does a list, quote or
+ * heading mark; an emphasis mark left unpaired, or no letter or digit taken, refuses the lead-in, and
+ * the stretch is drawn open. Returns the words taken, with the space after them, or undefined.
+ */
+function takeLeadIn(segments: Segment[], stretch: Stretch): string | undefined {
+  const before = segments.at(-2);
+  if (typeof before !== "string") return undefined;
+  const lineStart = before.lastIndexOf("\n") + 1;
+  const words = [...before.slice(lineStart).matchAll(/\S+/g)];
+  const endsSentence = (word: string) => /[.!?:;][*_~)"'”’]*$/.test(word);
+  let k = words.length - 1;
+  for (; k >= 0; k--) {
+    const word = words[k]![0];
+    if (/[`[\]<>|]/.test(word) || /^([-*+>]|\d+[.)]|#+)$/.test(word)) break;
+    if (k < words.length - 1 && endsSentence(word)) break;
+  }
+  // The lead-in starts on a word, so a comma or dash in front of it stays where it was.
+  let start = k + 1;
+  while (start < words.length && !/[\p{L}\p{N}]/u.test(words[start]![0])) start++;
+  if (start === words.length) return undefined;
+  const cut = lineStart + words[start]!.index!;
+  const lead = before.slice(cut);
+  const unpaired = lead.replace(/(\*\*|__|~~|\*|_)(?=\S)(.*?\S)\1/g, "$2");
+  if (/\*|~~|(?<![\p{L}\p{N}])_|_(?![\p{L}\p{N}])/u.test(unpaired)) return undefined;
+  segments[segments.length - 2] = before.slice(0, cut);
+  const taken = lead.trimEnd();
+  stretch.short = endsSentence(taken) ? taken : `${taken}${stretch.short.trim()}`;
+  return lead;
+}
+
+/** Borrowed words go back in front of the long form; one that starts a block (list, quote, fence) goes below them. */
+function prependLead(long: Segment[], lead: string): void {
+  const first = long[0];
+  if (typeof first !== "string") long.unshift(lead);
+  else long[0] = BLOCK_START.test(first.trimStart()) ? `${lead.trimEnd()}\n\n${first.trimStart()}` : `${lead}${first}`;
+}
+
+/** A long form that starts a block (list, quote, heading, fence) goes below a prepended short form, not after it on its line. */
+const BLOCK_START = /^(?:[-*+>][ \t]|\d+[.)][ \t]|#{1,6}[ \t]|`{3,}|~{3,})/;
+
+/**
+ * A long form that drops the short form's idea, carrying fewer than half its words in order, starts
+ * with the short form, so opening it adds to what the reader saw instead of replacing it.
+ */
+function keepShort(short: string, long: Segment[]): void {
+  const want = wordsOf(short);
+  if (want.length === 0) return;
+  const have = wordsIn(tokenize(long)).map(entry => entry.word);
+  if (2 * commonLengths(want, have)[0]![0]! >= want.length) return;
+  const first = long[0];
+  if (typeof first !== "string") {
+    long.unshift(first === undefined ? short.trim() : `${short.trim()} `);
+    return;
+  }
+  const gap = /^\s/.test(first) ? "" : BLOCK_START.test(first) ? "\n\n" : " ";
+  long[0] = `${short.trim()}${gap}${first}`;
 }
 
 /**
@@ -326,24 +434,40 @@ function tokenize(long: Segment[]): Token[] {
   );
 }
 
-/** Token indexes of the long form carrying the short form's words, in order (longest common subsequence). */
-function anchorsOf(short: string, tokens: Token[]): Set<number> {
-  const want = short.split(/\s+/).map(bare).filter(word => word !== "");
+/** The short form's words, bare. */
+function wordsOf(short: string): string[] {
+  return short.split(/\s+/).map(bare).filter(word => word !== "");
+}
+
+/** The long form's words, bare, each with the token carrying it (a nested stretch carries its short form's). */
+function wordsIn(tokens: Token[]): { token: number; word: string }[] {
   const have: { token: number; word: string }[] = [];
   tokens.forEach((token, i) => {
     const words =
       token.kind === "word" ? [token.text] : token.kind === "nested" ? token.stretch.short.split(/\s+/) : [];
     for (const word of words.map(bare).filter(w => w !== "")) have.push({ token: i, word });
   });
+  return have;
+}
 
+/** `[i][j]`: longest common subsequence of `want` from `i` and `have` from `j`. */
+function commonLengths(want: string[], have: string[]): number[][] {
   const lengths = Array.from({ length: want.length + 1 }, () => new Array<number>(have.length + 1).fill(0));
   for (let i = want.length - 1; i >= 0; i--) {
     for (let j = have.length - 1; j >= 0; j--) {
       const row = lengths[i]!;
       const below = lengths[i + 1]!;
-      row[j] = want[i] === have[j]?.word ? below[j + 1]! + 1 : Math.max(below[j]!, row[j + 1]!);
+      row[j] = want[i] === have[j] ? below[j + 1]! + 1 : Math.max(below[j]!, row[j + 1]!);
     }
   }
+  return lengths;
+}
+
+/** Token indexes of the long form carrying the short form's words, in order (longest common subsequence). */
+function anchorsOf(short: string, tokens: Token[]): Set<number> {
+  const want = wordsOf(short);
+  const have = wordsIn(tokens);
+  const lengths = commonLengths(want, have.map(entry => entry.word));
   const anchors = new Set<number>();
   for (let i = 0, j = 0; i < want.length && j < have.length; ) {
     if (want[i] === have[j]?.word) {
@@ -372,6 +496,22 @@ function bare(word: string): string {
 // In-chat view: each closed stretch is a markdown link, each open one its long form then a « link.
 
 export type LinkOp = "open" | "close" | "deepen";
+
+/** The link scheme stretch links use in a plain terminal, where omp routes their picks to this extension. */
+export const LINK_SCHEME = "cc-stretch";
+
+/** One stretch link picked: the op, the reply's timestamp, the block's index in it, and the stretch's index. */
+export type Click = { op: LinkOp; timestamp: number; blockIndex: number; index: number };
+
+/**
+ * The click a stretch link's path holds, `op/timestamp/block/index`; undefined for anything else. The
+ * model can write such a link too, so the path is parsed strictly.
+ */
+export function parseClick(path: string): Click | undefined {
+  const match = /^(open|close|deepen)\/(\d{1,16})\/(\d{1,6})\/(\d{1,6})$/.exec(path);
+  if (!match) return undefined;
+  return { op: match[1] as LinkOp, timestamp: Number(match[2]), blockIndex: Number(match[3]), index: Number(match[4]) };
+}
 
 export type LinkView = {
   href: (op: LinkOp, index: number) => string;
@@ -444,18 +584,30 @@ function arriving(section: string, streamed: string): string {
   return `${section}${endsInBlock(section) ? "\n\n" : " "}${DEEPEN} ${shown}`;
 }
 
-/** A GFM table's delimiter row, such as `--- | :---:` or `| --- |`: leading and trailing pipes optional. */
-const TABLE_DELIMITER = /^[ \t]*(?=[^\n]*\|)\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/;
+/**
+ * A GFM table's delimiter row, such as `--- | :---:` or `| --- |`: leading and trailing pipes
+ * optional, inside a blockquote too.
+ */
+const TABLE_DELIMITER = /^[ \t]*(>[ \t]*)*(?=[^\n]*\|)\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/;
 
 /**
  * Whether `text` ends in a code fence or a table, which inline text after it would join or break.
- * A table runs to the next blank line, so it is its last paragraph holding a delimiter row.
+ * A table runs to the next blank line or block, so it is a delimiter row in the last paragraph with
+ * no code fence after it; one inside a fenced block is code.
  */
 function endsInBlock(text: string): boolean {
   const trimmed = text.trimEnd();
   if (/^[ \t]*(`{3,}|~{3,}|\|)/.test(trimmed.slice(trimmed.lastIndexOf("\n") + 1))) return true;
-  const paragraph = trimmed.split(/\n[ \t]*\n/).pop() ?? "";
-  return paragraph.split("\n").some(line => TABLE_DELIMITER.test(line));
+  let fence: string | undefined;
+  let table = false;
+  for (const line of (trimmed.split(/\n[ \t]*\n/).pop() ?? "").split("\n")) {
+    const marker = /^[ \t]*(`{3,}|~{3,})/.exec(line)?.[1];
+    if (marker !== undefined && (fence === undefined || (marker[0] === fence[0] && marker.length >= fence.length))) {
+      fence = fence === undefined ? marker : undefined;
+      table = false;
+    } else if (fence === undefined && TABLE_DELIMITER.test(line)) table = true;
+  }
+  return table;
 }
 
 /**
@@ -512,13 +664,14 @@ export function withAnswers(text: string, answers: readonly DeepenAnswer[]): str
   let left = [...answers];
   while (left.length > 0) {
     const all = stretches(parse(out));
-    const ready = left.flatMap(answer => {
+    const ready = left.flatMap((answer, index) => {
       const at = all.find(s => s.key === answer.key && isLinkable(s))?.end;
-      return at === undefined ? [] : [{ answer, at }];
+      return at === undefined ? [] : [{ answer, at, index }];
     });
     if (ready.length === 0) break;
-    // Last offset first, so splicing one never moves the next one's offset.
-    for (const { answer, at } of ready.sort((a, b) => b.at - a.at)) {
+    // Last offset first, so splicing one never moves the next one's offset. Answers to the same
+    // stretch share an offset: splice the later one first so the earlier one lands before it.
+    for (const { answer, at } of ready.sort((a, b) => b.at - a.at || b.index - a.index)) {
       const before = out.slice(0, at);
       // After a fence or table row the answer needs its own paragraph, or it joins the block.
       const head = endsInBlock(before) ? `${before.trimEnd()}\n\n` : /\s$/.test(before) ? before : `${before} `;
@@ -585,6 +738,30 @@ const SWITCH_NOTE: Record<Level, string> = {
     "Stretchtext is now section: at its shortest, each section under a heading shows one line, its finding; inside it, each paragraph or list item shows only its gist.",
 };
 
+/** Characters of prose past which a reply needs stretches: more than three sentences or so. */
+const LONG_REPLY = 800;
+
+/** A fenced code block, closed by a fence of the same run. */
+const FENCED_BLOCK = /^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?^[ \t]*\1[ \t]*$/gm;
+
+/**
+ * Whether a reply's text says the model has stopped writing stretches: long prose with no stretch
+ * markup at all. Undefined for a short plain reply, which says nothing either way. Code is left
+ * out of the length, since stretches never go there.
+ */
+export function isPlainReply(text: string): boolean | undefined {
+  // Any stretch written, even one drawn open or never closed, means the model still writes them.
+  if (text.includes("{{") && stretches(parse(text)).some(s => s.long !== undefined)) return false;
+  return text.replace(FENCED_BLOCK, "").trim().length >= LONG_REPLY ? true : undefined;
+}
+
+/**
+ * Sent while the last long reply had no stretches: deep in a session the guide alone stops carrying,
+ * and one plain reply tends to be followed by more.
+ */
+export const PLAIN_REMINDER =
+  "Stretchtext: your last long reply had no stretches. Use them in any reply longer than three sentences, status reports and summaries included.";
+
 /** Pure prompt edits; the caller owns pending reads and consumes the mode-change notification. */
 export function promptTransition(
   systemPrompt: string[],
@@ -592,6 +769,7 @@ export function promptTransition(
   switched: Mode | undefined,
   written: { id: string; short: string }[],
   opened: ReadonlySet<string>,
+  lastPlain = false,
 ): { systemPrompt: string[] | undefined; content: string | undefined } {
   const others = systemPrompt.filter(part => !ALL_GUIDES.includes(part));
   if (mode === "off") {
@@ -603,10 +781,11 @@ export function promptTransition(
     };
   }
   const guide = guideFor(mode);
-  const note = readNote(written, opened);
+  // A switch note already tells the model how to write from now on.
+  const lead = switched === undefined ? (lastPlain ? PLAIN_REMINDER : undefined) : SWITCH_NOTE[mode];
   const unchanged = systemPrompt.includes(guide) && others.length === systemPrompt.length - 1;
   return {
     systemPrompt: unchanged ? undefined : [...others, guide],
-    content: switched === undefined ? note : `${SWITCH_NOTE[mode]}${note === undefined ? "" : ` ${note}`}`,
+    content: [lead, readNote(written, opened)].filter(text => text !== undefined).join(" ") || undefined,
   };
 }
