@@ -22,7 +22,7 @@ import { readBtwHistory } from "./lib/btw-history";
 import { compactAtPercent, type Compaction } from "./lib/compaction";
 import { forgetRepos, repoOf } from "./lib/git";
 import { queryRecaps, querySessionRecaps, recapMark, withRecaps } from "./lib/recaps";
-import { answerSteps, KEYS, promptImages, type PromptImage } from "./lib/input";
+import { answerSteps, KEYS, promptImages, type Applied, type PromptImage } from "./lib/input";
 import { emptyState, foldVoice, listChanged, parseBridgeState, PROTOCOL, STRETCH_BLOCK, type BridgeState, type Caps, type ContextUse, type Job, type Voice } from "./lib/bridge-state";
 import { extensionCheck, offersCommand, sessionMismatch, type InstallStatus, type Mismatch } from "./lib/extension-check";
 import { claudeDir, codexDir, configDir, docIcon, installedExtension, ompDataDir, ternNotesDir } from "./lib/paths";
@@ -1044,17 +1044,26 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     return sendKeys(block, ["Enter"]);
   }
 
+  /** Per block, what the last send typed into its open ask: a resend after omp refused the form starts from there. */
+  const appliedAnswers = new Map<string, { id: string } & Applied>();
+
   /** Answers the pending ask dialog by typing its keys (see `answerSteps`). */
   async function answer(block: string, item: Item, body: Obj): Promise<string | null> {
     const chat = item.agent ? await readChat(item.agent.sessionId, 80) : null;
     const ask = chat?.entries.findLast((e) => e.role === "ask");
-    const steps = answerSteps(ask?.role === "ask" ? ask : undefined, body);
+    const last = appliedAnswers.get(block);
+    const applied = last && ask?.role === "ask" && last.id === ask.id ? last : undefined;
+    const steps = answerSteps(ask?.role === "ask" ? ask : undefined, body, applied);
     if (typeof steps === "string") return steps;
+    // Half typed, the form's state is unknown: forget it rather than count from a wrong one.
+    appliedAnswers.delete(block);
     for (const step of steps) {
       const err = "keys" in step ? await sendKeys(block, step.keys) : await sendText(block, step.text);
       if (err) return err;
       await Bun.sleep(150); // let omp open the prompt or the next tab before more input
     }
+    // Fields the body left out keep what they held; Other texts come whole with every body.
+    appliedAnswers.set(block, { id: str(body.id), values: { ...applied?.values, ...obj(body.values) }, other: obj(body.other) });
     return null;
   }
 

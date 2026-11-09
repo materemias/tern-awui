@@ -76,6 +76,24 @@ describe("answerSteps", () => {
     expect(steps(boxes, { x: ["a"] }, { x: "D" })).toEqual([{ keys: [...top(1), ...n("Down", 2), "ctrl+e", "ctrl+u"] }, { text: "D" }, { keys: ["Tab", "Enter"] }]);
   });
 
+  test("a resend counts from what the last send typed, which omp keeps after refusing the form", () => {
+    const form = ask(`<label><input type="checkbox" name="x" value="a" checked> A</label><label><input type="checkbox" name="x" value="b"> B</label>
+      <textarea name="t">one</textarea>`);
+    // The last send ticked B, typed Other "Z" and three lines; the resend drops Z and keeps A and B.
+    const applied = { values: { x: ["a", "b"], t: "1\n2\n3" }, other: { x: "Z" } };
+    expect(answerSteps(form, { id: "ask1", values: { x: ["a", "b"], t: "new" }, other: {} }, applied)).toEqual([
+      { keys: [...top(2), ...n("Down", 2), "ctrl+e", "ctrl+u", "Tab", "ctrl+e", ...n("ctrl+u", 8), ...n("ctrl+k", 8)] },
+      { text: "new" },
+      { keys: ["Tab", "Enter"] },
+    ]);
+    // Boxes and text as the last send left them need no keys; Other's text is typed whole every time.
+    expect(answerSteps(form, { id: "ask1", values: { x: ["a", "b"], t: "1\n2\n3" }, other: { x: "Z" } }, applied)).toEqual([
+      { keys: [...top(2), ...n("Down", 2), "ctrl+e", "ctrl+u"] },
+      { text: "Z" },
+      { keys: ["Tab", "Tab", "Enter"] },
+    ]);
+  });
+
   test("a dropdown steps Left to its first enabled option, then Right to the pick", () => {
     const select = ask(`<select name="db"><option>pg<option selected>sqlite<option disabled>oracle<option>mysql</select>`);
     expect(steps(select, { db: "mysql" })).toEqual([{ keys: [...top(1), ...n("Left", 3), ...n("Right", 2), "Tab", "Enter"] }]);

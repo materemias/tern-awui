@@ -1,7 +1,7 @@
 // What the phone may type into a pane: allowed keys, pasted images, ask-form answers.
 
 import { arr, obj, str, type Obj } from "./json";
-import { fieldStops, type AskField } from "./ask-form";
+import { fieldStops, type AskField, type AskOption } from "./ask-form";
 import { IMAGE_MIMES, type AskEntry } from "./transcript";
 
 export const KEYS: Record<string, true> = {
@@ -40,13 +40,14 @@ export type Step = { keys: string[] } | { text: string };
  * empty, closes nothing and moves at most one row. Shift+Tab per field then reaches the first
  * field whatever the desktop did, and every move after that is counted from there. A radio or
  * dropdown is set to the phone's pick outright; boxes toggle and text is retyped only where the
- * phone's answer differs from the form's starting values, and a field the body leaves out keeps
- * what it has.
+ * phone's answer differs from what the field holds: the form's starting values, or what an earlier
+ * send typed into this same ask (`applied`), which omp keeps when its own checks refuse the form.
+ * A field the body leaves out keeps what it has.
  *
  * `body`: `{ id, values: { name: string | string[] }, other: { name: text } }`, `ask` the newest
  * ask of the session; a string says why the body can't answer it.
  */
-export function answerSteps(ask: AskEntry | undefined, body: Obj): Step[] | string {
+export function answerSteps(ask: AskEntry | undefined, body: Obj, applied?: Applied): Step[] | string {
   if (!ask || ask.answer !== null || ask.id !== str(body.id)) return "this question is no longer open";
   if (!body.values || typeof body.values !== "object" || Array.isArray(body.values)) return "no answer given";
   const values = obj(body.values);
@@ -64,24 +65,43 @@ export function answerSteps(ask: AskEntry | undefined, body: Obj): Step[] | stri
   keys("Up", ...Array(fields.length + 1).fill("shift+Tab"));
   for (const [n, f] of fields.entries()) {
     if (n > 0) keys("Tab");
-    const error = fieldSteps(f, f.name && Object.hasOwn(values, f.name) ? values[f.name] : undefined, f.name ? str(others[f.name]).trim() : "", keys, type);
+    const name = f.name;
+    const was = name && applied && Object.hasOwn(applied.values, name) ? applied.values[name] : undefined;
+    const value = name && Object.hasOwn(values, name) ? values[name] : undefined;
+    const error = fieldSteps(f, value, name ? str(others[name]).trim() : "", was, name && applied ? str(applied.other[name]).trim() : "", keys, type);
     if (error) return error;
   }
   keys("Tab", "Enter");
   return steps;
 }
 
-/** One field's keys from its first stop; a string names a value it can't take. */
-function fieldSteps(f: AskField, value: unknown, other: string, keys: (...k: string[]) => void, type: (text: string) => void): string | null {
+/** What an earlier send typed into the open ask: its values and Other texts, as the body had them. */
+export type Applied = { values: Obj; other: Obj };
+
+/**
+ * One field's keys from its first stop; a string names a value it can't take. `was` and `otherWas`:
+ * the value and Other text an earlier send left in the field, if any.
+ */
+function fieldSteps(
+  f: AskField,
+  value: unknown,
+  other: string,
+  was: unknown,
+  otherWas: string,
+  keys: (...k: string[]) => void,
+  type: (text: string) => void,
+): string | null {
   const name = f.name;
   if (f.kind === "text") {
     if (value === undefined) return null;
     if (typeof value !== "string") return `${name} takes text`;
-    const text = f.multiline ? value : value.replace(/[\r\n]+/g, " ");
-    if (text === f.value) return null;
+    const line = (s: string) => (f.multiline ? s : s.replace(/[\r\n]+/g, " "));
+    const text = line(value);
+    const holds = typeof was === "string" ? line(was) : f.value;
+    if (text === holds) return null;
     // To the line's end, then delete back to its start: with lines, each Ctrl+U at a line start joins
     // the line above, and Ctrl+K at a line end joins the one below, so two per line empty the box.
-    const lines = f.multiline ? 2 * f.value.split("\n").length + 2 : 1;
+    const lines = f.multiline ? 2 * holds.split("\n").length + 2 : 1;
     keys("ctrl+e", ...Array(lines).fill("ctrl+u"), ...(f.multiline ? Array(lines).fill("ctrl+k") : []));
     type(text);
     return null;
@@ -125,12 +145,14 @@ function fieldSteps(f: AskField, value: unknown, other: string, keys: (...k: str
     return null;
   }
   if (wanted) {
+    const held = Array.isArray(was) ? (o: AskOption) => was.includes(o.value) : (o: AskOption) => o.checked;
     for (const [row, i] of enabled.entries()) {
-      if (f.options[i].checked === wanted.includes(f.options[i].value)) continue;
+      if (held(f.options[i]) === wanted.includes(f.options[i].value)) continue;
       moveTo(row);
       keys("space");
     }
   }
-  if (other && f.other) typeOther();
+  // A box group's Other text joins its boxes, so text an earlier send left there is emptied too.
+  if (f.other && (other || otherWas)) typeOther();
   return null;
 }
