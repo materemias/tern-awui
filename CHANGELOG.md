@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.10.0 (2026-11-09)
+
 ### Features
 
 - The new-omp sheet has a **Closed** tab: the omp sessions no Tern pane runs any more, newest first. Typing searches every omp session, and Claude Code and Codex sessions too (`claude` or `codex` as a word shows only that tool's). A tap resumes one in a new Tern tab in its folder; × dismisses it.
@@ -20,9 +22,9 @@
 - Opened Markdown files show their embedded images, including ones given relative to the file such as a README's `docs/demo.gif`.
 - Stretchtext parser synced with omp-stretch: a stretch whose short form is only punctuation opens from the words before it, in sync with the pane; a rewritten short form stays in view when opened; an empty long form shows as plain text; a repeat ✦ answer goes in after the first; a ✦ answer after a table starts its own paragraph instead of joining the table; a gist holding a `snake_case` word shows once.
 - Asks work again with omp 18.18.3, whose `ask` tool writes one HTML form instead of a list of questions. Before, such an ask showed as an ordinary tool call, with no card to answer and no question in the "Needs you" notification. The card now shows the form with the phone's own radios, boxes, dropdowns and text fields, plus omp's free-text Other for each choice group. The answer is typed into omp's form dialog on the desktop. A form with just one choice still sends on a tap, including a tap on the preselected option. Asks from an older omp show as tool calls.
+- An ask answer that omp's form refuses, for example a field too short for its `minlength`, no longer leaves the phone on "Sent, waiting for omp…": after 10 s without omp's result the card says omp hasn't taken it and can be sent again.
 
 ### Docs
-- An ask answer that omp's form refuses, for example a field too short for its `minlength`, no longer leaves the phone on "Sent, waiting for omp…": after 10 s without omp's result the card says omp hasn't taken it and can be sent again.
 
 - The phone film shows a voice call and the black screen.
 - The README explains up front that the desktop and the phone share the same Tern sessions: what's open in Tern continues on the phone, and a session started on the phone opens a Tern tab.
