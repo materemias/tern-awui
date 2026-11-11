@@ -96,15 +96,22 @@ export function textOf(content: unknown): string {
 }
 
 /**
- * What an ask's result says was answered: omp's `details.answers` as `question: answer` lines
- * (a timeout notes that omp took the form's own values), else the result's text (cancelled, errors).
+ * What an ask's result says was answered: omp's `details.answers` as `question: answer` lines, each
+ * followed by its `details.notes` (omp ≥ 18.18.8: a note on a chosen option) as `  Note on option: text`
+ * lines (a timeout notes that omp took the form's own values), else the result's text (cancelled, errors).
  */
 function askAnswer(msg: Obj): string {
   const details = obj(msg.details);
-  const lines = arr(details.answers)
+  const answers = arr(details.answers).map(obj);
+  if (!answers.length) return textOf(msg.content).trim();
+  const notes = arr(details.notes)
     .map(obj)
-    .map((a) => `${str(a.question, str(a.name))}: ${str(a.answer) || "(no answer)"}`);
-  if (!lines.length) return textOf(msg.content).trim();
+    .map((n) => ({ name: str(n.name), option: str(n.option) || str(n.value), text: str(n.text).replace(/\s+/g, " ").trim() }))
+    .filter((n) => n.text);
+  const lines = answers.flatMap((a) => [
+    `${str(a.question, str(a.name))}: ${str(a.answer) || "(no answer)"}`,
+    ...notes.filter((n) => n.name === str(a.name)).map((n) => `  Note on "${n.option}": ${n.text}`),
+  ]);
   return details.timedOut === true ? ["No answer in time; omp sent the form's own values", ...lines].join("\n") : lines.join("\n");
 }
 

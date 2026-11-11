@@ -441,11 +441,21 @@ describe("parseChat asks and advisor notes", () => {
     expect(entry.fields.map((f) => f.name)).toEqual(["pick"]);
   });
 
-  test("its result answers it: omp's answers as question lines, a timeout noted, else the text", () => {
+  test("its result answers it: omp's answers as question lines, each followed by its option notes, a timeout noted, else the text", () => {
     const t = new Transcript();
     t.user("decide", 0);
     t.assistant([ask("q1")], 10, { stop: "toolUse" });
-    t.result("q1", "ask", 11, { content: "User answers: …", details: { answers: [{ name: "pick", question: "Which?", answer: "B" }, { name: "n", question: "Note", answer: "" }] } });
+    t.result("q1", "ask", 11, {
+      content: "User answers: …",
+      details: {
+        answers: [{ name: "pick", question: "Which?", answer: "B" }, { name: "ok", question: "Ship it?", answer: "Yes" }, { name: "n", question: "Note", answer: "" }],
+        notes: [
+          { name: "ok", question: "Ship it?", option: "", value: "Yes", text: "after\n review" },
+          { name: "pick", question: "Which?", option: "Beta", value: "B", text: "keep it small" },
+          { name: "pick", question: "Which?", option: "Beta", value: "B", text: "  " },
+        ],
+      },
+    });
     t.assistant([ask("q2")], 20, { stop: "toolUse" });
     t.result("q2", "ask", 21, { details: { answers: [{ name: "pick", question: "Which?", answer: "A" }], timedOut: true } });
     t.assistant([ask("q3")], 30, { stop: "toolUse" });
@@ -454,7 +464,7 @@ describe("parseChat asks and advisor notes", () => {
     t.result("q4", "ask", 41, { content: [] });
     const asks = only(parseChat(t.lines(), "", 80).entries, "ask");
     expect(asks.map((a) => a.answer)).toEqual([
-      "Which?: B\nNote: (no answer)",
+      'Which?: B\n  Note on "Beta": keep it small\nShip it?: Yes\n  Note on "Yes": after review\nNote: (no answer)',
       "No answer in time; omp sent the form's own values\nWhich?: A",
       "Ask tool was cancelled by the user",
       "answered",

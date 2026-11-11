@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- An answered ask card shows the notes added to chosen options in omp 18.18.8 and newer.
+
 ### Docs
 
 - The phone film no longer opens on an "outdated extension" warning.
