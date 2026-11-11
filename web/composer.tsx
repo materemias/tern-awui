@@ -90,7 +90,7 @@ export function Composer({
   pastedRef.current = pasted;
   // Leaving the session with images still attached: their previews hold the image bytes.
   useEffect(() => () => { for (const p of pastedRef.current) URL.revokeObjectURL(p.url); }, []);
-  // Shells (no agent) open with the key bar shown: fzf and history need the arrows and Enter.
+  // 대화와 터미널에서 키 막대를 기본으로 보여 주고, 시작 중에는 숨긴다.
   const [keysOpen, setKeysOpen] = useState<boolean | null>(null);
   const [sheet, setSheet] = useState(false);
   /** The image button's menu: picker or clipboard, on touch screens that can read the clipboard. */
@@ -457,7 +457,7 @@ export function Composer({
   const thinking = item?.live?.thinking ?? "";
   const role = currentRole(roles, model, thinking);
   const working = item?.status === "working";
-  const keysShown = keysOpen ?? terminal;
+  const keysShown = keysOpen ?? (!!item && !starting);
   const empty = text.trim() === "" && !pasted.length;
   // While the agent runs and nothing is typed, the send button stops the turn instead.
   const stoppable = working && empty && !terminal && !!a;

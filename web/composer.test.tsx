@@ -1025,8 +1025,10 @@ describe("terminal typing and key bar", () => {
     let toggled = 0;
     const toggle = () => { toggled++; };
     await show({ raw: { on: false, toggle } });
-    expect(root.querySelector(".keys")).toBeNull();
+    expect(root.querySelector(".keys")).not.toBeNull();
     await input("keep my draft");
+    await click(button("Keys"));
+    expect(root.querySelector(".keys")).toBeNull();
     await click(button("Keys"));
     await click(button("Raw"));
     expect(toggled).toBe(1);
