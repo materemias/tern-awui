@@ -362,9 +362,16 @@ function literalPlaceholder(part: Stretch): string {
 }
 
 // ---------------------------------------------------------------------------
-// Growth: the short form's words are anchors that never move; new words arrive around them.
+// Growth: the short form's words are anchors that never move; new words arrive around them. A markdown
+// link arrives whole: part of one is drawn as its markup.
 
-type Token = { kind: "word" | "space"; text: string } | { kind: "nested"; stretch: Stretch };
+type Token =
+  | { kind: "word" | "space"; text: string }
+  | { kind: "link"; text: string; label: string }
+  | { kind: "nested"; stretch: Stretch };
+
+/** A markdown link or image: a label, then a target with no space in it. */
+const LINK = /!?\[([^\]\n]+)\]\([^)\s]+\)/g;
 type Atom = string | Stretch;
 type Side = "before" | "between" | "after";
 
@@ -424,27 +431,40 @@ function reveal(run: Atom[], side: Side, progress: number): Atom[] {
 }
 
 function tokenize(long: Segment[]): Token[] {
-  return long.flatMap((part): Token[] =>
-    typeof part === "string"
-      ? part
-          .split(/(\s+)/)
-          .filter(text => text !== "")
-          .map(text => ({ kind: /^\s+$/.test(text) ? "space" : "word", text }))
-      : [{ kind: "nested", stretch: part }],
-  );
+  const plain = (text: string): Token[] =>
+    text
+      .split(/(\s+)/)
+      .filter(piece => piece !== "")
+      .map(piece => ({ kind: /^\s+$/.test(piece) ? "space" : "word", text: piece }));
+  return long.flatMap((part): Token[] => {
+    if (typeof part !== "string") return [{ kind: "nested", stretch: part }];
+    const tokens: Token[] = [];
+    let at = 0;
+    for (const link of part.matchAll(LINK)) {
+      tokens.push(...plain(part.slice(at, link.index)), { kind: "link", text: link[0], label: link[1] ?? "" });
+      at = link.index + link[0].length;
+    }
+    return [...tokens, ...plain(part.slice(at))];
+  });
 }
 
-/** The short form's words, bare. */
+/** The short form's words, bare; a link in it reads as its label, as the reader reads it. */
 function wordsOf(short: string): string[] {
-  return short.split(/\s+/).map(bare).filter(word => word !== "");
+  return short.replace(LINK, "$1").split(/\s+/).map(bare).filter(word => word !== "");
 }
 
-/** The long form's words, bare, each with the token carrying it (a nested stretch carries its short form's). */
+/** The long form's words, bare, each with the token carrying it (a nested stretch carries its short form's, a link its label's). */
 function wordsIn(tokens: Token[]): { token: number; word: string }[] {
   const have: { token: number; word: string }[] = [];
   tokens.forEach((token, i) => {
     const words =
-      token.kind === "word" ? [token.text] : token.kind === "nested" ? token.stretch.short.split(/\s+/) : [];
+      token.kind === "word"
+        ? [token.text]
+        : token.kind === "link"
+          ? token.label.split(/\s+/)
+          : token.kind === "nested"
+            ? token.stretch.short.split(/\s+/)
+            : [];
     for (const word of words.map(bare).filter(w => w !== "")) have.push({ token: i, word });
   });
   return have;
@@ -457,7 +477,7 @@ function commonLengths(want: string[], have: string[]): number[][] {
     for (let j = have.length - 1; j >= 0; j--) {
       const row = lengths[i]!;
       const below = lengths[i + 1]!;
-      row[j] = want[i] === have[j] ? below[j + 1]! + 1 : Math.max(below[j]!, row[j + 1]!);
+      row[j] = holds(have[j], want[i]) ? below[j + 1]! + 1 : Math.max(below[j]!, row[j + 1]!);
     }
   }
   return lengths;
@@ -470,7 +490,7 @@ function anchorsOf(short: string, tokens: Token[]): Set<number> {
   const lengths = commonLengths(want, have.map(entry => entry.word));
   const anchors = new Set<number>();
   for (let i = 0, j = 0; i < want.length && j < have.length; ) {
-    if (want[i] === have[j]?.word) {
+    if (holds(have[j]?.word, want[i])) {
       anchors.add(have[j]!.token);
       i++;
       j++;
@@ -490,6 +510,14 @@ function anchorsOf(short: string, tokens: Token[]): Set<number> {
 /** A word without surrounding punctuation or markdown marks, lowercased, so `cache.` meets `**cache**`. */
 function bare(word: string): string {
   return word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "").toLowerCase();
+}
+
+/**
+ * Whether a long-form word holds a short-form word: it is that word, or a path ending in it, as when a
+ * file's name grows into where the file is. A URL's last part is not what the reader read.
+ */
+function holds(have = "", want = ""): boolean {
+  return have === want || (have.endsWith(want) && have[have.length - want.length - 1] === "/" && !have.includes("://"));
 }
 
 // ---------------------------------------------------------------------------
