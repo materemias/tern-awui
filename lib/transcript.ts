@@ -452,6 +452,8 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
   for (; parentOf.has(id) && !active.has(id); id = parentOf.get(id) ?? "") active.add(id);
   // A turn runs from a user prompt to the assistant message that stops without calling tools.
   let turnStart: number | null = null;
+  // When the last prompt came: an advisor note after the turn ended reopens it from there.
+  let promptAt: number | null = null;
   // Every cache miss, as Tern marks them live: omp's reload hides the ones after a compaction, a
   // model switch or a plan-mode toggle, but those still resend the whole prompt.
   let lastUsage: Usage | null = null;
@@ -468,6 +470,8 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
         .map((n) => ({ advisor: str(n.advisor), severity: str(n.severity, "note"), note: str(n.note).trim() }))
         .filter((n) => n.note);
       if (notes.length) entries.push({ role: "advisor", notes, ts });
+      // The agent answers the note in the same turn; its stop marks the turn's end again.
+      if (turnStart === null && promptAt !== null) turnStart = promptAt;
       continue;
     }
     if (injection) {
@@ -491,6 +495,7 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
       const images = imagesOf(msg.content);
       if (text || images.length) entries.push({ role: "user", id: str(row.id), text, images, ts });
       turnStart = ts;
+      promptAt = ts;
       turnFiles.clear();
     } else if (msg.role === "assistant") {
       const u = obj(msg.usage);

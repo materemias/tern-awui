@@ -135,6 +135,48 @@ describe("turns", () => {
     expect(root.querySelector(".chat-recap")).not.toBeNull();
   });
 
+  test("a turn that answered, then got an advisor note, keeps the answer in sight with the note and the reply to it", async () => {
+    const note = (n: string): ChatEntry => ({ role: "advisor", notes: [{ advisor: "sol", severity: "concern", note: n }], ts: TS });
+    // As parseChat writes it: the answer ends the turn, the note reopens it, the reply ends it again.
+    const turn = [
+      user("ship it"),
+      group({ name: "edit", intent: "Fixing" }),
+      said("Interim."),
+      group({ name: "bash", intent: "Testing" }),
+      said("Shipped, all green."),
+      ended(30_000),
+      note("Key: stale-cache"),
+      group({ name: "read", intent: "Rechecking" }),
+      said("Fixed the cache too."),
+      ended(60_000),
+    ];
+    // While it answers the note, the turn runs again.
+    await show(turn.slice(0, 8));
+    expect(root.querySelector(".turn-work-sum")!.textContent).toBe("Working · 3 tools");
+    await show(turn);
+    expect(root.querySelector(".turn-work-sum")!.textContent).toBe("Worked 1m00s · 3 tools");
+    expect(replies()).toEqual(["Shipped, all green.", "Fixed the cache too."]);
+    expect(root.querySelectorAll(".advisor")).toHaveLength(1);
+    // The work before the answer and the work the note caused fold together.
+    expect(root.querySelector(".tools")).toBeNull();
+    await click(row());
+    expect(root.querySelectorAll(".tools")).toHaveLength(3);
+    expect(replies()).toEqual(["Interim.", "Shipped, all green.", "Fixed the cache too."]);
+  });
+
+  test("an advisor note in the middle of the work (after tools, not a reply) folds with it", async () => {
+    await show([
+      user("ship it"),
+      group({ name: "edit", intent: "Fixing" }),
+      { role: "advisor", notes: [{ advisor: "sol", severity: "concern", note: "careful" }], ts: TS },
+      group({ name: "bash", intent: "Testing" }),
+      said("Shipped."),
+      ended(60_000),
+    ]);
+    expect(replies()).toEqual(["Shipped."]);
+    expect(root.querySelector(".advisor")).toBeNull();
+  });
+
   test("the last turn stays unfolded while it runs, then folds once it ends", async () => {
     const running = finished.slice(0, 6);
     await show([user("earlier"), said("ok"), ended(1_000), ...running]);

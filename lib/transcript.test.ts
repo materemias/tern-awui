@@ -197,6 +197,19 @@ describe("parseChat turns", () => {
     expect(only(entries, "turn")[0]).toMatchObject({ ms: 8000, model: "claude-test" });
   });
 
+  test("an advisor note after the answer reopens the turn: the reply to it ends it again, timed from the prompt", () => {
+    const t = new Transcript();
+    t.user("fix the build", 1000);
+    t.say("Fixed.", 5000);
+    t.advisor([{ note: "Key: stale cache" }], 6000);
+    t.assistant([call("c1", "bash", { i: "Rechecking", command: "bun test" })], 7000, { stop: "toolUse" });
+    t.result("c1", "bash", 8000);
+    t.say("Cache fixed too.", 10000);
+    const { entries } = parseChat(t.lines(), "", 80);
+    expect(roles(entries)).toEqual(["user", "assistant", "turn", "advisor", "tools", "assistant", "turn"]);
+    expect(only(entries, "turn").map((e) => e.ms)).toEqual([4000, 9000]);
+  });
+
   test("an assistant message that stops for tools does not end the turn", () => {
     const t = new Transcript();
     t.user("go", 0);

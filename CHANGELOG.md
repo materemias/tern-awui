@@ -22,6 +22,7 @@
 
 ### Fixes
 
+- A turn whose answer drew an advisor note no longer hides that answer behind the work row: the answer, the note and the agent's reply to it all stay in view, and only the work in between folds. While the agent works on the note, the turn shows as running again, and the files it changes then get their own card under the reply.
 - Opening a stretch no longer makes a Mermaid diagram above it flicker between its drawing and its source: a diagram drawn once goes straight back in each time the reply re-renders, before the screen paints.
 - Images an agent puts in a reply as `local://<name>` (files in its session's `local://` folder) show in the chat instead of a broken image.
 - The **+ omp** sheet keeps one height on all three tabs, so its top no longer jumps when you switch between New, Parked and Closed.
