@@ -416,7 +416,7 @@ function NewSheet({
     : "loading";
   return (
     <div class="sheet-backdrop" onClick={onClose}>
-      <div class="sheet tall" onClick={(e) => e.stopPropagation()}>
+      <div class="sheet tall new-sheet" onClick={(e) => e.stopPropagation()}>
         <div class="sheet-head">
           <div class="seg" role="tablist">
             <button type="button" role="tab" aria-selected={tab === "folder"} class={tab === "folder" ? "on" : ""} onClick={() => show("folder")}>

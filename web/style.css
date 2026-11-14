@@ -887,3 +887,8 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .closed-sub, .closed-sub.recap { padding-left: 0; -webkit-line-clamp: 1; }
 /* A long project name gives way before the title does. */
 .prow-top .wname-project { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
+/* The new-omp sheet keeps one height across its tabs, so switching New, Parked and Closed doesn't
+   move its top; a short list leaves room below instead. */
+.sheet.new-sheet { height: 82dvh; }
+.new-sheet .sheet-list { flex: 1; min-height: 0; }
+@media (min-width: 1000px) { .sheet.new-sheet { height: min(78vh, 720px); } }
