@@ -47,8 +47,17 @@ export const sleep = (ms: number) => Bun.sleep(ms);
  * Builds the scratch HOME in `work` (only a folder an earlier take made is cleared), starts the fake
  * model on `script` (a module exporting `pick`), the Tern daemon and window, and the server.
  * `extension`: what omp loads as tern-mobile (default the real one; the phone take wraps it).
+ * `ompConfig`: YAML added to omp's config.yml; `serverEnv`: more of the server's environment.
  */
-export async function setUp(o: { work: string; script: string; folders: Folder[]; stretch: boolean; extension?: string }) {
+export async function setUp(o: {
+  work: string;
+  script: string;
+  folders: Folder[];
+  stretch: boolean;
+  extension?: string;
+  ompConfig?: string;
+  serverEnv?: (home: string) => Record<string, string>;
+}) {
   const work = resolve(o.work);
   const sentinel = join(work, ".tern-awui-film");
   if (existsSync(work)) {
@@ -64,7 +73,7 @@ export async function setUp(o: { work: string; script: string; folders: Folder[]
   writeFileSync(join(agent, "models.yml"), `providers:\n  anthropic:\n    baseUrl: http://127.0.0.1:${MODEL_PORT}\n    apiKey: x\n`);
   writeFileSync(
     join(agent, "config.yml"),
-    `setupVersion: 2\nmodelRoles:\n  default: anthropic/claude-opus-5-5\nsymbolPreset: nerd\nhideThinkingBlock: true\nstartup:\n  changelogMode: "off"\nmarketplace:\n  autoUpdate: "off"\n`,
+    `setupVersion: 2\nmodelRoles:\n  default: anthropic/claude-opus-5-5\nsymbolPreset: nerd\nhideThinkingBlock: true\nstartup:\n  changelogMode: "off"\nmarketplace:\n  autoUpdate: "off"\n${o.ompConfig ?? ""}`,
   );
   // Installed as install.ts does, a link to this checkout's file, so the app's extension check passes.
   // omp loads the take's own extension (`-e`, the phone take's wrapper) instead of discovering this one.
@@ -133,7 +142,12 @@ export async function setUp(o: { work: string; script: string; folders: Folder[]
   const procs: Bun.Subprocess[] = [
     Bun.spawn(["bun", join(import.meta.dir, "fake-model.ts"), String(MODEL_PORT), join(work, "model.log"), resolve(o.script)], { stdout: "ignore", stderr: "inherit" }),
     Bun.spawn(["tern", "daemon", "--socket", env.TERN_DAEMON_SOCKET], { env, stdout: "ignore", stderr: "ignore" }),
-    Bun.spawn(["bun", join(REPO, "server.ts")], { cwd: home, env: { ...env, HOME: home, TERN_AWUI_PORT: String(SERVER_PORT) }, stdout: "ignore", stderr: "inherit" }),
+    Bun.spawn(["bun", join(REPO, "server.ts")], {
+      cwd: home,
+      env: { ...env, HOME: home, TERN_AWUI_PORT: String(SERVER_PORT), ...o.serverEnv?.(home) },
+      stdout: "ignore",
+      stderr: "inherit",
+    }),
   ];
   await sleep(1500);
   procs.push(Bun.spawn(["tern", "--control", sock], { cwd: work, env, stdout: "ignore", stderr: "ignore" }));
@@ -169,9 +183,12 @@ export async function setUp(o: { work: string; script: string; folders: Folder[]
       await tern("send", id, "keys", "Enter");
     },
     async open(viewport: { width: number; height: number }, phone: boolean): Promise<Page> {
-      const context = await (await launch()).newContext({ viewport, deviceScaleFactor: DPR, isMobile: phone, hasTouch: phone, serviceWorkers: "block" });
+      // en-GB: clocks read 13:26, as omp's own do.
+      const context = await (await launch()).newContext({ viewport, deviceScaleFactor: DPR, isMobile: phone, hasTouch: phone, serviceWorkers: "block", locale: "en-GB" });
       contexts.push(context);
       const page = await context.newPage();
+      // The first-run guide would open over the list: this device has seen it.
+      await page.addInitScript(() => localStorage.setItem("tern-mobile:guide", "done"));
       await page.goto(`${BASE}/#/`);
       return page;
     },

@@ -41,6 +41,9 @@
 ### Docs
 
 - The phone film no longer opens on an "outdated extension" warning.
+- The phone film shows the current app.
+- The handover film shows the current app.
+- A new film shows a tool approval and the Waiting popup handled from a phone.
 
 ## 0.10.0 (2026-11-09)
 

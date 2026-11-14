@@ -14,6 +14,8 @@ tern-awui runs no agents of its own. Every session it shows is an omp running in
 - **A session started on the phone opens a Tern tab on the desktop.** **+ omp** picks a project folder and starts omp there in a new tab, waiting for you when you sit back down.
 - **Both screens drive the same omp.** Drafts, answers, model changes and rewinds go to the omp in its Tern pane, so the two never disagree.
 
+![What needs you, on a phone: a session's edit to a restricted folder waits on an approval, the card shows the change in words and Approve once lets the turn finish with its changed file, then the Waiting popup groups the sessions set aside in Tern by who holds the next step, the one on you is marked seen and another is snoozed for a day](docs/workflow.gif)
+
 The same task can move between screens: started in Tern, finished in a desktop browser, answered on the phone and sent from Tern again.
 
 ![One omp task handed over: a prompt typed in a Tern pane, finished and sent from a desktop browser, an ask answered on the phone, the reply's stretches opened and deepened there and shown open in Tern, a reply started on the phone and sent from the Tern pane](docs/handover.gif)

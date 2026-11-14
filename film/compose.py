@@ -7,8 +7,9 @@ The handover take (film/take.ts, layout "stage"): a white page with an eyebrow a
 over a light gray stage card holding three midnight-titanium devices, a display showing the Tern
 window, a laptop showing the desktop browser and a phone showing the phone browser, all live. A
 camera flies between them: it pulls back to frame where the task was and where it goes, then
-pushes in. The phone take (film/take-phone.ts, layout "phone"): the phone alone on the right of the
-card, its headline on the left. Pointers, taps and dragging fingers are drawn in.
+pushes in. The phone takes (film/take-phone.ts and film/take-workflow.ts, layout "phone"): the
+phone alone on the right of the card, its headline on the left. Pointers, taps and dragging
+fingers are drawn in.
 
     uv run film/compose.py [WORK]   (default /tmp/tern-awui-film)
 
