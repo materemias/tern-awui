@@ -31,9 +31,26 @@ const mermaidSvgs = new Map<string, string | null>();
 const MERMAID_CACHE_MAX = 32;
 let mermaidSeq = 0;
 
-/** Draws the mermaid placeholders under `root`; the library (~1 MB) loads on first use. */
+/** Puts a drawn diagram into every placeholder whose source is already drawn; synchronous. */
+function fillMermaid(slots: HTMLElement[]): HTMLElement[] {
+  return slots.filter((slot) => {
+    const src = slot.textContent ?? "";
+    if (!mermaidSvgs.has(src)) return true;
+    const svg = mermaidSvgs.get(src);
+    // A diagram that doesn't parse keeps showing its source.
+    slot.classList.remove("mermaid-src");
+    if (svg) slot.innerHTML = svg;
+    return false;
+  });
+}
+
+/**
+ * Draws the mermaid placeholders under `root`; the library (~1 MB) loads on first use. Diagrams
+ * drawn before go in at once, so a reply re-rendered around them (a stretch growing) doesn't flash
+ * their source.
+ */
 async function drawMermaid(root: HTMLElement) {
-  const slots = [...root.querySelectorAll<HTMLElement>(".mermaid-src")];
+  const slots = fillMermaid([...root.querySelectorAll<HTMLElement>(".mermaid-src")]);
   if (!slots.length) return;
   mermaidReady ??= import("mermaid").then(
     ({ default: m }) => {
@@ -117,7 +134,9 @@ export function Markdown({
   const sources = imageSources && JSON.stringify(imageSources);
   const html = useMemo(() => renderMarkdown(text, imageSources), [text, sources]);
   const lang = useMemo(() => langOf(text), [text]);
-  useEffect(() => {
+  // Before paint: the new HTML must not show for a frame without its copy buttons, charts and
+  // already drawn diagrams (a growing stretch re-renders its reply every few words).
+  useLayoutEffect(() => {
     if (!ref.current) return;
     addCopyButtons(ref.current);
     drawCharts(ref.current);
