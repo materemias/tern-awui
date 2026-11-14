@@ -128,17 +128,17 @@ describe("Home", () => {
       item({ block: "recent", since: Date.now() }),
     ], "selected");
     expect(root.querySelectorAll(".row").length).toBe(7);
-    await click(root.querySelector('[aria-label="Hide sessions older than a day"]'));
+    await click(root.querySelector(".dock .hide-old"));
     expect(row("old")).toBeNull();
     expect(root.querySelectorAll(".row").length).toBe(6);
     expect(row("selected")?.classList.contains("selected")).toBe(true);
-    expect(root.querySelector('[aria-label="Show 1 sessions older than a day"] .hidden-count')?.textContent).toBe("1");
+    expect(root.querySelector(".dock .hide-old .dock-label")?.textContent).toBe("1 old hidden");
     expect(localStorage.getItem("tern-mobile:hide-old")).toBe("on");
     await input(".search input", "Ancient entry");
     expect(root.querySelectorAll(".row").length).toBe(1);
     expect(row("old")).not.toBeNull();
     await input(".search input", "");
-    await click(root.querySelector('[aria-label="Show 1 sessions older than a day"]'));
+    await click(root.querySelector(".dock .hide-old"));
     expect(row("old")).not.toBeNull();
     expect(localStorage.getItem("tern-mobile:hide-old")).toBe("off");
     await act(() => render(null, root));

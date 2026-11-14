@@ -657,11 +657,8 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 
 .icon-btn { position: relative; }
 /* Hide-old toggle: an eye; while hiding, a lit pill with the hidden count beside the eye. */
-.icon-btn.hide-old { width: auto; min-width: 30px; padding: 0 7px; gap: 4px; grid-auto-flow: column; border-radius: 7px; }
-.hidden-count { font-size: 13px; font-variant-numeric: tabular-nums; }
 /* The list header's icons sized to its 13 px counts: 16 px glyphs in 30 px buttons. */
 .list-bar .icon-btn { width: 30px; height: 30px; }
-.list-bar .icon-btn.hide-old { width: auto; }
 .list-bar .icon-btn svg { width: 16px; height: 16px; }
 
 /* The extension doesn't match the server: a banner on the list, a notice under a session's header,
@@ -880,6 +877,23 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
   .peek.above { transform-origin: bottom left; }
   @keyframes peek-in { from { opacity: 0; transform: scale(.97); } }
 }
+
+/* The dock: this device's switches in a small floating pill over the list's lower right corner, within
+   thumb reach. Icons carry the state (the bell's dot or slash, the struck eye and its count); a tap
+   confirms in a toast, and the words stay for screen readers and the desktop's tooltips. */
+.screen:has(> .dock) { position: relative; }
+.screen:has(> .dock) > .list { padding-bottom: 76px; }
+.dock { position: absolute; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 4; display: flex; gap: 2px; padding: 4px; border: 1px solid var(--line); border-radius: 999px; background: color-mix(in srgb, var(--raise) 82%, transparent); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: 0 8px 26px rgb(0 0 0 / .45); }
+.dock-btn { position: relative; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); }
+.dock-btn svg { width: 19px; height: 19px; }
+.dock-btn.on { color: var(--fg); }
+.dock-btn.hide-old.on { color: var(--accent); }
+.dock-btn:active, .dock-btn:focus-visible { background: var(--line); }
+.dock-btn:disabled { opacity: .6; }
+.dock-badge { position: absolute; top: 3px; right: 2px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--accent); color: #0b0d10; font-size: 10.5px; font-weight: 700; line-height: 16px; text-align: center; font-variant-numeric: tabular-nums; }
+.dock-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (hover: hover) { .dock-btn:hover { background: var(--line); color: var(--fg); } }
+.screen:has(> .dock) > .toast { bottom: calc(72px + env(safe-area-inset-bottom)); }
 
 /* The list's tools row: the Tern session chips scroll on the left, the Waiting pill stays on the right. */
 .list-tools { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }

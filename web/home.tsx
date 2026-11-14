@@ -1,4 +1,4 @@
-// The session list: projects with their rows, the filter, the bell, and the new-omp sheet.
+// The session list: projects with their rows and peeks, the filter, the bottom dock, and the new-omp sheet.
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { launchAgent, post, type Closed, type Item } from "./api";
 import { keepsTool, matchesWords, parseSearch } from "../lib/search";
@@ -198,11 +198,22 @@ function BrandToggle({ expand = false, onClick }: { expand?: boolean; onClick?: 
   );
 }
 
-function PushButton({ push: [push, togglePush] }: { push: [PushState, () => void] }) {
+/** What the dock's notification switch says, short enough for one line beside its neighbours. */
+const PUSH_WORD: Record<PushState, string> = {
+  unsupported: "",
+  denied: "Notifications blocked",
+  off: "Notifications off",
+  pending: "Connecting…",
+  on: "Notifications on",
+  stopped: "Notifications stopped",
+};
+
+/** The notification switch: an icon on the rail, the icon and its state in words in the dock. */
+function PushButton({ push: [push, togglePush], dock = false }: { push: [PushState, () => void]; dock?: boolean }) {
   if (push === "unsupported") return null;
   return (
     <button
-      class={`icon-btn push-${push}${push === "on" ? " on" : ""}`}
+      class={`${dock ? "dock-btn" : "icon-btn"} push-${push}${push === "on" ? " on" : ""}`}
       disabled={push === "pending"}
       onClick={() => (push === "denied" ? alert(permissionHelp("denied")) : togglePush())}
       aria-label={PUSH_LABEL[push]}
@@ -213,6 +224,7 @@ function PushButton({ push: [push, togglePush] }: { push: [PushState, () => void
         {(push === "off" || push === "denied" || push === "stopped") && <path d="M3.5 3.5 16.5 16.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />}
         {push === "on" && <circle cx="15" cy="5" r="2.6" fill="var(--working)" stroke="none" />}
       </svg>
+      {dock && <span class="dock-label">{PUSH_WORD[push]}</span>}
     </button>
   );
 }
@@ -544,6 +556,28 @@ export function Home({
   waitingCard?: string | null;
 }) {
   const { state, waiting, online } = useStream(null, "chat");
+  // A short line at the bottom confirming what a dock switch did; its icons alone say less.
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef(0);
+  function flash(text: string) {
+    setToast(text);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 1800);
+  }
+  // The bell settles after a permission prompt and the server's answer: once a tap set it off, say where it landed.
+  const pushAsked = useRef(false);
+  const dockPush: [PushState, () => void] = [
+    push[0],
+    () => {
+      pushAsked.current = true;
+      push[1]();
+    },
+  ];
+  useEffect(() => {
+    if (!pushAsked.current || push[0] === "pending") return;
+    pushAsked.current = false;
+    flash(PUSH_LABEL[push[0]]);
+  }, [push[0]]);
   const [q, setQ] = useState("");
   // The Tern session chips scroll sideways when they don't fit: a faded edge says more are there,
   // and the picked one is scrolled into view.
@@ -731,20 +765,6 @@ export function Home({
               ))}
           </span>
         )}
-        <PushButton push={push} />
-        <button
-          class={`icon-btn hide-old${hideOld ? " on" : ""}`}
-          onClick={toggleOld}
-          aria-label={hideOld ? `Show ${oldCount} sessions older than a day` : "Hide sessions older than a day"}
-          title={hideOld ? `Show ${oldCount} sessions older than a day` : "Hide sessions older than a day"}
-        >
-          {/* An open eye; while hiding, the button is lit and the hidden count sits beside it. */}
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <path d="M1.8 10S4.8 4.5 10 4.5 18.2 10 18.2 10 15.2 15.5 10 15.5 1.8 10 1.8 10Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
-            <circle cx="10" cy="10" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4" />
-          </svg>
-          {hideOld && oldCount > 0 && <span class="hidden-count">{oldCount}</span>}
-        </button>
         <button class="new-omp omp-play" onClick={() => setPicker(true)} aria-label="New omp in a project" title="New omp in a project">
           <PiMark plus />
         </button>
@@ -815,10 +835,39 @@ export function Home({
           );
         })}
       </main>
+      {/* This device's switches float in a small pill over the list's lower corner, within thumb reach;
+          the header above keeps what is happening. Each says its state by its icon and a badge. */}
+      {state && (
+        <footer class="dock">
+          <PushButton push={dockPush} dock />
+          <button
+            class={`dock-btn hide-old${hideOld ? " on" : ""}`}
+            onClick={() => {
+              toggleOld();
+              flash(hideOld ? "Showing every session" : oldCount ? `${oldCount} sessions older than a day hidden` : "Sessions older than a day will hide");
+            }}
+            aria-pressed={hideOld}
+            title={hideOld ? `Show the ${oldCount} sessions older than a day` : "Hide sessions older than a day"}
+          >
+            {/* An eye, struck through while hiding, with how many it hides. */}
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M1.8 10S4.8 4.5 10 4.5 18.2 10 18.2 10 15.2 15.5 10 15.5 1.8 10 1.8 10Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+              <circle cx="10" cy="10" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4" />
+              {hideOld && <path d="M3.5 3.5 16.5 16.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />}
+            </svg>
+            {hideOld && oldCount > 0 && (
+              <b class="dock-badge" aria-hidden="true">
+                {oldCount}
+              </b>
+            )}
+            <span class="dock-label">{hideOld ? (oldCount ? `${oldCount} old hidden` : "Old hidden") : "Hide old"}</span>
+          </button>
+        </footer>
+      )}
       {peek && <Peek at={peek} now={now} onClose={closePeek} />}
       {sheet}
       {waitingPopup}
-      {exitHint && <div class="toast">Press back again to exit</div>}
+      {(exitHint || toast) && <div class="toast">{exitHint ? "Press back again to exit" : toast}</div>}
     </div>
   );
 }

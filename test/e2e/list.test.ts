@@ -87,13 +87,13 @@ describe.skipIf(!CHROMIUM)("session list", () => {
 
   test("hiding old sessions drops the idle day-old omp, counts it, and persists", async () => {
     const { page } = app;
-    const clock = page.locator('header.bar button[aria-label*="older than a day"]');
-    expect(await clock.getAttribute("aria-label")).toBe("Hide sessions older than a day");
+    const clock = page.locator(".dock .hide-old");
+    expect(await clock.locator(".dock-label").textContent()).toBe("Hide old");
     await clock.click();
     // Blocks without a time (shells, the note, htop) always stay.
     await texts(page.locator(".row .title"), ["htop", "Terminal", "Note"]);
-    expect(await clock.getAttribute("aria-label")).toBe("Show 1 sessions older than a day");
-    expect(await clock.locator(".hidden-count").textContent()).toBe("1");
+    expect(await clock.locator(".dock-label").textContent()).toBe("1 old hidden");
+    expect(await clock.getAttribute("aria-pressed")).toBe("true");
     // A filter searches the hidden ones too.
     await page.locator(".search input").fill("phone");
     await texts(page.locator(".row .title"), ["Build phone UI"]);
