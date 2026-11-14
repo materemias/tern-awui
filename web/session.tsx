@@ -53,8 +53,10 @@ export function Session({ block }: { block: string }) {
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
   const glide = useRef<Glide | null>(null);
-  // The ↑/↓ prompt jumps show only once the reader has scrolled up from the end.
+  // Jump to latest shows only once the reader has scrolled up from the end; its dot, once output
+  // arrived meanwhile.
   const [atEnd, setAtEnd] = useState(true);
+  const [unread, setUnread] = useState(false);
   const now = useNow(5000);
   // Only the working row reads it, while the session works.
   const todo = useMemo(() => newestTodo(chat), [chat]);
@@ -63,6 +65,13 @@ export function Session({ block }: { block: string }) {
     const el = scroller.current;
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
   }, [chat, live, queued, screen, view]);
+  // Output arriving while the reader is scrolled up lights the jump button's dot; reaching the end clears it.
+  useEffect(() => {
+    if (!pinned.current) setUnread(true);
+  }, [chat, live]);
+  useEffect(() => {
+    if (atEnd) setUnread(false);
+  }, [atEnd]);
   // Anything else that grows the bottom (the working row, subagent jobs, images loading, an
   // answer card) keeps a reader at the bottom there too: each child's size is watched, and the
   // watch follows children coming and going. A prompt jump in flight is left to finish.
@@ -193,7 +202,7 @@ export function Session({ block }: { block: string }) {
           onScroll={(e) => {
             const el = e.currentTarget;
             setAtEnd(nearEnd(el));
-            // Mid-glide the position says nothing about following: jumpTurn decided that.
+            // Mid-glide the position says nothing about following: the jump decided that.
             if (gliding(glide.current, el)) return;
             glide.current = null;
             pinned.current = nearEnd(el);
@@ -254,18 +263,11 @@ export function Session({ block }: { block: string }) {
           {item && <JobsStrip block={block} jobs={item.live?.jobs ?? []} subagents={item.agent?.subagents ?? 0} now={now} />}
         </div>
         {!item?.doc && chat && view === "chat" && !atEnd && (
-          <div class="turn-jump">
-            <button title="Previous prompt" aria-label="Previous prompt" onClick={() => jumpTurn(scroller.current, -1, glide, pinned)}>
-              <svg viewBox="0 0 20 20" aria-hidden="true">
-                <path d="M10 15.5v-11M5.5 9 10 4.5 14.5 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </button>
-            <button title="Next prompt, else the end" aria-label="Next prompt, else the end" onClick={() => jumpTurn(scroller.current, 1, glide, pinned)}>
-              <svg viewBox="0 0 20 20" aria-hidden="true">
-                <path d="M10 4.5v11M5.5 11 10 15.5 14.5 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </button>
-          </div>
+          <JumpButtons
+            unread={unread}
+            onLatest={() => scroller.current && glideTo(scroller.current, scroller.current.scrollHeight - scroller.current.clientHeight, glide, pinned)}
+            onPrevious={() => jumpPrevPrompt(scroller.current, glide, pinned)}
+          />
         )}
       </div>
       {!item?.doc && (
@@ -418,9 +420,16 @@ function jumpTodo(scroller: HTMLElement | null, glide: { current: Glide | null }
   if (!scroller || !list) return;
   if (!list.querySelector(".todo-phase")) list.click();
   const max = scroller.scrollHeight - scroller.clientHeight;
-  const top = Math.min(max, Math.max(0, list.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - JUMP_GAP));
+  glideTo(scroller, Math.min(max, Math.max(0, list.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - JUMP_GAP)), glide, pinned);
+}
+
+/**
+ * Glides `scroller` to `top`. Only a glide to the end keeps following new output: otherwise a live
+ * update would snap the glide back down.
+ */
+function glideTo(scroller: HTMLElement, top: number, glide: { current: Glide | null }, pinned: { current: boolean }) {
   glide.current = { top, at: performance.now() };
-  pinned.current = top >= max - 2;
+  pinned.current = top >= scroller.scrollHeight - scroller.clientHeight - 2;
   scroller.scrollTo({ top, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 }
 
@@ -442,22 +451,40 @@ function gliding(glide: Glide | null, scroller: HTMLElement): glide is Glide {
   return !!glide && Math.abs(scroller.scrollTop - glide.top) > 2 && performance.now() - glide.at < GLIDE_MAX_MS;
 }
 
-/**
- * Glides `scroller` to the previous (`-1`) or next (`1`) prompt above or below the one at its
- * top; past the last prompt, to the end, and before the first, to the top. Only a glide to the
- * end keeps following new output: otherwise a live update would snap the glide back down.
- */
-function jumpTurn(scroller: HTMLElement | null, dir: -1 | 1, glide: { current: Glide | null }, pinned: { current: boolean }) {
+/** Glides `scroller` to the prompt above the one at its top; before the first, to the top. */
+function jumpPrevPrompt(scroller: HTMLElement | null, glide: { current: Glide | null }, pinned: { current: boolean }) {
   if (!scroller) return;
   const max = scroller.scrollHeight - scroller.clientHeight;
   const base = scroller.getBoundingClientRect().top - scroller.scrollTop;
   const tops = [...scroller.querySelectorAll<HTMLElement>(".msg.user")].map((el) => Math.min(max, Math.max(0, el.getBoundingClientRect().top - base - JUMP_GAP)));
-  // Repeated taps step on from the pending target: the glide's midpoint would land on the same prompt again.
+  // Repeated presses step on from the pending target: the glide's midpoint would land on the same prompt again.
   const at = gliding(glide.current, scroller) ? glide.current.top : scroller.scrollTop;
-  const target = dir < 0 ? tops.findLast((t) => t < at - 2) ?? 0 : tops.find((t) => t > at + 2) ?? max;
-  glide.current = { top: target, at: performance.now() };
-  pinned.current = target >= max - 2;
-  scroller.scrollTo({ top: target, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  glideTo(scroller, tops.findLast((t) => t < at - 2) ?? 0, glide, pinned);
+}
+
+/**
+ * The chat's floating buttons, there once the reader has scrolled up from the end. ↑ steps back to
+ * the previous prompt; ↓ glides to the newest output and follows it again, and a dot marks output
+ * that arrived meanwhile.
+ */
+function JumpButtons({ unread, onLatest, onPrevious }: { unread: boolean; onLatest: () => void; onPrevious: () => void }) {
+  return (
+    <div class="jump-btns">
+      <button type="button" class="jump-prev" title="Previous prompt" aria-label="Previous prompt" onClick={onPrevious}>
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M10 15.5v-11M5.5 9 10 4.5 14.5 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+      <button type="button" class="jump-latest" title="Jump to latest" aria-label={unread ? "Jump to latest, new output below" : "Jump to latest"} onClick={onLatest}>
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M10 4.5v11M5.5 11 10 15.5 14.5 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        {unread && <span class="jump-dot" aria-hidden="true" />}
+      </button>
+    </div>
+  );
+}
+
 }
 
 /** A plain file, colored by its extension once the highlighter loads; plain until then. */

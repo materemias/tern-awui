@@ -283,6 +283,63 @@ test("scrolling away preserves position when a transcript update arrives", async
   expect(scroll.scrollTop).toBe(1000);
 });
 
+test("Jump to latest shows only away from the end, marks output that arrived meanwhile, and glides back down", async () => {
+  const prompt = (id: string, ts: number) => ({ role: "user", id, text: id, images: [], ts });
+  await open(item({ status: "working" }));
+  await emit("chat", { entries: [prompt("u1", 1), prompt("u2", 2)] });
+  const scroll = root.querySelector<HTMLElement>(".scroll")!;
+  Object.defineProperties(scroll, { scrollHeight: { configurable: true, value: 2000 }, clientHeight: { configurable: true, value: 400 } });
+  const glides: ScrollToOptions[] = [];
+  scroll.scrollTo = ((options: ScrollToOptions) => void glides.push(options)) as typeof scroll.scrollTo;
+  const scrollTo = (top: number) => {
+    scroll.scrollTop = top;
+    return act(() => void scroll.dispatchEvent(new Event("scroll")));
+  };
+  const jump = () => root.querySelector<HTMLElement>(".jump-latest");
+  await scrollTo(1600);
+  expect(jump()).toBeNull();
+  expect(root.querySelector(".jump-prev")).toBeNull();
+  await scrollTo(1000);
+  expect(root.querySelectorAll(".jump-latest").length).toBe(1);
+  expect(root.querySelectorAll(".jump-prev").length).toBe(1);
+  expect(jump()!.getAttribute("aria-label")).toBe("Jump to latest");
+  expect(root.querySelector(".jump-dot")).toBeNull();
+
+  await emit("chat", { entries: [prompt("u1", 1), prompt("u2", 2), { role: "assistant", text: "new below", ts: 3 }] });
+  expect(root.querySelector(".jump-dot")).not.toBeNull();
+  expect(jump()!.getAttribute("aria-label")).toBe("Jump to latest, new output below");
+
+  // ↑ steps back to the previous prompt.
+  const [u1, u2] = root.querySelectorAll<HTMLElement>(".msg.user");
+  u1.getBoundingClientRect = () => ({ top: 200 - 1000 }) as DOMRect;
+  u2.getBoundingClientRect = () => ({ top: 900 - 1000 }) as DOMRect;
+  await click(".jump-prev");
+  expect(glides).toEqual([{ top: 892, behavior: "smooth" }]);
+
+  // A tap glides to the end; arriving there hides the button and clears its dot.
+  await click(".jump-latest");
+  expect(glides.at(-1)).toEqual({ top: 1600, behavior: "smooth" });
+  await scrollTo(1600);
+  expect(jump()).toBeNull();
+  await scrollTo(1000);
+  expect(root.querySelector(".jump-dot")).toBeNull();
+});
+
+test("Jump to latest stays off the raw screen", async () => {
+  await open(item({ status: "idle" }));
+  await emit("chat", { entries: [] });
+  const scroll = root.querySelector<HTMLElement>(".scroll")!;
+  Object.defineProperties(scroll, { scrollHeight: { configurable: true, value: 2000 }, clientHeight: { configurable: true, value: 400 } });
+  scroll.scrollTop = 0;
+  await act(() => void scroll.dispatchEvent(new Event("scroll")));
+  expect(root.querySelector(".jump-latest")).not.toBeNull();
+  await click('[aria-label="Keys"]');
+  const raw = [...root.querySelectorAll<HTMLButtonElement>(".keys button")].find((b) => b.textContent === "Raw")!;
+  await act(() => raw.click());
+  expect(root.querySelector(".jump-latest")).toBeNull();
+  expect(root.querySelector(".jump-prev")).toBeNull();
+});
+
 test("omp's welcome mark heads the chat, with the first turn right below it", async () => {
   await open(item({ status: "idle" }));
   await emit("chat", { entries: [] });

@@ -115,12 +115,14 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 
 /* Rhythm: tight inside a turn, a hairline and air before each prompt (.chat-turn below). */
 .scroll { flex: 1; overflow-y: auto; padding: 14px 14px 18px; display: flex; flex-direction: column; gap: 8px; overscroll-behavior: contain; line-height: 1.5; }
-/* The chat's ↑/↓ prompt jumps float over its bottom right corner. */
+/* Jump to latest floats over the chat's bottom right corner while the reader is scrolled up; its dot marks output that arrived since. */
 .scroll-wrap { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
-.turn-jump { position: absolute; right: 12px; bottom: 12px; z-index: 5; display: flex; flex-direction: column; gap: 6px; }
-.turn-jump button { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border-radius: 50%; border: 1px solid var(--line); background: var(--raise); color: var(--muted); box-shadow: 0 2px 10px rgb(0 0 0 / .35); }
-.turn-jump svg { width: 18px; height: 18px; }
-.turn-jump button:hover, .turn-jump button:active { color: var(--fg); }
+/* ↑ (previous prompt) and ↓ (latest, while scrolled up) stacked in the chat's lower right corner. */
+.jump-btns { position: absolute; right: 12px; bottom: 12px; z-index: 5; display: flex; flex-direction: column; gap: 8px; }
+.jump-prev, .jump-latest { position: relative; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border-radius: 50%; border: 1px solid var(--line); background: var(--raise); color: var(--muted); box-shadow: 0 2px 10px rgb(0 0 0 / .35); user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
+.jump-prev svg, .jump-latest svg { width: 18px; height: 18px; }
+.jump-prev:is(:hover, :active), .jump-latest:is(:hover, :active) { color: var(--fg); }
+.jump-dot { position: absolute; top: 0; right: 0; width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--raise); background: var(--accent); }
 /* Swiping sideways to the next session or subagent: the screen follows the finger over the
    neighbour's name, which waits at the edge it comes in from; the count sits over the header. */
 .swipe { position: relative; overflow: clip; height: 100dvh; }
