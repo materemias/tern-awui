@@ -52,6 +52,8 @@ const SAFETY_MS = 15_000;
 const PING_MS = 12_000;
 const TERN_EVENTS_RETRY_MS = 2000;
 const ROLES_TTL_MS = 5 * 60_000;
+/** The Tern plugin's answer on which parked panes this window can bring back is asked again after this long, though nothing parked changed. */
+const DECKS_TTL_MS = 60_000;
 const SCREEN_LINES = 160;
 /** Sessions the new-omp sheet's Closed tab lists. */
 const CLOSED_LIMIT = 100;
@@ -186,12 +188,14 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     const title = item ? `${item.tag ? `${item.tag}: ` : ""}${item.title}` : "omp";
     const entries = sessionId ? ((await readChat(sessionId, 20))?.entries ?? []) : [];
     if (stopped) return;
-    const ask = kind === "blocked" ? entries.findLast((e) => e.role === "ask") : undefined;
+    // As the row: the open question first, then the tool approval, then the reply.
+    const last = kind === "blocked" ? entries.findLast((e) => e.role === "ask") : undefined;
+    const ask = last?.role === "ask" && last.answer === null ? last : null;
     const said = entries.findLast((e) => e.role === "assistant");
     const approval = kind === "blocked" ? bridges.get(pane)?.state.approval : null;
-    const detail = approval
-      ? approvalQuestion(approval)
-      : ask?.role === "ask" ? ask.question : said?.role === "assistant" ? said.text.replace(/[*`#_>]/g, "") : "";
+    const detail = ask
+      ? ask.question
+      : approval ? approvalQuestion(approval) : said?.role === "assistant" ? said.text.replace(/[*`#_>]/g, "") : "";
     const body = `${kind === "blocked" ? "Needs you" : "Finished"}${detail ? ` · ${detail.trim().slice(0, 160)}` : ""}`;
     // `badge`: the app icon's count of unseen updates, set by the service worker while the app is closed.
     await pushAll(JSON.stringify({ title, body, block: pane, badge: unseen.size }));
@@ -253,17 +257,30 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
 
   /** The question a blocked session asks, for its row; absent while it asks nothing (a tool approval) or isn't blocked. */
   const asking = new Map<string, string>();
-  async function noteAsk(pane: string, sessionId: string) {
+  /** Blocked panes whose transcript didn't show the open question yet: looked at again once its leaf moves. */
+  const askUnseen = new Set<string>();
+  /** `retry`: when no open question shows yet, look again on the pane's next leaf change (once). */
+  async function noteAsk(pane: string, sessionId: string, retry = true) {
     // The status's start time marks this blocked spell: a newer one (or another session) has its own call.
     const spell = bridges.get(pane)?.state.since;
-    const entries = sessionId ? ((await readChat(sessionId, 20).catch(() => null))?.entries ?? []) : [];
+    const entries = sessionId ? ((await parseSessionChat(sessionId, 20).catch(() => null))?.entries ?? []) : [];
     const last = entries.findLast((e) => e.role === "ask");
     // An answered ask is history: a tool approval after it asks nothing.
     const ask = last?.role === "ask" && last.answer === null ? last : null;
     const b = bridges.get(pane)?.state;
-    if (stopped || !ask?.question || b?.status !== "blocked" || b.since !== spell || b.sessionId !== sessionId) return;
+    if (stopped || b?.status !== "blocked" || b.since !== spell || b.sessionId !== sessionId) return;
+    if (!ask?.question) {
+      if (retry) askUnseen.add(pane);
+      return;
+    }
     asking.set(pane, ask.question.replace(/\s+/g, " ").trim().slice(0, 200));
     invalidateState();
+  }
+
+  /** A blocked spell ended, or the pane's session or bridge changed: its question goes. */
+  function forgetAsk(pane: string) {
+    askUnseen.delete(pane);
+    if (asking.delete(pane)) invalidateState();
   }
 
   const doneTimers = new Map<string, Timer>();
@@ -271,7 +288,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   function onStatusChange(pane: string, from: string, to: string, sessionId: string) {
     clearTimeout(doneTimers.get(pane));
     doneTimers.delete(pane);
-    if (asking.delete(pane)) invalidateState();
+    forgetAsk(pane);
     if (to === "blocked") {
       markUnseen(pane, "blocked");
       void noteAsk(pane, sessionId);
@@ -684,30 +701,31 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
    * The panes parked in this window's sessions, which tern-awui's Tern plugin (0.3 and newer) lists;
    * null when it can't tell (no plugin, an older one, no answer). `tern ls` lists among `detached`
    * every pane in no tab, also one parked in a session that has since closed, which no window can
-   * bring back. Asked once per `tern ls`, and only when that lists a pane in no tab.
+   * bring back. Asked only while `tern ls` lists a pane in no tab, and again only once those panes
+   * or Tern's sessions change, or after `DECKS_TTL_MS` (a plugin installed or updated meanwhile).
    */
-  let decksCache: { tree: Promise<{ out: string; error: string | null }>; value: Promise<Set<string> | null> } | null = null;
-  function ternDecks(tree: Promise<{ out: string; error: string | null }>): Promise<Set<string> | null> {
-    if (decksCache?.tree !== tree) decksCache = { tree, value: tree.then((ls) => (hasDetached(ls.out) ? askDecks() : new Set<string>())) };
+  let decksCache: { key: string; at: number; value: Promise<Set<string> | null> } | null = null;
+  /** The running or last decks ask: one at a time, as they share the request files. */
+  let decksAsk: Promise<unknown> = Promise.resolve();
+  async function ternDecks(tree: Promise<{ out: string; error: string | null }>): Promise<Set<string> | null> {
+    let parsed: Obj = {};
+    try {
+      parsed = obj(JSON.parse((await tree).out));
+    } catch {}
+    const parked = arr(parsed.detached).map((b) => String(obj(b).id)).sort();
+    if (!parked.length) return new Set();
+    const key = JSON.stringify([parked, ternSessionsOf(parsed).map((s) => s.id)]);
+    if (decksCache?.key !== key || Date.now() - decksCache.at > DECKS_TTL_MS) {
+      const value = decksAsk.then(askDecks);
+      decksAsk = value;
+      decksCache = { key, at: Date.now(), value };
+    }
     return decksCache.value;
   }
-  function hasDetached(out: string): boolean {
-    try {
-      return arr(obj(JSON.parse(out)).detached).length > 0;
-    } catch {
-      return false;
-    }
-  }
   async function askDecks(): Promise<Set<string> | null> {
-    const plugins = await tern(["plugin", "list", "--json"]);
-    let plugin: Obj | undefined;
-    try {
-      plugin = arr(obj(JSON.parse(plugins.out)).plugins).map(obj).find((p) => p.id === "tern-awui");
-    } catch {
-      return null;
-    }
+    const { plugin } = await ternPlugin();
     // 0.2 and older don't know `decks`: Tern would open the request as a file.
-    if (!plugin || plugin.status !== "ready" || /^0\.[012]\./.test(str(plugin.version))) return null;
+    if (!plugin || plugin.status !== "ready" || pluginBefore(plugin, 3)) return null;
     const dir = join(CONFIG_DIR, "tern-awui-requests");
     const file = join(dir, "decks-0");
     const out = join(dir, "decks.out");
@@ -727,6 +745,22 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     }
   }
 
+  /** tern-awui's Tern plugin as `tern plugin list` reports it (undefined: not installed); `failed` when that list can't be read. */
+  async function ternPlugin(): Promise<{ plugin?: Obj; failed?: string }> {
+    const plugins = await tern(["plugin", "list", "--json"]);
+    try {
+      return { plugin: arr(obj(JSON.parse(plugins.out)).plugins).map(obj).find((p) => p.id === "tern-awui") };
+    } catch {
+      return { failed: plugins.error ?? "unreadable list" };
+    }
+  }
+
+  /** Whether the plugin is a 0.x older than 0.`minor`: it would open a request it doesn't know as a file. */
+  function pluginBefore(plugin: Obj, minor: number): boolean {
+    const version = /^0\.(\d+)\./.exec(str(plugin.version));
+    return !!version && Number(version[1]) < minor;
+  }
+
   async function buildState(): Promise<State> {
     const treeCall = ternTree();
     const [ls, agents, settings, decks] = await Promise.all([treeCall, readAgents(), ompSettings(), ternDecks(treeCall)]);
@@ -743,11 +777,16 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     const parked = new Set(detached.map((b) => String(b.id)));
     // In no tab and in no deck of this window: parked in a Tern session that has closed since.
     const stranded = new Set(decks ? [...parked].filter((id) => !decks.has(id)) : []);
-    const blocks = [...arr(tree.sessions).flatMap((s) => arr(obj(s).tabs).flatMap((t) => arr(obj(t).blocks).map(obj))), ...detached];
-    // The Tern session whose tab holds each block; parked ones are in none.
+    // Every block, and the Tern session whose tab holds it; parked ones are in none.
+    const blocks: Obj[] = [];
     const sessionOf = new Map<string, string>();
     for (const s of arr(tree.sessions).map(obj))
-      for (const t of arr(s.tabs)) for (const b of arr(obj(t).blocks)) sessionOf.set(String(obj(b).id), str(s.name));
+      for (const t of arr(s.tabs))
+        for (const b of arr(obj(t).blocks).map(obj)) {
+          blocks.push(b);
+          sessionOf.set(String(b.id), str(s.name));
+        }
+    blocks.push(...detached);
     // Every distinct cwd at once; only a cwd seen for the first time waits for git.
     const cwds = [...new Set(blocks.map((b) => str(b.cwd, HOME)))];
     const repos = new Map(await Promise.all(cwds.map((cwd) => repoOf(cwd, HOME, invalidateState).then((r) => [cwd, r] as const))));
@@ -988,8 +1027,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     for (const p of s.projects) for (const i of p.items) if (i.block === block) return i;
   }
 
-  /** Park requests running per block: a second tap joins the first, an opposite one waits for it. */
-  const parking = new Map<string, { park: boolean; done: Promise<string | null> }>();
+  /** Park requests running per block: a second tap (same target) joins the first, any other waits for it. */
+  const parking = new Map<string, { park: boolean; session: string | null; done: Promise<string | null> }>();
 
   /**
    * Parks a pane in Tern, or unparks it into a tab of its own, in Tern session `session` (an id)
@@ -997,8 +1036,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
    */
   function parkPane(block: string, park: boolean, session: string | null = null): Promise<string | null> {
     const running = parking.get(block);
-    if (running?.park === park) return running.done;
-    const entry = { park, done: (running?.done ?? Promise.resolve(null)).then(() => requestPark(block, park, session)) };
+    if (running?.park === park && running.session === session) return running.done;
+    const entry = { park, session, done: (running?.done ?? Promise.resolve(null)).then(() => requestPark(block, park, session)) };
     parking.set(block, entry);
     void entry.done.then(() => parking.get(block) === entry && parking.delete(block));
     return entry.done;
@@ -1010,17 +1049,12 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
    */
   async function requestPark(block: string, park: boolean, session: string | null): Promise<string | null> {
     const verb = park ? "park" : "unpark";
-    const plugins = await tern(["plugin", "list", "--json"]);
-    let plugin: Obj | undefined;
-    try {
-      plugin = arr(obj(JSON.parse(plugins.out)).plugins).map(obj).find((p) => p.id === "tern-awui");
-    } catch {
-      return `tern plugin list failed (${plugins.error ?? "unreadable list"}): parking needs a Tern with plugins`;
-    }
+    const { plugin, failed } = await ternPlugin();
+    if (failed) return `tern plugin list failed (${failed}): parking needs a Tern with plugins`;
     if (!plugin) return `To ${verb} panes, Tern needs tern-awui's plugin: run \`bun install.ts\` again`;
     if (plugin.status !== "ready") return `tern-awui's Tern plugin isn't ready (${str(plugin.status, "no status")}): see \`tern plugin list\``;
     // 0.1 reads only `unpark <pane>`; a request it doesn't know would open as a file instead.
-    if (session && /^0\.[01]\./.test(str(plugin.version)))
+    if (session && pluginBefore(plugin, 2))
       return "tern-awui's Tern plugin predates unparking into a chosen session: run `tern plugin reload tern-awui`";
     const dir = join(CONFIG_DIR, "tern-awui-requests");
     const file = join(dir, `${verb}-${block}`);
@@ -1951,6 +1985,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     emit(pane, "stretch", null);
     emit(pane, "context", null);
     emit(pane, "approval", null);
+    forgetAsk(pane);
   }
 
   /** A connection stopped speaking for its pane: its pending requests fail now, not at their timeout. */
@@ -2149,6 +2184,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           if (before.leaf !== b.state.leaf) {
             emit(pane, "leaf", null);
             invalidateState();
+            // The question may have reached the transcript only now.
+            if (status === "blocked" && askUnseen.delete(pane)) void noteAsk(pane, b.state.sessionId, false);
           }
           if (JSON.stringify(before.queued) !== JSON.stringify(b.state.queued)) emit(pane, "queued", b.state.queued);
           if (JSON.stringify(before.run) !== JSON.stringify(b.state.run)) emit(pane, "run", b.state.run);
@@ -2170,6 +2207,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           if (listChanged(before, b.state)) invalidateState();
           // `before.status` is empty on a fresh connection: a restarted omp is not a finished turn.
           if (!changedSession && before.status && before.status !== status) onStatusChange(pane, before.status, status, b.state.sessionId);
+          // A fresh connection (or session) that is already blocked: its question, without announcing it again.
+          else if ((changedSession || !before.status) && status === "blocked") void noteAsk(pane, b.state.sessionId);
           notifyBridge(pane);
           if (typeof msg.seq === "number") {
             b.waiting.get(msg.seq)?.(msg);

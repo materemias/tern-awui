@@ -2,7 +2,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { highlightFile } from "./highlight";
 import { post, type ApprovalView, type ChatEntry, type Item, type Run, type TodoPhase } from "./api";
-import { age, backStep, can, elapsed, isNote, readPatch, routeHash, swipeOrder, todoSummary, type Route } from "./lib";
+import { age, backStep, can, elapsed, isNote, pickedTernSession, readPatch, routeHash, storedTernSession, swipeOrder, todoSummary, type Route } from "./lib";
 import { ANSWER_TAKEN_MS, Chat, Markdown, StretchContext, type StretchSync } from "./chat";
 import { liveText, withOpen } from "./stretch";
 import { screenHtml } from "./markdown";
@@ -114,7 +114,13 @@ export function Session({ block }: { block: string }) {
   // list's order as this device shows it, plus this session and any a run of swipes passed.
   const siblings = (): Siblings => {
     const order = state
-      ? swipeOrder(state.projects, { hideOld: storedHideOld(), collapsed: storedCollapsed(), now: Date.now(), keep: new Set([...swipeTrail, block]) })
+      ? swipeOrder(state.projects, {
+          hideOld: storedHideOld(),
+          collapsed: storedCollapsed(),
+          now: Date.now(),
+          keep: new Set([...swipeTrail, block]),
+          session: pickedTernSession(state.ternSessions, storedTernSession()),
+        })
       : [];
     return {
       items: order.map((i) => ({ href: routeHash({ view: "session", block: i.block }), label: <SessionLabel item={i} /> })),

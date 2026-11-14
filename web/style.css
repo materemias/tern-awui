@@ -890,7 +890,7 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .guide { position: fixed; inset: 0; z-index: 40; }
 .guide-dim { position: absolute; inset: 0; background: rgb(0 0 0 / .68); }
 .guide-hole { position: absolute; border-radius: 12px; box-shadow: 0 0 0 1px var(--accent), 0 0 0 200vmax rgb(0 0 0 / .68); }
-.guide-card { position: absolute; background: var(--raise); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px 12px; box-shadow: 0 10px 34px rgb(0 0 0 / .5); }
+.guide-card { position: absolute; overflow-y: auto; background: var(--raise); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px 12px; box-shadow: 0 10px 34px rgb(0 0 0 / .5); }
 .guide-card h3 { margin: 2px 0 6px; font-size: 17px; }
 .guide-card p { margin: 0 0 14px; color: var(--fg); opacity: .88; }
 .guide-step { font-size: 12px; }
@@ -903,7 +903,7 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 }
 
 /* ---------- Tern session chips (home list, with more than one Tern session) ---------- */
-.tern-sessions { display: flex; gap: 6px; padding: 4px 12px 8px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+.tern-sessions { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
 .tern-session { flex: none; position: relative; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line); background: none; color: var(--muted); font: inherit; font-size: 13px; white-space: nowrap; }
 .tern-session.on { color: var(--fg); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 /* The session the desktop shows: a small dot after its name. */
@@ -944,7 +944,7 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 
 /* The list's tools row: the Tern session chips scroll on the left, the Waiting pill stays on the right. */
 .list-tools { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
-.list-tools .tern-sessions { flex: 1; min-width: 0; padding: 0; border: 0; }
+.list-tools .tern-sessions { flex: 1; min-width: 0; }
 .wait-strip.compact { flex: none; gap: 6px; margin: 0; padding: 5px 10px 5px 9px; font-size: 13px; }
 .wait-strip.compact svg { width: 15px; height: 15px; }
 .wait-strip.compact .wait-strip-me { padding: 0 6px; }

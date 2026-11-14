@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { launchAgent, post, type Closed, type Item } from "./api";
 import { keepsTool, matchesWords, parseSearch } from "../lib/search";
-import { age, backStep, folderLabel, isOld, jobsSummary, launchTarget, listProjects, onList, parseStoredList, pickedTernSession, rowText, storedTernSession, TERN_SESSION_KEY, toggled } from "./lib";
+import { age, backStep, folderLabel, inTernSession, isOld, jobsSummary, launchTarget, listProjects, onList, parseStoredList, pickedTernSession, rowText, storedTernSession, TERN_SESSION_KEY, toggled } from "./lib";
 import { buzz, Dot, PiMark } from "./parts";
 import { ExtensionBanner } from "./extension";
 import { goBack, origins, useExitGuard, useNow, useStream } from "./hooks";
@@ -45,13 +45,16 @@ const HOVER_MS = 600;
 function usePeekGesture(show: (el: HTMLElement) => void, hide: () => void) {
   const g = useRef({ timer: 0, x: 0, y: 0, touch: false, fired: false });
   const clear = () => clearTimeout(g.current.timer);
+  useEffect(() => clear, []);
   const handlers = {
     onPointerDown(e: PointerEvent) {
       if (e.pointerType === "mouse") return;
       const el = e.currentTarget as HTMLElement;
       clear();
       g.current = { x: e.clientX, y: e.clientY, touch: true, fired: false, timer: 0 };
+      // A row gone meanwhile (the list re-sorted, the session closed) opens no peek.
       g.current.timer = window.setTimeout(() => {
+        if (!el.isConnected) return;
         g.current.fired = true;
         buzz();
         show(el);
@@ -67,7 +70,7 @@ function usePeekGesture(show: (el: HTMLElement) => void, hide: () => void) {
       const el = e.currentTarget as HTMLElement;
       g.current.touch = false;
       clear();
-      g.current.timer = window.setTimeout(() => show(el), HOVER_MS);
+      g.current.timer = window.setTimeout(() => el.isConnected && show(el), HOVER_MS);
     },
     onPointerLeave(e: PointerEvent) {
       if (e.pointerType !== "mouse") return;
@@ -78,8 +81,9 @@ function usePeekGesture(show: (el: HTMLElement) => void, hide: () => void) {
       if (g.current.touch) e.preventDefault();
     },
   };
-  /** True once when the click ending a long press arrives: it must not open the row. */
+  /** True once when the click ending a long press arrives: it must not open the row. Any click ends a pending hover. */
   function swallow(): boolean {
+    clear();
     const fired = g.current.fired;
     g.current.fired = false;
     return fired;
@@ -87,8 +91,8 @@ function usePeekGesture(show: (el: HTMLElement) => void, hide: () => void) {
   return { handlers, swallow };
 }
 
-/** A row's peek: the session and the row's box, which it opens beside. */
-export type PeekAt = { item: Item; top: number; bottom: number; left: number; width: number };
+/** A row's peek: the session's block and the row's box, which it opens beside. */
+export type PeekAt = { block: string; top: number; bottom: number; left: number; width: number };
 
 /**
  * A session row. Its second line shows only while it works or asks something; `onPeek` gets the
@@ -100,7 +104,7 @@ function Row({ item, now, selected, onPeek }: { item: Item; now: number; selecte
   const { handlers, swallow } = usePeekGesture(
     (el) => {
       const r = el.getBoundingClientRect();
-      onPeek?.({ item, top: r.top, bottom: r.bottom, left: r.left, width: r.width });
+      onPeek?.({ block: item.block, top: r.top, bottom: r.bottom, left: r.left, width: r.width });
     },
     () => onPeek?.(null),
   );
@@ -199,17 +203,7 @@ function BrandToggle({ expand = false, onClick }: { expand?: boolean; onClick?: 
   );
 }
 
-/** What the dock's notification switch says, short enough for one line beside its neighbours. */
-const PUSH_WORD: Record<PushState, string> = {
-  unsupported: "",
-  denied: "Notifications blocked",
-  off: "Notifications off",
-  pending: "Connecting…",
-  on: "Notifications on",
-  stopped: "Notifications stopped",
-};
-
-/** The notification switch: an icon on the rail, the icon and its state in words in the dock. */
+/** The notification switch: an icon button on the rail, a dock button in the dock; its label says its state. */
 function PushButton({ push: [push, togglePush], dock = false }: { push: [PushState, () => void]; dock?: boolean }) {
   if (push === "unsupported") return null;
   return (
@@ -225,7 +219,6 @@ function PushButton({ push: [push, togglePush], dock = false }: { push: [PushSta
         {(push === "off" || push === "denied" || push === "stopped") && <path d="M3.5 3.5 16.5 16.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />}
         {push === "on" && <circle cx="15" cy="5" r="2.6" fill="var(--working)" stroke="none" />}
       </svg>
-      {dock && <span class="dock-label">{PUSH_WORD[push]}</span>}
     </button>
   );
 }
@@ -234,8 +227,7 @@ function PushButton({ push: [push, togglePush], dock = false }: { push: [PushSta
  * What a row keeps out of the list, beside it: omp's recap or the last prompt (a file's folder, a
  * shell's cwd), then where it runs. Any touch elsewhere, a scroll or Escape closes it.
  */
-function Peek({ at, now, onClose }: { at: PeekAt; now: number; onClose: () => void }) {
-  const { item } = at;
+function Peek({ at, item, now, onClose }: { at: PeekAt; item: Item; now: number; onClose: () => void }) {
   const { peek } = rowText(item, now);
   useEffect(() => {
     const close = () => onClose();
@@ -276,13 +268,27 @@ const OTHER_AGENTS: Record<Exclude<Closed["agent"], "omp">, { name: string; icon
   codex: { name: "Codex", icon: { glyph: "›_", pi: false, cls: "agent-codex" } },
 };
 
+/** A Parked or Closed row's name: its project first (titles alone don't tell sessions apart), the icon, tag and title. */
+function SheetName({ project, icon, iconTitle, tag, title }: { project: string; icon: Icon | null; iconTitle?: string; tag: string | null; title: string }) {
+  return (
+    <span class="wname">
+      <span class="wname-project">{project}</span>
+      {icon && (
+        <span class={`nf${icon.pi ? " pi" : ""}${icon.cls ? ` ${icon.cls}` : ""}`} title={iconTitle}>
+          {icon.glyph}
+        </span>
+      )}
+      {tag && <span class="tag">{tag}</span>}
+      <span class="wname-title">{title}</span>
+    </span>
+  );
+}
+
 /**
- * A pane in the sheet's Parked tab: its project first (titles alone don't tell sessions apart), the
- * title, how long it has sat there, and what it was last told or did. A tap runs `onPick`; `onDrop`
- * adds a close button.
+ * A pane in the sheet's Parked tab: its name, how long it has sat there, and what it was last told
+ * or did. A tap runs `onPick`; `onDrop` adds a close button.
  */
 function ParkedRow({ item, now, onPick, onDrop }: { item: Item; now: number; onPick: (item: Item) => void; onDrop?: (item: Item) => void }) {
-  const icon = iconOf(item);
   const { status, peek } = rowText(item, now);
   const state = item.status ?? undefined;
   return (
@@ -290,16 +296,11 @@ function ParkedRow({ item, now, onPick, onDrop }: { item: Item; now: number; onP
       <button class="closed-main" onClick={() => onPick(item)} title={onDrop ? "Open it here" : "Bring it back into a tab of its own and open it"}>
         <span class="prow-top">
           <Dot state={state} />
-          <span class="wname">
-            <span class="wname-project">{item.project}</span>
-            {icon && <span class={`nf${icon.pi ? " pi" : ""}`}>{icon.glyph}</span>}
-            {item.tag && <span class="tag">{item.tag}</span>}
-            <span class="wname-title">{item.title}</span>
-          </span>
+          <SheetName project={item.project} icon={iconOf(item)} tag={item.tag} title={item.title} />
           <span class="age">{item.status ? age(item.since, now) : ""}</span>
         </span>
         {/* A pane without an omp transcript says only where it runs: home as ~, as a shell prompt does. */}
-        <span class="row-sub prow-sub">{status || peek.replace(/^(\/home|\/Users)\/[^/\\]+(?=$|\/)/, "~")}</span>
+        <span class="row-sub prow-sub">{status || (peek === item.cwd ? peek.replace(/^(\/home|\/Users)\/[^/\\]+(?=$|\/)/, "~") : peek)}</span>
       </button>
       {onDrop && (
         <button class="icon-btn closed-dismiss" aria-label="Close" title="Close it: ends its program" onClick={() => onDrop(item)}>
@@ -481,7 +482,16 @@ function NewSheet({
               <h4 class="sheet-sec">From a closed Tern session</h4>
               <p class="sheet-sec-note">Tern can't bring these back into a tab. Open one to read it here, or close it.</p>
               {shownStranded.map((i) => (
-                <ParkedRow key={i.block} item={i} now={now} onPick={() => (location.hash = `#/b/${i.block}`)} onDrop={(x) => void drop(x)} />
+                <ParkedRow
+                  key={i.block}
+                  item={i}
+                  now={now}
+                  onPick={() => {
+                    onClose();
+                    location.hash = `#/b/${i.block}`;
+                  }}
+                  onDrop={(x) => void drop(x)}
+                />
               ))}
             </>
           )}
@@ -496,14 +506,7 @@ function NewSheet({
                   <button class="closed-main" onClick={() => onResume(s)} title={`Resume${other ? ` in ${other.name}` : ""} in a new tab in ${s.cwd}`}>
                     {/* Project first, as in the Parked tab and the Waiting popup; the tool shows by its icon. */}
                     <span class="prow-top">
-                      <span class="wname">
-                        <span class="wname-project">{folderLabel(s.cwd, home).name}</span>
-                        <span class={`nf${icon.pi ? " pi" : ""}${icon.cls ? ` ${icon.cls}` : ""}`} title={other?.name}>
-                          {icon.glyph}
-                        </span>
-                        {s.tag && <span class="tag">{s.tag}</span>}
-                        <span class="wname-title">{s.title || s.prompt || "Untitled session"}</span>
-                      </span>
+                      <SheetName project={folderLabel(s.cwd, home).name} icon={icon} iconTitle={other?.name} tag={s.tag} title={s.title || s.prompt || "Untitled session"} />
                       <span class="age">{age(s.at, now)}</span>
                     </span>
                     {(s.recap || (s.title && s.prompt)) && <span class={`row-sub closed-sub${s.recap ? " recap" : ""}`}>{s.recap || s.prompt}</span>}
@@ -565,20 +568,21 @@ export function Home({
     clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(null), 1800);
   }
-  // The bell settles after a permission prompt and the server's answer: once a tap set it off, say where it landed.
-  const pushAsked = useRef(false);
+  // The bell settles after a permission prompt and the server's answer: once a tap set it off, say
+  // where it landed, the state it started from included.
+  const [pushAsked, setPushAsked] = useState(false);
   const dockPush: [PushState, () => void] = [
     push[0],
     () => {
-      pushAsked.current = true;
+      setPushAsked(true);
       push[1]();
     },
   ];
   useEffect(() => {
-    if (!pushAsked.current || push[0] === "pending") return;
-    pushAsked.current = false;
+    if (!pushAsked || push[0] === "pending") return;
+    setPushAsked(false);
     flash(PUSH_LABEL[push[0]]);
-  }, [push[0]]);
+  }, [push[0], pushAsked]);
   const [q, setQ] = useState("");
   // The phone's filter, opened from the header's search button; a typed filter keeps it open.
   const [searching, setSearching] = useState(false);
@@ -599,8 +603,10 @@ export function Home({
     };
     check();
     el.addEventListener("scroll", check, { passive: true });
+    // The chips too: a renamed session widens the row without resizing the scroller.
     const resize = new ResizeObserver(check);
     resize.observe(el);
+    for (const chip of el.children) resize.observe(chip);
     return () => {
       el.removeEventListener("scroll", check);
       resize.disconnect();
@@ -620,15 +626,18 @@ export function Home({
     localStorage.setItem(HIDE_OLD_KEY, hideOld ? "off" : "on");
     setHideOld(!hideOld);
   }
-  const items = state ? state.projects.flatMap((p) => p.items) : [];
-  const oldCount = items.filter((i) => onList(i) && isOld(i, now, selected)).length;
-  // Sessions whose omp runs another extension build than the server's (rows marked with !).
-  const outdated = items.filter((i) => onList(i) && i.live?.mismatch).length;
   // The Tern session the chips picked, remembered on this device; All (null) once Tern closes it.
   // The rail has no chips, so it lists every session.
   const [storedSession, setStoredSession] = useState(storedTernSession);
   const ternSessions = state?.ternSessions ?? [];
   const ternSession = rail ? null : pickedTernSession(ternSessions, storedSession);
+  const items = state ? state.projects.flatMap((p) => p.items) : [];
+  // Counted as the list shows them: in the picked Tern session.
+  const listed = items.filter((i) => onList(i) && inTernSession(i, ternSession));
+  const oldCount = listed.filter((i) => isOld(i, now, selected)).length;
+  const peekItem = peek && items.find((i) => i.block === peek.block);
+  // Sessions whose omp runs another extension build than the server's (rows marked with !).
+  const outdated = listed.filter((i) => i.live?.mismatch).length;
   function pickSession(name: string | null) {
     if (name) localStorage.setItem(TERN_SESSION_KEY, name);
     else localStorage.removeItem(TERN_SESSION_KEY);
@@ -915,7 +924,8 @@ export function Home({
           </button>
         </footer>
       )}
-      {peek && <Peek at={peek} now={now} onClose={closePeek} />}
+      {/* The row's live session, not the one at the press: its recap or prompt may have moved on since. */}
+      {peek && peekItem && <Peek at={peek} item={peekItem} now={now} onClose={closePeek} />}
       {sheet}
       {waitingPopup}
       {guide && <Guide wide={wide} onClose={() => setGuide(false)} />}

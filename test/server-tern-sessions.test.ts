@@ -108,8 +108,11 @@ test("a pane in no tab and in no deck of the window is stranded: listed apart, a
     const refused = await s.action(9, "unpark");
     expect(refused.status).toBe(409);
     expect(String(obj(await refused.json()).error)).toContain("can't bring it back");
-    // An older plugin can't tell: every pane in no tab counts as parked, as before.
+    // An older plugin can't tell: every pane in no tab counts as parked, as before. The answer is
+    // kept while the parked panes stay the same, so another one parks too.
     writeFileSync(`${s.home}/plugins.json`, JSON.stringify({ plugins: [{ id: "tern-awui", status: "ready", version: "0.2.0" }] }));
+    s.tree = { ...s.tree, detached: [away, left, { id: 10, cwd: `${s.home}/beta`, program: "/bin/zsh", title: "Also away" }] };
+    s.saveTree();
     s.signal();
     for (let tries = 0; tries < 20 && item(state, 9).stranded; tries++) {
       await Bun.sleep(100);

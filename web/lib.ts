@@ -321,6 +321,11 @@ export function onList(i: Item): boolean {
   return !i.parked || i.status === "blocked" || !!i.unseen;
 }
 
+/** Whether a row belongs to the Tern `session` the chips picked: its own, a parked one (in none), or any for All (null). */
+export function inTernSession(i: Item, session: string | null): boolean {
+  return session === null || i.ternSession === null || i.ternSession === session;
+}
+
 /**
  * The projects the list shows (`onList`). A filter (lowercase `needle`) matches project, tag, title
  * and last prompt, hidden old sessions included; otherwise `hideOld` drops old ones. A Tern
@@ -329,7 +334,7 @@ export function onList(i: Item): boolean {
 export function listProjects(projects: Project[], needle: string, hideOld: boolean, now: number, selected: string | null, session: string | null = null): Project[] {
   const keep = (p: Project, i: Item) =>
     onList(i) &&
-    (session === null || i.ternSession === null || i.ternSession === session) &&
+    inTernSession(i, session) &&
     (needle
       ? [p.name, i.tag ?? "", i.title, i.agent?.lastPrompt ?? ""].join(" ").toLowerCase().includes(needle)
       : !hideOld || !isOld(i, now, selected));
@@ -354,13 +359,16 @@ export function launchTarget(): { session?: string } {
 
 /**
  * The sessions a sideways swipe steps through: the list's omp rows in its order, without old ones
- * while the list hides them and without collapsed projects' rows. Blocks in `keep` always stay (the
- * open one and those a run of swipes passed), so a session opened from elsewhere (a notification, a
- * collapsed project, the Parked tab) still has neighbours, and swiping back still reaches it.
+ * while the list hides them, without collapsed projects' rows and without other Tern sessions' rows
+ * while the chips pick one (`session`). Blocks in `keep` always stay (the open one and those a run of
+ * swipes passed), so a session opened from elsewhere (a notification, a collapsed project, the
+ * Parked tab) still has neighbours, and swiping back still reaches it.
  */
-export function swipeOrder(projects: Project[], o: { hideOld: boolean; collapsed: Set<string>; now: number; keep: Set<string> }): Item[] {
+export function swipeOrder(projects: Project[], o: { hideOld: boolean; collapsed: Set<string>; now: number; keep: Set<string>; session?: string | null }): Item[] {
   return projects.flatMap((p) =>
-    p.items.filter((i) => o.keep.has(i.block) || (i.agent && onList(i) && !o.collapsed.has(p.name) && !(o.hideOld && isOld(i, o.now, null)))),
+    p.items.filter(
+      (i) => o.keep.has(i.block) || (i.agent && onList(i) && inTernSession(i, o.session ?? null) && !o.collapsed.has(p.name) && !(o.hideOld && isOld(i, o.now, null))),
+    ),
   );
 }
 

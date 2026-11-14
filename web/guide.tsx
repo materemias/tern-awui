@@ -64,6 +64,9 @@ function measure(el: Element | null): Box | null {
   return { top: r.top - pad, left: r.left - pad, width: r.width + pad * 2, height: r.height + pad * 2 };
 }
 
+/** The least height the card keeps on a short screen: its text's first lines and its buttons. */
+const CARD_MIN_HEIGHT = 200;
+
 export function Guide({ wide, onClose }: { wide: boolean; onClose: () => void }) {
   const [at, setAt] = useState(0);
   const [box, setBox] = useState<Box | null>(null);
@@ -80,6 +83,8 @@ export function Guide({ wide, onClose }: { wide: boolean; onClose: () => void })
   // A modal: Tab and Shift+Tab cycle through the card's buttons, never the dimmed app behind, and
   // closing hands focus back to what had it before the guide opened. A layout effect declared first,
   // so it reads that focus before the step's effect moves it to Next, and holds Tab from the start.
+  // Its keys are its own: caught first and stopped, so Alt+←/→ doesn't switch sessions behind it,
+  // and Ctrl+\ doesn't fold the sidebar mid-tour.
   useLayoutEffect(() => {
     const before = document.activeElement;
     const onKey = (e: KeyboardEvent) => {
@@ -91,40 +96,67 @@ export function Guide({ wide, onClose }: { wide: boolean; onClose: () => void })
         const i = buttons.indexOf(document.activeElement as HTMLButtonElement);
         const to = i < 0 ? (e.shiftKey ? buttons.length - 1 : 0) : (i + (e.shiftKey ? -1 : 1) + buttons.length) % buttons.length;
         buttons[to]?.focus();
-      } else return;
+      } else if (e.key !== "\\" || !(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
+      e.stopPropagation();
     };
-    document.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
     return () => {
-      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, true);
       if (before instanceof HTMLElement && before.isConnected) before.focus();
     };
   }, []);
 
+  // The spotlight follows its target as the list moves under it: a resize, a scroll, or a list
+  // update that re-renders, moves or replaces it.
   useLayoutEffect(() => {
-    const el = step.target?.map((s) => document.querySelector(s)).find((e) => e !== null) ?? null;
-    el?.scrollIntoView({ block: "nearest" });
-    const update = () => setBox(measure(el));
+    const find = () => step.target?.map((s) => document.querySelector(s)).find((e) => e !== null) ?? null;
+    find()?.scrollIntoView({ block: "nearest" });
+    let watched: Element | null = null;
+    const update = () => {
+      const el = find();
+      if (el !== watched) {
+        sizes.disconnect();
+        if (el) sizes.observe(el);
+        watched = el;
+      }
+      const to = measure(el);
+      setBox((b) => (b && to && b.top === to.top && b.left === to.left && b.width === to.width && b.height === to.height ? b : to));
+    };
+    const sizes = new ResizeObserver(update);
     update();
+    const changes = new MutationObserver(update);
+    changes.observe(document.body, { childList: true, subtree: true });
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
     next.current?.focus();
     return () => {
+      sizes.disconnect();
+      changes.disconnect();
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
   }, [at]);
 
   // The card sits below a target in the upper half of the screen and above one in the lower half,
-  // as wide as the phone allows, centered on the target and kept inside the window.
+  // as wide as the phone allows, centered on the target and kept inside the window. On a short
+  // screen it keeps at least CARD_MIN_HEIGHT (over the target if it must) and scrolls inside, so
+  // Skip, Back and Next stay in reach.
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const width = Math.min(340, vw - 24);
+  const room = Math.min(CARD_MIN_HEIGHT, vh - 24);
   let place: string;
-  if (!box) place = `left:${(vw - width) / 2}px;top:50%;transform:translateY(-50%)`;
+  if (!box) place = `left:${(vw - width) / 2}px;top:50%;transform:translateY(-50%);max-height:${vh - 24}px`;
   else {
     const left = Math.max(12, Math.min(box.left + box.width / 2 - width / 2, vw - width - 12));
-    place = box.top + box.height / 2 < vh / 2 ? `left:${left}px;top:${box.top + box.height + 12}px` : `left:${left}px;bottom:${vh - box.top + 12}px`;
+    if (box.top + box.height / 2 < vh / 2) {
+      const top = Math.max(12, Math.min(box.top + box.height + 12, vh - 12 - room));
+      place = `left:${left}px;top:${top}px;max-height:${vh - top - 12}px`;
+    } else {
+      const bottom = Math.max(12, Math.min(vh - box.top + 12, vh - 12 - room));
+      place = `left:${left}px;bottom:${bottom}px;max-height:${vh - bottom - 12}px`;
+    }
   }
 
   return (

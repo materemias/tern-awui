@@ -480,6 +480,13 @@ describe("swipeOrder", () => {
     expect(swipeOrder(parked, { ...opts, keep: new Set() }).map((i) => i.block)).toEqual(["1", "6"]);
     expect(swipeOrder(parked, { ...opts, keep: new Set(["5"]) }).map((i) => i.block)).toEqual(["1", "5", "6"]);
   });
+  test("a picked Tern session keeps its own rows and parked ones, as the list does", () => {
+    const split: Project[] = [
+      { name: "app", items: [item({ block: "1", agent: agent(), ternSession: "Default" }), item({ block: "2", agent: agent(), ternSession: "pi-durable" }), item({ block: "3", agent: agent(), ternSession: null, parked: true, status: "blocked" })] },
+    ];
+    expect(swipeOrder(split, { ...opts, keep: new Set(), session: "pi-durable" }).map((i) => i.block)).toEqual(["2", "3"]);
+    expect(swipeOrder(split, { ...opts, keep: new Set(["1"]), session: "pi-durable" }).map((i) => i.block)).toEqual(["1", "2", "3"]);
+  });
 });
 
 describe("inheritOrigin", () => {

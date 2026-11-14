@@ -452,6 +452,24 @@ describe("Home", () => {
     expect(history.length).toBe(entries);
     expect(history.state?.guard).toBeUndefined();
   });
+
+  test("the guide's keys stay its own: Ctrl+\\ and Alt+→ don't reach the app behind it", async () => {
+    await mount([item()]);
+    expect(root.querySelector(".guide-card")).not.toBeNull();
+    const behind: string[] = [];
+    const spy = (e: KeyboardEvent) => behind.push(e.key);
+    document.addEventListener("keydown", spy);
+    try {
+      const press = (init: KeyboardEventInit) => act(() => void document.body.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, ...init })));
+      await press({ key: "\\", ctrlKey: true });
+      await press({ key: "ArrowRight", altKey: true });
+      await press({ key: "a" });
+    } finally {
+      document.removeEventListener("keydown", spy);
+    }
+    expect(behind).toEqual(["a"]);
+    expect(root.querySelector(".guide-step")?.textContent).toStartWith("2 /");
+  });
 });
 
 describe("sidebar rail", () => {
