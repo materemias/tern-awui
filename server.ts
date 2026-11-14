@@ -28,7 +28,8 @@ import { extensionCheck, offersCommand, sessionMismatch, type InstallStatus, typ
 import { claudeDir, codexDir, configDir, docIcon, installedExtension, ompDataDir, ternNotesDir } from "./lib/paths";
 import { ensureToken, sameToken } from "./lib/auth";
 import { recentProjects } from "./lib/projects";
-import { closedSessions, IdList, openableFolder, resumableCwd, splitTitle } from "./lib/closed";
+import { closedSessions, IdList, openableFolder, resumableCwd } from "./lib/closed";
+import { splitTitle } from "./lib/title";
 import { otherSessions } from "./lib/other-agents";
 import { CLOSED_AGENTS, type ClosedAgent } from "./lib/search";
 import { rowKeys, statePatch } from "./lib/state-patch";
