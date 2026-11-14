@@ -333,7 +333,7 @@ function AdvisorCard({ notes }: { notes: AdvisorNote[] }) {
   );
 }
 
-/** omp rules injected mid-turn, as quiet mono lines like Tern's (`• inject: name`, then the body's first line); tap for the whole rule. */
+/** omp rules injected mid-turn, as quiet lines like Tern's (`• inject: name`, then the body's first line); tap for the whole rule. */
 function RuleCard({ rules }: { rules: { name: string; text: string }[] }) {
   const [open, setOpen] = useState(false);
   return (
