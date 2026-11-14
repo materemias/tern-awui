@@ -752,8 +752,8 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .doc h3 { font-size: 16px; }
 .doc h1 + p, .doc h2 + p { margin-top: .4em; }
 
-/* Waiting: the strip under the list's filter (an hourglass on the rail), and its popup of cards.
-   Cards have their own raised surface and an outcome-coloured edge, so they never read as session rows. */
+/* Waiting: the strip under the list's filter (an hourglass on the rail), and its popup: a list of
+   plain rows tinted by where each stands, and one session in full. */
 .wait-strip { display: flex; align-items: center; gap: 8px; margin: 8px 12px 4px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--fg); font-size: 13.5px; }
 .wait-strip svg { width: 16px; height: 16px; flex: none; color: var(--muted); }
 .wait-strip.on-me { border-color: color-mix(in srgb, var(--blocked) 45%, var(--line)); background: color-mix(in srgb, var(--blocked) 8%, var(--panel)); }

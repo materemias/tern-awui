@@ -444,6 +444,14 @@ describe("Home", () => {
     await act(() => { window.dispatchEvent(new PopStateEvent("popstate")); });
     expect(root.querySelector(".toast")?.textContent).toBe("Press back again to exit");
   });
+
+  test("the phone's back guard isn't pushed under the Waiting popup: back from a card must leave it", async () => {
+    const entries = history.length;
+    await act(() => render(<HomeHost wide={false} waitingOpen waitingCard="s1" />, root));
+    await act(() => settle());
+    expect(history.length).toBe(entries);
+    expect(history.state?.guard).toBeUndefined();
+  });
 });
 
 describe("sidebar rail", () => {

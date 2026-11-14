@@ -2,10 +2,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { launchAgent, post, type Closed, type Item } from "./api";
 import { keepsTool, matchesWords, parseSearch } from "../lib/search";
-import { age, folderLabel, isOld, jobsSummary, launchTarget, listProjects, onList, parseStoredList, pickedTernSession, rowText, storedTernSession, TERN_SESSION_KEY, toggled } from "./lib";
+import { age, backStep, folderLabel, isOld, jobsSummary, launchTarget, listProjects, onList, parseStoredList, pickedTernSession, rowText, storedTernSession, TERN_SESSION_KEY, toggled } from "./lib";
 import { buzz, Dot, PiMark } from "./parts";
 import { ExtensionBanner } from "./extension";
-import { goBack, useExitGuard, useNow, useStream } from "./hooks";
+import { goBack, origins, useExitGuard, useNow, useStream } from "./hooks";
 import { PUSH_LABEL, permissionHelp, type PushState } from "./push";
 import { WaitingIcon, WaitingPopup, WaitingStrip } from "./waiting";
 import { Guide, guideDone } from "./guide";
@@ -661,8 +661,9 @@ export function Home({
       return next;
     });
   }
-  // Only the phone's single-pane list guards against leaving on back.
-  const exitHint = useExitGuard(!wide);
+  // Only the phone's single-pane list guards against leaving on back; not under the Waiting popup,
+  // whose routes back must pop (a session left for one of its cards remounts the list).
+  const exitHint = useExitGuard(!wide && !waitingOpen);
 
   /** Starts or resumes an omp and opens it; `key` marks what is busy meanwhile. */
   async function launch(url: string, body: Record<string, unknown>, key: string) {
@@ -696,10 +697,16 @@ export function Home({
       }}
     />
   );
+  // From one of its sessions, the whole popup closes: back past the session and its list when both
+  // were stacked, else straight to where the popup closes onto.
+  function closeWaiting() {
+    const list = backStep(origins, { view: "waiting" });
+    if (waitingCard === null) goBack({ view: "waiting" });
+    else if (list.pop && backStep(origins, { view: "waiting", id: waitingCard }).pop) history.go(-2);
+    else location.replace(list.target);
+  }
   // Every block, whatever the list filters: a card opens the session running it.
-  const waitingPopup = waitingOpen && (
-    <WaitingPopup waiting={waiting} card={waitingCard} items={state ? state.projects.flatMap((p) => p.items) : []} onClose={() => goBack({ view: "waiting" })} />
-  );
+  const waitingPopup = waitingOpen && <WaitingPopup waiting={waiting} card={waitingCard} items={items} onClose={closeWaiting} />;
 
   if (rail) {
     const blocked = state?.counts.blocked ?? 0;

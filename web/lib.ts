@@ -231,7 +231,9 @@ export function trackOrigin(origins: Map<string, string>, oldHash: string, newHa
   const to = parseRoute(newHash);
   // Back in the Waiting popup from a session opened there: it keeps where it was entered from too.
   const returning = to.view === "waiting" && isWaiting(origins.get(routeHash(from)));
-  if (!isAbove(to, from) && !returning) origins.set(routeHash(to), routeHash(from));
+  // Closing the Waiting popup onto the screen it opened over: that screen was not entered from it.
+  const closing = from.view === "waiting" && to.view !== "waiting" && origins.get(WAITING_HASH) === routeHash(to);
+  if (!isAbove(to, from) && !returning && !closing) origins.set(routeHash(to), routeHash(from));
 }
 
 /**

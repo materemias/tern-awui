@@ -791,6 +791,13 @@ describe("routes", () => {
     expect(backStep(origins, { view: "waiting" })).toEqual({ target: "#/b/4", pop: true });
   });
 
+  test("closing the Waiting popup leaves the screen under it its own way back", () => {
+    // On the desktop, the popup over session 4, which was opened from the list.
+    expect(walk(["#/", "#/b/4", "#/waiting", "#/b/4"])).toEqual({ target: "#/", pop: true });
+    // Closed from one of its sessions: the same.
+    expect(walk(["#/", "#/b/4", "#/waiting", "#/waiting/s1", "#/b/4"])).toEqual({ target: "#/", pop: true });
+  });
+
   test("a Waiting session pops back to the Waiting list, and a chat opened from it back to that session", () => {
     expect(walk(["", "#/waiting", "#/waiting/s1"])).toEqual({ target: "#/waiting", pop: true });
     expect(walk(["", "#/waiting", "#/waiting/s1", "#/b/1"])).toEqual({ target: "#/waiting/s1", pop: true });

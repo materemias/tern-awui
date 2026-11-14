@@ -11,6 +11,7 @@ const { render } = await import("preact");
 const { act } = await import("preact/test-utils");
 const { WaitingIcon, WaitingPopup, WaitingStrip, parseThread, standing } = await import("./waiting");
 const { Home } = await import("./home");
+const { origins } = await import("./hooks");
 
 const net = new Net();
 let root: HTMLElement;
@@ -136,6 +137,31 @@ describe("the way in", () => {
     expect(root.querySelector(".wait-sheet[role=dialog]")).not.toBeNull();
     expect(root.querySelector(".list")).not.toBeNull();
   });
+
+  test("a tap beside an open session closes the whole popup: back past the session and the list", async () => {
+    localStorage.setItem("tern-mobile:guide", "done");
+    origins.clear();
+    origins.set("#/waiting", "#/");
+    origins.set("#/waiting/a", "#/waiting");
+    const steps: number[] = [];
+    const go = history.go;
+    history.go = (n?: number) => void steps.push(n ?? 0);
+    try {
+      await act(() => render(<Home push={["unsupported", () => {}]} waitingOpen waitingCard="a" />, root));
+      await act(() => {
+        FakeEventSource.last.open();
+        FakeEventSource.last.emit("state", state([block7]));
+        FakeEventSource.last.emit("waiting", view(session("a")));
+      });
+      await act(() => settle());
+      expect(root.querySelector(".wd-head")).not.toBeNull();
+      await click(root.querySelector(".wait-backdrop")!);
+      expect(steps).toEqual([-2]);
+    } finally {
+      history.go = go;
+      origins.clear();
+    }
+  });
 });
 
 describe("parseThread", () => {
@@ -182,11 +208,11 @@ describe("standing", () => {
 
   test("an outcome: the headline without its mark, else the first thread; the rest follow; the wait that came is the detail", () => {
     const r = rowsOf(session("a", {
-      ball: "on_me", outcome: "fulfilled", headline: "✅ 4h passed", threads: ["✅ 4h passed", "⏲ 24h check"],
+      ball: "on_me", outcome: "fulfilled", headline: "✅ 4h passed", threads: ["✅ 4h passed", "⏲ 24h check"], still_waiting: ["⏲ 24h check"],
       waits: [wait("w1", "on_me", { outcome: "fulfilled", reason: "check it" }), wait("w2", "on_me")],
     }))[0];
     expect(standing(r)).toEqual({ kind: "done", text: "4h passed", detail: "Label w1: check it", rest: [{ kind: "timer", text: "24h check" }] });
-    const bare = rowsOf(session("a", { ball: "on_me", outcome: "overdue", threads: ["⏰ late", "⏳ b"] }))[0];
+    const bare = rowsOf(session("a", { ball: "on_me", outcome: "overdue", threads: ["⏰ late", "⏳ b"], still_waiting: ["⏳ b"] }))[0];
     expect(standing(bare)).toMatchObject({ kind: "overdue", text: "late", rest: [{ kind: "waiting", text: "b" }] });
   });
 });
@@ -211,7 +237,7 @@ describe("the list", () => {
     await mount(view(
       session("a", {
         title: "RDP: Diagnose login", ball: "on_me", outcome: "fulfilled", headline: "✅ 4h passed",
-        threads: ["✅ 4h passed", "⏲ 24h check", "⏳ Anna's reply"], waiting_for: "Anna's reply", note: "check RM", due_at: due, project: "shiftmaqt",
+        threads: ["✅ 4h passed", "⏲ 24h check", "⏳ Anna's reply"], still_waiting: ["⏲ 24h check", "⏳ Anna's reply"], waiting_for: "Anna's reply", note: "check RM", due_at: due, project: "shiftmaqt",
       }),
       session("b", { waits: [wait("w1", "on_machine", { overdue: true })] }),
     ));
@@ -229,6 +255,16 @@ describe("the list", () => {
     expect(b.querySelector(".wrow-more")).toBeNull();
     expect(b.querySelector(".wrow-note")).toBeNull();
     expect(b.querySelector(".wrow-time")?.textContent).toBe("overdue");
+  });
+
+  test("time left never reads 60m or 24h, nor jumps a unit at its edge", async () => {
+    const at = (ms: number) => new Date(Date.now() + ms).toISOString();
+    await mount(view(
+      session("a", { due_at: at(59 * 60_000 + 50_000) }),
+      session("b", { due_at: at(3600_000 + 60_000) }),
+      session("c", { due_at: at(23 * 3600_000 + 50 * 60_000) }),
+    ));
+    expect(["Session a", "Session b", "Session c"].map((t) => rowOf(t).querySelector(".wrow-time")?.textContent)).toEqual(["in 1h", "in 1h", "in 1d"]);
   });
 
   test("a row links to its session in full; a pane's id is encoded", async () => {
@@ -341,9 +377,9 @@ describe("a session in full", () => {
     expect([...root.querySelectorAll(".wd-waits li")].map((l) => l.textContent)).toEqual(["24h check"]);
   });
 
-  test("what came heads an outcome; what is still awaited, the free-text wait among it, is listed", async () => {
+  test("what came heads an outcome; only what is still awaited, the free-text wait among it, is listed", async () => {
     await mount(view(session("a", {
-      ball: "on_me", outcome: "fulfilled", headline: "✅ came", threads: ["✅ came", "⏲ later", "⏳ Anna"], waiting_for: "Anna",
+      ball: "on_me", outcome: "fulfilled", headline: "✅ came", threads: ["✅ came", "✅ also came", "⏲ later", "⏳ Anna"], still_waiting: ["⏲ later", "⏳ Anna"], waiting_for: "Anna",
     })), [block7], "a");
     expect(detail(".wd-state")?.textContent).toBe("came");
     expect(root.textContent).toContain("Still waiting on");

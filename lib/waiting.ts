@@ -11,6 +11,13 @@ type Env = Record<string, string | undefined>;
 
 /** Writes arriving within this window share one `list`. */
 const BATCH_MS = 150;
+/** A `list` that failed is retried this long after, unless the CLI writes its file sooner. */
+const RETRY_MS = 60_000;
+/**
+ * The CLI's tick moves `health.checkedAt` about every minute; the app needs it only to tell a tick
+ * older than 15 minutes apart, so a move within this step is no change to send.
+ */
+const HEALTH_STEP_MS = 5 * 60_000;
 
 /**
  * `$CODEXBAR_WAITING`, else the script beside the Tern plugin of a CodexBar AgentView checkout
@@ -35,9 +42,14 @@ export function waitingViewFile(env: Env, home: string): string {
   return join(state, "codexbar-agentview", "waiting_view.json");
 }
 
+/** The file's identity and size; "" when it is missing or can't be looked at (a folder it can't enter). */
 function stamp(path: string): string {
-  const st = statSync(path, { throwIfNoEntry: false });
-  return st ? `${st.ino}:${st.size}:${st.mtimeMs}` : "";
+  try {
+    const st = statSync(path, { throwIfNoEntry: false });
+    return st ? `${st.ino}:${st.size}:${st.mtimeMs}` : "";
+  } catch {
+    return "";
+  }
 }
 
 /** The CLI's one JSON object; empty when it printed something else or nothing. */
@@ -58,12 +70,14 @@ export type WaitingOptions = {
   changed(): void;
   /** These rows newly wait on the user. */
   onMe(fresh: OnMe[]): void;
+  /** How long after a failed `list` a check retries it; `RETRY_MS` by default. */
+  retryMs?: number;
 };
 
 export class WaitingWatch {
   /** The current view, once `view()` has resolved: read it with `key` in one go. */
   held: Waiting = { available: false };
-  /** Compares two views for a stream: changes exactly when `held` shows something else. */
+  /** Compares two views for a stream: changes when `held` shows something else (a tick's clock only in steps, see `HEALTH_STEP_MS`). */
   key = JSON.stringify(this.held);
   private readonly file: string;
   private cli: string | null = null;
@@ -77,6 +91,8 @@ export class WaitingWatch {
   /** The state moved during a read: its result is old, so it reads again. */
   private again = false;
   private stopped = false;
+  /** When the last `list` failed. */
+  private failedAt = 0;
 
   constructor(private readonly options: WaitingOptions) {
     this.file = waitingViewFile(options.env, options.home);
@@ -86,7 +102,7 @@ export class WaitingWatch {
   /**
    * Finds the CLI and rereads a view that changed unseen. Called now and then: the file watcher is
    * the fast path, this catches a checkout installed later, a state folder that didn't exist yet
-   * and, while `watched` (someone is looking), a `list` that failed.
+   * and, while `watched` (someone is looking), a `list` that failed, at most every `retryMs`.
    */
   async check(watched = true): Promise<void> {
     if (this.stopped) return;
@@ -96,7 +112,8 @@ export class WaitingWatch {
       return this.hold({ available: false });
     }
     this.follow();
-    if (!this.held.available || (this.held.error && watched) || stamp(this.file) !== this.seen) await this.refresh();
+    const retry = this.held.available && this.held.error && watched && Date.now() - this.failedAt >= (this.options.retryMs ?? RETRY_MS);
+    if (!this.held.available || retry || stamp(this.file) !== this.seen) await this.refresh();
   }
 
   /** The current view; the first call waits for the first read. */
@@ -182,7 +199,9 @@ export class WaitingWatch {
 
   private take(view: WaitingView | null) {
     if (!view) {
-      const last = this.held.available ? { onMe: this.held.onMe, rows: this.held.rows } : { onMe: 0, rows: [] };
+      this.failedAt = Date.now();
+      // The last health stays: without it a close would look safe while nothing checks the waits.
+      const last = this.held.available ? { onMe: this.held.onMe, rows: this.held.rows, ...(this.held.health && { health: this.held.health }) } : { onMe: 0, rows: [] };
       return this.hold({ available: true, ...last, error: "codexbar_waiting.py list gave no answer" });
     }
     const { keys, fresh } = newlyOnMe(view.rows, this.known);
@@ -193,7 +212,8 @@ export class WaitingWatch {
 
   private hold(next: Waiting) {
     this.held = next;
-    const key = JSON.stringify(next);
+    const health = next.available ? next.health : undefined;
+    const key = JSON.stringify(health ? { ...next, health: { ...health, checkedAt: Math.floor(health.checkedAt / HEALTH_STEP_MS) } } : next);
     if (key === this.key) return;
     this.key = key;
     this.options.changed();

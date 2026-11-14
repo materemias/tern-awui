@@ -176,7 +176,7 @@ function prs(value: unknown): Pr[] {
   return arr(value).flatMap((raw) => {
     const p = obj(raw);
     const source = pick(["wait", "created", "mentioned"] as const, p.source);
-    // Only GitHub's own links: the app puts it in an href.
+    // Only https links (no `javascript:` and the like): the app puts it in an href.
     if (typeof p.repo !== "string" || typeof p.number !== "number" || !source || !str(p.url).startsWith("https://")) return [];
     return [{ repo: p.repo, number: p.number, url: str(p.url), source, title: text(p.title), state: text(p.state), review: text(p.review), checks: text(p.checks) }];
   });

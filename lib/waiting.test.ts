@@ -82,8 +82,9 @@ async function flush() {
 /**
  * A watch over a scratch home, answering `list` with `out`; `calls` records every argv, and `gate`
  * holds the next `list` with the output it read when it started. `folder`: the CLI's state folder exists.
+ * `retryMs`: how soon a check retries a failed list (at once by default).
  */
-function setup(first: string | null = listing(), folder = true) {
+function setup(first: string | null = listing(), folder = true, retryMs = 0) {
   const dir = home();
   const cli = linked(dir);
   const file = join(dir, "state", "codexbar-agentview", "waiting_view.json");
@@ -115,6 +116,7 @@ function setup(first: string | null = listing(), folder = true) {
     },
     changed: () => t.changes++,
     onMe: (fresh) => t.fresh.push(...fresh.map((f) => f.text)),
+    retryMs,
   });
   watches.push(watch);
   return { t, watch };
@@ -206,6 +208,41 @@ describe("WaitingWatch", () => {
     expect(t.lists()).toBe(1);
     await watch.check(true);
     expect(t.lists()).toBe(2);
+  });
+
+  test("a failed list waits for the file to change or the retry delay before listing again", async () => {
+    const { t, watch } = setup(null, true, 60_000);
+    await watch.view();
+    await watch.check(true);
+    expect(t.lists()).toBe(1);
+    rewrite(t.file, "not a view");
+    await watch.check(true);
+    expect(t.lists()).toBe(2);
+  });
+
+  test("a failed list keeps the last health: a close must not look safe while nothing checks", async () => {
+    const health = { checked_at: "2026-11-14T10:00:00Z" };
+    const { t, watch } = setup(JSON.stringify({ ...JSON.parse(listing(session("a"))), health }));
+    await watch.view();
+    t.out = "not json";
+    rewrite(t.file);
+    await watch.check();
+    expect(await watch.view()).toMatchObject({ error: "codexbar_waiting.py list gave no answer", health: { checkedAt: Date.parse(health.checked_at), failed: false } });
+  });
+
+  test("a tick that only moves the health clock within a step is no change", async () => {
+    const view = (at: string) => JSON.stringify({ ...JSON.parse(listing()), health: { checked_at: at } });
+    const { t, watch } = setup(view("2026-11-14T10:00:00Z"));
+    await watch.view();
+    const changes = t.changes;
+    t.out = view("2026-11-14T10:01:00Z");
+    rewrite(t.file, "x");
+    await watch.check();
+    expect(t.changes).toBe(changes);
+    t.out = view("2026-11-14T10:06:00Z");
+    rewrite(t.file, "xx");
+    await watch.check();
+    expect(t.changes).toBe(changes + 1);
   });
 
   test("a first list that fails still counts as available, with nothing to show", async () => {

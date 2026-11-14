@@ -880,6 +880,10 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   /** The list may have changed: drop the cache and have every open stream recheck, in one batch. */
   function invalidateState() {
     stateCache = null;
+    wakeStreams();
+  }
+  /** Has every open stream recheck, in one batch, keeping the built list (what changed isn't in it). */
+  function wakeStreams() {
     // Sockets closing during `stop` report here too.
     if (stopped) return;
     stateTimer ??= setTimeout(() => {
@@ -894,7 +898,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   }
   const safety = setInterval(() => {
     if (stateWatchers.size) invalidateTree();
-    void waiting.check(stateWatchers.size > 0);
+    void waiting.check(stateWatchers.size > 0).catch((error) => console.error("waiting check failed", error));
   }, SAFETY_MS);
 
   /** CodexBar AgentView's waits; off without it. List streams carry them, and it pushes what newly waits on the user. */
@@ -902,7 +906,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     env,
     home: HOME,
     run: (argv) => commandOutput(["python3", ...argv], WAITING_TIMEOUT_MS),
-    changed: invalidateState,
+    changed: wakeStreams,
     onMe: (fresh) => void notifyWaiting(fresh).catch((error) => console.error("push failed", error)),
   });
 

@@ -108,13 +108,13 @@ function Glyph({ kind }: { kind: Kind }) {
   );
 }
 
-/** "in 12m", "in 3h", "in 2d 4h". */
+/** "in 12m", "in 3h", "in 2d 4h". Whole minutes up to the hour, then the nearest hour, so never "in 60m" or "in 24h". */
 function leftUntil(due: number, now: number): string {
-  const s = (due - now) / 1000;
-  if (s < 3600) return `in ${Math.ceil(s / 60)}m`;
-  if (s < 86400) return `in ${Math.ceil(s / 3600)}h`;
-  const h = Math.floor((s % 86400) / 3600);
-  return `in ${Math.floor(s / 86400)}d${h ? ` ${h}h` : ""}`;
+  const m = Math.ceil((due - now) / 60_000);
+  if (m < 60) return `in ${m}m`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `in ${h}h`;
+  return `in ${Math.floor(h / 24)}d${h % 24 ? ` ${h % 24}h` : ""}`;
 }
 
 /** The time beside a session: how long ago its wait came, overdue, due now, time left, else how long it has been set aside. */
@@ -142,14 +142,14 @@ export type Standing = { kind: Kind; text: string; detail: string; rest: { kind:
 export function standing(row: WaitingRow): Standing {
   // The free-text wait is shown and edited on its own; the group already says "When I have time".
   const later = row.ball === "on_my_time";
-  const threads = row.threads
-    .map(parseThread)
-    .filter((t) => !(row.waitingFor && t.text.endsWith(row.waitingFor)) && !(later && /^when i have time$/i.test(t.text)));
+  const listed = (t: { text: string }) => !(row.waitingFor && t.text.endsWith(row.waitingFor)) && !(later && /^when i have time$/i.test(t.text));
+  const threads = row.threads.map(parseThread).filter(listed);
   const mine = row.waits.find((w) => w.ball === "on_me" && w.outcome) ?? row.waits.find((w) => w.ball === "on_me");
   const detail = mine ? [mine.label, mine.reason].filter(Boolean).join(": ") : "";
   if (row.outcome) {
     const text = headlineText(row) ?? threads[0]?.text ?? "";
-    return { kind: OUTCOME_KIND[row.outcome], text, detail, rest: threads.slice(1) };
+    // Only what is still open: other threads may have come too.
+    return { kind: OUTCOME_KIND[row.outcome], text, detail, rest: row.stillWaiting.map(parseThread).filter(listed) };
   }
   if (row.ball === "on_me") return { kind: "attention", text: mine?.reason || mine?.label || threads[0]?.text || "Needs you", detail: mine?.reason ? mine.label : "", rest: threads };
   if (threads.length) return { kind: threads[0].kind, text: threads[0].text, detail: "", rest: threads.slice(1) };
@@ -312,6 +312,7 @@ const waitsWord = (n: number) => `${n} ${n === 1 ? "wait" : "waits"}`;
 /** One session in full: where it stands, your note, what else it waits on, its PRs and what happened; the actions at the bottom. */
 function Detail({ row, health, item, now, onBack, onSeen }: { row: WaitingRow; health: Health | null | undefined; item: Item | null; now: number; onBack: () => void; onSeen: () => void }) {
   const { busy, act } = useActions(row);
+  const [resuming, setResuming] = useState(false);
   const [edit, setEdit] = useState<"note" | "what" | null>(null);
   const [allHistory, setAllHistory] = useState(false);
   const s = standing(row);
@@ -522,9 +523,12 @@ function Detail({ row, health, item, now, onBack, onSeen }: { row: WaitingRow; h
             <button
               class="primary"
               title="Resume in a new Tern tab"
-              onClick={() => {
+              disabled={resuming}
+              onClick={async () => {
                 onSeen();
-                void launchAgent("/api/closed/resume", { id: row.session, agent: "omp" });
+                setResuming(true);
+                await launchAgent("/api/closed/resume", { id: row.session, agent: "omp" });
+                setResuming(false);
               }}
             >
               Resume
@@ -566,7 +570,7 @@ export function WaitingPopup({ waiting, card = null, items, onClose }: { waiting
   const rows = waiting?.available ? waiting.rows : [];
   const groups = groupRows(rows, q);
   const open = card === null ? undefined : rows.find((r) => rowId(r) === card);
-  /** The rows marked seen from here, so a re-render doesn't post again. */
+  /** The rows marked seen from here, so a re-render doesn't post again; dropped once the row is seen. */
   const seenSent = useRef(new Set<string>());
   function markSeen(row: WaitingRow) {
     if (!row.unseen || row.session === null || seenSent.current.has(row.session)) return;
@@ -574,6 +578,10 @@ export function WaitingPopup({ waiting, card = null, items, onClose }: { waiting
     // A failure here only leaves the row bold.
     void post("/api/waiting/seen", { session: row.session });
   }
+  // A row seen since can come unseen again: its next look marks it again.
+  useEffect(() => {
+    for (const r of rows) if (!r.unseen && r.session !== null) seenSent.current.delete(r.session);
+  }, [waiting]);
   // Opening a session is a look at what happened.
   useEffect(() => {
     if (open) markSeen(open);
@@ -593,17 +601,21 @@ export function WaitingPopup({ waiting, card = null, items, onClose }: { waiting
     return () => document.removeEventListener("keydown", onKey);
   }, [q, searching, card, onClose]);
   // A closed session's notification has no session to open: the rows here are what it announced.
+  // Rechecked after the lookups: the page may have gone to the background, or a newer view come.
   useEffect(() => {
     if (!waiting?.available || document.visibilityState !== "visible" || !("serviceWorker" in navigator)) return;
+    let current = true;
     void navigator.serviceWorker
       .getRegistration()
       .then((registration) => registration?.getNotifications())
       .then((notifications) => {
+        if (!current || document.visibilityState !== "visible") return;
         for (const n of notifications ?? []) if (n.tag.startsWith("w")) n.close();
       })
       .catch(() => {});
+    return () => void (current = false);
   }, [waiting]);
-  const onMe = rows.filter((r) => r.ball === "on_me").length;
+  const onMe = tally(waiting)?.onMe ?? 0;
   return (
     <div class="sheet-backdrop wait-backdrop" onClick={onClose}>
       <div class="sheet wait-sheet" role="dialog" aria-modal="true" aria-label="Waiting" onClick={(e) => e.stopPropagation()}>
