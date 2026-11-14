@@ -4,38 +4,36 @@
 
 ### Features
 
-- A question with one answer field opens with that question, as omp's dialog names it at the top, and its explanation and choices follow. Before, a long explanation came first and the question only after it.
-- A tool call waiting for your approval shows as a card at the end of the chat: the tool, why omp asks (such as `Restricted folder: ~/.omp/agent/secrets.yml`) and what the call would do. An edit reads as its file, each step in words such as "Insert after line 94", and the lines it would write in green; a shell command shows whole. **Approve once** and **Deny** answer omp's dialog in the Tern pane, and a reply below denies it and steers. The session's row and its notification say what it asks, such as `Allow edit? Restricted folder: …`. Sessions on the old extension get the card too, without the reason, until omp reloads the extension.
-- Stretchtext short forms in replies are a muted blue (45% the link colour mixed into the text colour), the same way omp's TUI now draws extension links, so they no longer look like links that open a page.
-- A prompt's images no longer take half the screen: its text comes first, then the images as small numbered squares in one row. `[Image #1, 1112x622]` in the text becomes a small chip that opens that image. A folded turn's work row shows its first screenshot, small, and how many more there are.
-- With CodexBar AgentView on the desktop, a **Waiting** strip under the list's header (a pill beside the Tern session chips when there are several) says how many set-aside sessions are on you and how many wait on something else, and opens them in a popup (a full-height sheet on the phone, a dialog on the desktop). The popup lists them by who holds the next step: On me, Machine watching, Waiting on something, When I have time. Each row says in one line where the session stands, such as `4h passed` or `PR#1510 review on head +2`, with its project, title, time and your note; a row on you has a **Done** button of its own. A tap opens the session in full: its standing as one sentence, your note (tap to edit) and omp's suggested one (**Use it**), what else it waits on, the next step, its PRs with review and checks, what happened, and omp's recap. **Open** or **Resume**, **Snooze 1d** and **Done** sit at the bottom. The search button filters by title, note, project and wait. A session that lands on you sends a notification.
-- A short guide walks a first-time user through the session list: what the row colours mean, the counts, notifications, starting or resuming a session, hiding old ones, and what a session offers. It opens once on each device; **Guide** in the dock opens it again.
-- Session rows are one line unless something is live: a working row says what omp is doing now, a blocked one the question it asks. Press and hold a row, or rest the mouse on it, to see omp's recap or the last prompt, with the project, branch and model.
-- Notifications, **Hide old** and **Guide** moved from the header to a small floating pill in the list's lower right corner. Their icons show the state (the bell's dot or slash, the struck-through eye with how many it hides), and a tap confirms in a short message.
-- On the phone the filter opens from a search button in the header, so the sessions start higher on the screen. The Tern session chips and the Waiting button share one row.
-- The Waiting popup's group names stand out, each with its colour: red for On me, green for Machine watching, violet for Waiting on something, grey for When I have time.
+- Allow or deny omp's tool approvals from the phone, seeing the tool, the reason and what the call would do.
+- With CodexBar AgentView, a **Waiting** strip and popup show set-aside sessions, grouped by who acts next.
+- Chips under the list's header pick which Tern session it shows. Unparking needs `tern plugin reload tern-awui`.
+- Each turn folds its work behind one line such as `Worked 7m12s · 38 tools`, between the prompt and the final reply.
+- A turn that edited files ends with a card listing them with line counts.
+- A short first-run guide walks through the session list; **Guide** in the dock opens it again.
+- Session rows take one line; press and hold (or hover) for the recap or last prompt.
+- Notifications, **Hide old** and **Guide** sit in a floating dock at the lower right.
+- On the phone the filter opens from a search button.
+- On the phone, Park and Show on desktop sit in a session's ⋯ menu.
+- Prompts look like omp's band, fold past six lines and show their images as small thumbnails.
+- The chat's ↑ and ↓ buttons show only once you scroll up, with a dot for new output.
+- A question with one field opens with that question.
+- Stretchtext short forms are a muted blue, as in omp's TUI.
+- Tool lines, todo lists and rules use the body font.
+- On the desktop the chat keeps to a 720 px column.
 - The new-omp sheet's first tab is called **New**.
-- With more than one Tern session in the window, chips under the list's header pick which one the list shows, for example `All · Default · pi-durable`. A picked session shows its own tabs plus parked panes that wait on you, and the header still counts everything. The pick is kept on each device, and **+ omp**, a resumed session and a pane unparked from the **Parked** tab open in a new tab of that session. Unparking into a session needs the updated Tern plugin: run `tern plugin reload tern-awui`.
-- A turn that edited files ends with a card listing them, such as `3 changed files +12 −4`, with each file's folder and line counts. It starts folded when there are more than three files.
-- A session's header on the phone shows ‹, the title, ⋯ and ×. **Park** (or **Unpark**) and **Show on desktop** moved into the ⋯ menu, each with its icon and name, so a long title gets the room and wraps to a second line instead of stopping at `Restore deleted Cla…`. Close stays its own button and still asks first. On the wide desktop layout, where there is room, they stay buttons beside ×.
-- The chat's ↑ and ↓ buttons show only once you scroll up. ↑ steps back one prompt at a time, ↓ jumps to the latest, and a dot on ↓ means something new arrived below.
-- Each turn in a session's chat now shows its prompt, one line such as `Worked 7m12s · 38 tools · 3 failed` with the model and end time, and the final reply. The tool runs, interim messages, todo lists and notes in between fold behind that line; tap it to see them. The running turn stays open, a question waiting for your answer is never folded away, and a turn of tool runs only keeps its last group in view. This line replaces the time-and-model footer under each turn. Subagent chats work the same way.
-- Prompts look like omp's in the terminal: a flat, full-width band with a hairline above each turn. Prompts over six lines fold with a fade, and a tap shows the rest. While you read a long reply, its prompt's first line stays pinned at the top, ending in … when the prompt goes on; the mouse pointer shows the whole prompt, and a tap scrolls back to it.
-- Tool lines, todo lists, injected rules and cache-miss markers use the regular font in a smaller size, so only code, file names and terminal output stay monospaced.
-- On a desktop browser the chat and the composer keep to a 720 px column, so lines of text stay easy to read. The session's header and its extension notice line up with that column.
 
 ### Fixes
 
 - Images in replies no longer run wider than the chat.
-- A turn whose answer drew an advisor note no longer hides that answer behind the work row: the answer, the note and the agent's reply to it all stay in view, and only the work in between folds. While the agent works on the note, the turn shows as running again, and the files it changes then get their own card under the reply.
-- Opening a stretch no longer makes a Mermaid diagram above it flicker between its drawing and its source: a diagram drawn once goes straight back in each time the reply re-renders, before the screen paints.
-- Images an agent puts in a reply as `local://<name>` (files in its session's `local://` folder) show in the chat instead of a broken image.
-- The **+ omp** sheet keeps one height on all three tabs, so its top no longer jumps when you switch between New, Parked and Closed.
-- In the Parked and Closed tabs a short project name such as `work` no longer gets cut to `w…`; the title gives way first.
-- The **Parked** tab counts and lists only the panes Tern can bring back, the ones its own parked deck shows. Panes parked in a Tern session that has closed since sit apart under **From a closed Tern session**: a tap opens one in the app, × closes it after asking. Before, they were listed as parked and a tap failed without saying why. Needs the updated Tern plugin: run `tern plugin reload tern-awui`.
-- The Parked and Closed tabs lead each row with its project, as the Waiting popup does, so a closed session takes two lines instead of three. A parked row says what the pane did last or where it runs; a closed one its recap or last prompt.
-- Tern session chips that don't fit fade at the edge with more, and the picked one scrolls into view.
-- An answered ask card shows the notes added to chosen options in omp 18.18.8 and newer.
+- An answer that drew an advisor note stays in view.
+- Mermaid diagrams no longer flicker when a stretch opens.
+- Images a reply names as `local://<name>` show.
+- The **+ omp** sheet keeps one height across its tabs.
+- Short project names in Parked and Closed are no longer cut.
+- Panes parked in a closed Tern session are listed apart and can be closed. Needs `tern plugin reload tern-awui`.
+- Parked and Closed rows lead with their project.
+- Tern session chips that don't fit fade at the edge.
+- Answered asks show the notes on chosen options (omp 18.18.8 and newer).
 - A markdown link in a stretch opens whole, including URLs with parentheses or a title.
 
 ### Docs
@@ -50,28 +48,28 @@
 
 ### Features
 
-- The new-omp sheet has a **Closed** tab: the omp sessions no Tern pane runs any more, newest first. Typing searches every omp session, and Claude Code and Codex sessions too (`claude` or `codex` as a word shows only that tool's). A tap resumes one in a new Tern tab in its folder; × dismisses it.
-- While a session works, its working row shows the todo list's progress and current task, like `2/5 · Add the light palette`; a tap scrolls to the list.
+- The new-omp sheet's **Closed** tab lists ended sessions, searches omp, Claude Code and Codex, and resumes one in a tap.
+- A working session's row shows todo progress and the current task, e.g. `2/5 · Add the light palette`.
 - **Subagents (N)** under the chat stays after every subagent has finished.
-- After its first load, an open chat receives only the entries that changed, so following a working turn uses far less mobile data.
-- A static demo of the app with sample sessions runs in any browser without Tern or omp (`bun run build:demo`, deployed to GitHub Pages).
-- The session wheel opens on the session you're in, with a short buzz, so a quick swipe moves to the next or previous session and a turn up or down picks from there.
-- Park a session or shell from its header to put it away in Tern with its program still running. Parked panes leave the list, except while they wait on you or have news you haven't seen, and show in a new **Parked** tab of the **+ omp** sheet, where a tap brings one back into a tab of its own and opens it. Files and notes have no Park button. Needs the tern-awui Tern plugin: run `bun install.ts` again.
-- The chat marks omp's cache misses like Tern does, `Cache miss · 124k tokens` above the reply that sent its whole prompt again.
+- An open chat receives only changed entries after its first load, using far less mobile data.
+- A static demo with sample sessions runs in any browser, deployed to GitHub Pages.
+- The session wheel opens on the current session, so a quick swipe moves to the next or previous one.
+- Park a session or shell to put it away in Tern while it keeps running; the **Parked** tab brings it back. Run `bun install.ts` again.
+- The chat marks omp's cache misses like Tern does, e.g. `Cache miss · 124k tokens`.
 
 ### Fixes
 
-- A sideways swipe low on the screen no longer buzzes on and on: a session wheel that a drifting finger opens no longer steps by itself from the edge it opened at.
-- Resending an image or follow-up prompt after a failed send no longer runs it twice when the first send had gone through. omp sessions need `/restart` to load the updated extension.
-- Opened Markdown files show their embedded images, including ones given relative to the file such as a README's `docs/demo.gif`.
-- Stretchtext parser synced with omp-stretch: a stretch whose short form is only punctuation opens from the words before it, in sync with the pane; a rewritten short form stays in view when opened; an empty long form shows as plain text; a repeat ✦ answer goes in after the first; a ✦ answer after a table starts its own paragraph instead of joining the table; a gist holding a `snake_case` word shows once.
-- Asks work again with omp 18.18.3, whose `ask` tool writes one HTML form instead of a list of questions. Before, such an ask showed as an ordinary tool call, with no card to answer and no question in the "Needs you" notification. The card now shows the form with the phone's own radios, boxes, dropdowns and text fields, plus omp's free-text Other for each choice group. The answer is typed into omp's form dialog on the desktop. A form with just one choice still sends on a tap, including a tap on the preselected option. Asks from an older omp show as tool calls.
-- An ask answer that omp's form refuses, for example a field too short for its `minlength`, no longer leaves the phone on "Sent, waiting for omp…": after 10 s without omp's result the card says omp hasn't taken it and can be sent again.
+- A sideways swipe low on the screen no longer buzzes on and on.
+- Resending after a failed send no longer runs the prompt twice. omp sessions need `/restart`.
+- Opened Markdown files show their embedded images, including relative ones.
+- Stretchtext parser synced with omp-stretch, fixing several stretch and ✦ answer display bugs.
+- Asks work again with omp 18.18.3 and newer, shown as a form you can answer from the phone.
+- An ask answer omp refuses no longer hangs on "Sent, waiting for omp…"; it can be sent again.
 
 ### Docs
 
 - The phone film shows a voice call and the black screen.
-- The README explains up front that the desktop and the phone share the same Tern sessions: what's open in Tern continues on the phone, and a session started on the phone opens a Tern tab.
+- The README explains up front that the desktop and the phone share the same Tern sessions.
 - The README links to the live demo on GitHub Pages.
 
 ## 0.9.0 (2026-10-30)
@@ -82,7 +80,7 @@
 - During a call, the moon button blacks out the screen so the microphone keeps working in a pocket.
 - omp's welcome mark stays at the top of a session once its first turn starts.
 - On touch screens, the image button can paste an image from the clipboard.
-- Swipe sideways on an open session or subagent to reach the next one, or turn the finger mid-swipe to pick from a wheel.
+- Swipe sideways on an open session or subagent to reach the next one, or turn mid-swipe to pick from a wheel.
 - Code blocks and quotes have their own Copy button.
 
 ### Fixes
@@ -98,12 +96,12 @@
 
 ### Fixes
 
-- Session notifications dismiss when you open the session or start another turn on either device, once the mobile app is active.
+- Session notifications dismiss when you open the session or start another turn on either device.
 - New unread notifications stay visible when they arrive during notification cleanup.
-- The service runs at normal CPU priority under load: on Linux it is no longer named `bun`, which ananicy-cpp idles, and on Windows the scheduled task no longer runs below normal. Re-run `bun install.ts` to apply.
-- A slow git, as on Windows, no longer stalls the server: git runs in the background, gives up after 2 s, and once per folder instead of two or three times.
+- The service runs at normal CPU priority under load. Re-run `bun install.ts` to apply.
+- A slow git, as on Windows, no longer stalls the server.
 - omp settings are read with one `omp config list --json` instead of six `omp config get` runs.
-- A working agent's context gauge goes only to the phones showing that session, without rebuilding and resending the session list or rerunning `tern ls`.
+- A working agent's context gauge no longer resends the session list.
 - Chat messages with images are no longer re-rendered on every transcript update.
 - Several phones on one session share one screen capture and one transcript read.
 - omp's prompt-history writes to `history.db` no longer rebuild the list; only new recaps do.
@@ -154,7 +152,7 @@
 
 ### Features
 
-- omp-stretch's ✦: tap it on a fully open stretch to ask the pane's model for more, in sync with Tern (bridge protocol 3).
+- omp-stretch's ✦: tap it on a fully open stretch to ask the model for more, in sync with Tern.
 - **+ omp** lists folders by last use, each folder once.
 
 ### Fixes
@@ -173,7 +171,7 @@
 
 ### Breaking
 
-- No authentication of its own: without `TERN_AWUI_ALLOW` the server starts with no login check; `TERN_AWUI_DEV` is gone.
+- No authentication of its own: without `TERN_AWUI_ALLOW` there's no login check; `TERN_AWUI_DEV` is gone.
 - Requests must name a known host; re-run `bun install.ts` to add the tailnet name to `TERN_AWUI_HOSTS`.
 
 ### Features
