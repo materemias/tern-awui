@@ -15,6 +15,7 @@
 
 - Opening a stretch no longer makes a Mermaid diagram above it flicker between its drawing and its source: a diagram drawn once goes straight back in each time the reply re-renders, before the screen paints.
 - Images an agent puts in a reply as `local://<name>` (files in its session's `local://` folder) show in the chat instead of a broken image.
+- The Parked and Closed tabs lead each row with its project, as the Waiting popup does, so a closed session takes two lines instead of three. A parked row says what the pane did last or where it runs; a closed one its recap or last prompt.
 - An answered ask card shows the notes added to chosen options in omp 18.18.8 and newer.
 - A markdown link inside a stretch arrives whole as the stretch opens, instead of a word at a time with its markup showing, and a file name the short form holds stays in place as it grows into its path.
 

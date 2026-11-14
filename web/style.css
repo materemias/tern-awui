@@ -388,10 +388,8 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .closed-row { display: flex; align-items: flex-start; gap: 2px; }
 .closed-main { flex: 1; min-width: 0; padding: 10px; border: 0; border-radius: 10px; background: none; color: var(--fg); font: inherit; text-align: left; }
 .closed-main:active, .closed-main:hover { background: var(--raise); }
-.closed-meta { font-size: 12px; }
-.closed-project { color: var(--accent); }
-.nf.agent-claude, .closed-meta .agent-claude { color: var(--claude); }
-.nf.agent-codex, .closed-meta .agent-codex { color: var(--gpt); }
+.nf.agent-claude { color: var(--claude); }
+.nf.agent-codex { color: var(--gpt); }
 .closed-dismiss { flex: none; margin-top: 4px; font-size: 20px; }
 .btw-history .sheet-list { min-height: 0; }
 .btw-history .sheet-row { align-items: flex-start; }
@@ -875,3 +873,15 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
   .peek.above { transform-origin: bottom left; }
   @keyframes peek-in { from { opacity: 0; transform: scale(.97); } }
 }
+
+/* The sheet's Parked tab: project first, then title and age; under it what the pane did last. Panes
+   left from a closed Tern session follow under their own heading, with a close button. */
+.parked-row .closed-main { display: flex; flex-direction: column; gap: 3px; }
+.prow-top { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.prow-top .wname { flex: 1; }
+.prow-top .age { align-self: auto; padding-top: 0; }
+.prow-sub { padding-left: calc(8px + 9px); }
+.parked-row.st-working .prow-sub { color: color-mix(in srgb, var(--working) 55%, var(--fg)); }
+.parked-row.st-blocked .prow-sub { color: color-mix(in srgb, var(--blocked) 45%, var(--fg)); }
+/* A closed session's second line: its recap or last prompt, one line, the project leading the first. */
+.closed-sub, .closed-sub.recap { padding-left: 0; -webkit-line-clamp: 1; }

@@ -266,9 +266,10 @@ describe("Home", () => {
     const rows = root.querySelectorAll(".closed-row");
     expect(rows[0].textContent).toContain("FIXFix the build");
     expect(rows[0].textContent).toContain("Build is green again.");
-    expect(rows[0].textContent).toContain("app · 2h");
+    expect(rows[0].querySelector(".wname-project")?.textContent).toBe("app");
+    expect(rows[0].querySelector(".age")?.textContent).toBe("2h");
     // An untitled session goes by its prompt, under omp's π.
-    expect(rows[1].querySelector(".title")?.textContent).toBe("check the logs");
+    expect(rows[1].querySelector(".wname-title")?.textContent).toBe("check the logs");
     expect(rows[1].querySelector(".nf.pi")).not.toBeNull();
     await input(".sheet-filter", "green");
     expect(root.querySelectorAll(".closed-row").length).toBe(1);
@@ -304,7 +305,7 @@ describe("Home", () => {
     await click([...root.querySelectorAll('[role="tab"]')].find((t) => t.textContent === "Parked"));
     expect(root.querySelector(".sheet-head")?.textContent).toContain("3 parked");
     await input(".sheet-filter", "put");
-    const rows = root.querySelectorAll(".sheet-list .row");
+    const rows = root.querySelectorAll(".sheet-list .parked-row .closed-main");
     expect([...rows].map((r) => r.textContent)).toEqual([expect.stringContaining("Put away")]);
     await click(rows[0]);
     expect(net.to("/api/blocks/6/unpark")).toEqual([{}]);
@@ -312,7 +313,7 @@ describe("Home", () => {
     location.hash = "";
     await click(root.querySelector('[aria-label="New omp in a project"]'));
     expect(root.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Parked");
-    await click([...root.querySelectorAll(".sheet-list .row")].find((r) => r.textContent?.includes("Stuck")));
+    await click([...root.querySelectorAll(".sheet-list .parked-row .closed-main")].find((r) => r.textContent?.includes("Stuck")));
     expect(alerts).toEqual(["Unpark failed: Tern didn't unpark it"]);
     expect(location.hash).toBe("");
   });
@@ -375,14 +376,15 @@ describe("Home", () => {
     expect(root.querySelector(".sheet-head")?.textContent).toContain("1 found");
     const row = () => root.querySelector(".closed-row");
     expect(row()?.querySelector(".nf.agent-claude")).not.toBeNull();
-    expect(row()?.querySelector(".closed-meta")?.textContent).toContain("lib · Claude Code");
+    expect(row()?.querySelector(".wname-project")?.textContent).toBe("lib");
+    expect(row()?.querySelector(".nf.agent-claude")?.getAttribute("title")).toBe("Claude Code");
     // A failed dismissal puts the found row back in the search only, not in the loaded list.
     await click(row()?.querySelector('[aria-label="Dismiss"]') ?? null);
     await act(() => settle());
     expect(alerts).toEqual(["disk full"]);
     expect(root.querySelectorAll(".closed-row").length).toBe(1);
     await input(".sheet-filter", "");
-    expect([...root.querySelectorAll(".closed-row .title")].map((t) => t.textContent)).toEqual(["Ask claude about the parser"]);
+    expect([...root.querySelectorAll(".closed-row .wname-title")].map((t) => t.textContent)).toEqual(["Ask claude about the parser"]);
     await input(".sheet-filter", "claude parser");
     await click(row()?.querySelector(".closed-main") ?? null);
     expect(net.to("/api/closed/resume")).toEqual([{ id: "c", agent: "claude" }]);

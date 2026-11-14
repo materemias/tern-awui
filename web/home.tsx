@@ -264,6 +264,40 @@ const OTHER_AGENTS: Record<Exclude<Closed["agent"], "omp">, { name: string; icon
 };
 
 /**
+ * A pane in the sheet's Parked tab: its project first (titles alone don't tell sessions apart), the
+ * title, how long it has sat there, and what it was last told or did. A tap runs `onPick`; `onDrop`
+ * adds a close button.
+ */
+function ParkedRow({ item, now, onPick, onDrop }: { item: Item; now: number; onPick: (item: Item) => void; onDrop?: (item: Item) => void }) {
+  const icon = iconOf(item);
+  const { status, peek } = rowText(item, now);
+  const state = item.status ?? undefined;
+  return (
+    <div class={`closed-row parked-row st-${state ?? "shell"}`}>
+      <button class="closed-main" onClick={() => onPick(item)} title={onDrop ? "Open it here" : "Bring it back into a tab of its own and open it"}>
+        <span class="prow-top">
+          <Dot state={state} />
+          <span class="wname">
+            <span class="wname-project">{item.project}</span>
+            {icon && <span class={`nf${icon.pi ? " pi" : ""}`}>{icon.glyph}</span>}
+            {item.tag && <span class="tag">{item.tag}</span>}
+            <span class="wname-title">{item.title}</span>
+          </span>
+          <span class="age">{item.status ? age(item.since, now) : ""}</span>
+        </span>
+        {/* A pane without an omp transcript says only where it runs: home as ~, as a shell prompt does. */}
+        <span class="row-sub prow-sub">{status || peek.replace(/^(\/home|\/Users)\/[^/\\]+(?=$|\/)/, "~")}</span>
+      </button>
+      {onDrop && (
+        <button class="icon-btn closed-dismiss" aria-label="Close" title="Close it: ends its program" onClick={() => onDrop(item)}>
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
  * The new-omp sheet. Folder: where a new omp can open (open blocks and past omp sessions, newest
  * first). Parked: panes parked in Tern, which a tap unparks into a tab of their own. Closed: omp
  * sessions no pane runs now, which a tap resumes in a new tab. All filter as you type; Closed also
@@ -363,7 +397,9 @@ function NewSheet({
     alert(err);
   }
   const shownProjects = (projects ?? []).filter((p) => matchesWords(q, p));
-  const shownParked = parked.filter((i) => matchesWords(q, `${i.project} ${i.tag ?? ""} ${i.title} ${i.agent?.lastPrompt ?? ""} ${i.cwd}`));
+  const parkedText = (i: Item) => `${i.project} ${i.tag ?? ""} ${i.title} ${i.agent?.lastPrompt ?? ""} ${i.cwd}`;
+  const newest = (a: Item, b: Item) => b.since - a.since;
+  const shownParked = parked.filter((i) => matchesWords(q, parkedText(i))).sort(newest);
   // Until the server answers, the loaded rows (all omp's) filter as you type, tool names as the server reads them.
   const searched = query && found?.q === query ? found : null;
   const local = parseSearch(q);
@@ -417,7 +453,7 @@ function NewSheet({
                 </button>
               );
             })}
-          {tab === "parked" && shownParked.map((i) => <Row key={i.block} item={i} now={now} onPick={onUnpark} />)}
+          {tab === "parked" && shownParked.map((i) => <ParkedRow key={i.block} item={i} now={now} onPick={onUnpark} />)}
           {tab === "parked" && parked.length === 0 && <div class="empty">Nothing is parked. Park a pane from its top bar.</div>}
           {tab === "closed" &&
             shownClosed.map((s) => {
@@ -425,14 +461,21 @@ function NewSheet({
               // Untitled sessions go by their last prompt; omp's π stands in for a missing icon.
               const icon = other?.icon ?? (s.icon ? { glyph: s.icon, pi: false } : { glyph: "π", pi: true });
               return (
-                <div key={`${s.agent}:${s.id}`} class="closed-row">
-                  <button class="closed-main" onClick={() => onResume(s)} title={`Resume in a new tab in ${s.cwd}`}>
-                    <TitleRow icon={icon} tag={s.tag} title={s.title || s.prompt || "Untitled session"} />
-                    {(s.recap || (s.title && s.prompt)) && <div class={`row-sub${s.recap ? " recap" : ""}`}>{s.recap || s.prompt}</div>}
-                    <div class="row-sub closed-meta">
-                      <span class="closed-project">{folderLabel(s.cwd, home).name}</span>
-                      {other && <span class={icon.cls}> · {other.name}</span>} · {age(s.at, now)}
-                    </div>
+                <div key={`${s.agent}:${s.id}`} class="closed-row parked-row">
+                  <button class="closed-main" onClick={() => onResume(s)} title={`Resume${other ? ` in ${other.name}` : ""} in a new tab in ${s.cwd}`}>
+                    {/* Project first, as in the Parked tab and the Waiting popup; the tool shows by its icon. */}
+                    <span class="prow-top">
+                      <span class="wname">
+                        <span class="wname-project">{folderLabel(s.cwd, home).name}</span>
+                        <span class={`nf${icon.pi ? " pi" : ""}${icon.cls ? ` ${icon.cls}` : ""}`} title={other?.name}>
+                          {icon.glyph}
+                        </span>
+                        {s.tag && <span class="tag">{s.tag}</span>}
+                        <span class="wname-title">{s.title || s.prompt || "Untitled session"}</span>
+                      </span>
+                      <span class="age">{age(s.at, now)}</span>
+                    </span>
+                    {(s.recap || (s.title && s.prompt)) && <span class={`row-sub closed-sub${s.recap ? " recap" : ""}`}>{s.recap || s.prompt}</span>}
                   </button>
                   <button class="icon-btn closed-dismiss" aria-label="Dismiss" title="Dismiss: hide it from this list" onClick={() => void dismiss(s)}>
                     ×
