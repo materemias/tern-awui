@@ -25,6 +25,7 @@ import {
   needsReencode,
   parseAdvisorNote,
   parseStoredList,
+  pickedTernSession,
   parseRecent,
   parseRoute,
   prettyModel,
@@ -64,6 +65,7 @@ function item(over: Partial<Item> = {}): Item {
     doc: null,
     unseen: null,
     parked: false,
+    ternSession: null,
     activity: null,
     ...over,
   };
@@ -429,6 +431,25 @@ describe("listProjects", () => {
     expect(blocks(listProjects(projects, "wip", false, NOW, null))).toEqual([["app", ["2"]]]);
     expect(blocks(listProjects(projects, "borg keys", false, NOW, null))).toEqual([["infra", ["3"]]]);
     expect(listProjects(projects, "/home/u", false, NOW, null)).toEqual([]);
+  });
+  test("a Tern session keeps its own rows and parked ones that need you; projects left empty go", () => {
+    const split: Project[] = [
+      { name: "app", items: [item({ block: "1", ternSession: "Default" }), item({ block: "2", ternSession: "pi-durable" })] },
+      { name: "infra", items: [item({ block: "3", ternSession: "Default" })] },
+      { name: "waiting", items: [item({ block: "7", ternSession: null, parked: true, status: "blocked" }), item({ block: "8", ternSession: null, parked: true })] },
+    ];
+    expect(blocks(listProjects(split, "", false, NOW, null, "pi-durable"))).toEqual([["app", ["2"]], ["waiting", ["7"]]]);
+    expect(blocks(listProjects(split, "", false, NOW, null, null))).toEqual([["app", ["1", "2"]], ["infra", ["3"]], ["waiting", ["7"]]]);
+  });
+});
+
+describe("pickedTernSession", () => {
+  const two = [{ id: "4", name: "Default", shown: true }, { id: "77", name: "pi-durable", shown: false }];
+  test("the stored session while Tern has it among several; else All", () => {
+    expect(pickedTernSession(two, "pi-durable")).toBe("pi-durable");
+    expect(pickedTernSession(two, null)).toBeNull();
+    expect(pickedTernSession(two, "gone")).toBeNull();
+    expect(pickedTernSession(two.slice(0, 1), "Default")).toBeNull();
   });
 });
 

@@ -1,5 +1,5 @@
 // The app's pure logic: formatting, list filtering, model search, and the payloads it sends.
-import type { Caps, CatalogModel, Install, Item, Job, Live, Project, Role, TodoPhase } from "./api";
+import type { Caps, CatalogModel, Install, Item, Job, Live, Project, Role, TernSession, TodoPhase } from "./api";
 
 // ---------- formatting ----------
 
@@ -321,15 +321,33 @@ export function onList(i: Item): boolean {
 
 /**
  * The projects the list shows (`onList`). A filter (lowercase `needle`) matches project, tag, title
- * and last prompt, hidden old sessions included; otherwise `hideOld` drops old ones. Empty projects go.
+ * and last prompt, hidden old sessions included; otherwise `hideOld` drops old ones. A Tern
+ * `session` (see pickedTernSession) keeps its own rows and parked ones. Empty projects go.
  */
-export function listProjects(projects: Project[], needle: string, hideOld: boolean, now: number, selected: string | null): Project[] {
+export function listProjects(projects: Project[], needle: string, hideOld: boolean, now: number, selected: string | null, session: string | null = null): Project[] {
   const keep = (p: Project, i: Item) =>
     onList(i) &&
+    (session === null || i.ternSession === null || i.ternSession === session) &&
     (needle
       ? [p.name, i.tag ?? "", i.title, i.agent?.lastPrompt ?? ""].join(" ").toLowerCase().includes(needle)
       : !hideOld || !isOld(i, now, selected));
   return projects.map((p) => ({ ...p, items: p.items.filter((i) => keep(p, i)) })).filter((p) => p.items.length);
+}
+
+/** Where this device keeps the Tern session its list's chips picked: a session name; absent for All. */
+export const TERN_SESSION_KEY = "tern-mobile:tern-session";
+/** The Tern session this device picked, or null for All; Tern may have closed it since (pickedTernSession). */
+export const storedTernSession = () => localStorage.getItem(TERN_SESSION_KEY) || null;
+
+/** The session the list shows: `stored` while Tern has it and more than one session, else null (All). */
+export function pickedTernSession(sessions: TernSession[], stored: string | null): string | null {
+  return sessions.length > 1 && sessions.some((s) => s.name === stored) ? stored : null;
+}
+
+/** What a launch or unpark adds to its body to open in the picked Tern session: `{ session }`, nothing for All. */
+export function launchTarget(): { session?: string } {
+  const session = storedTernSession();
+  return session ? { session } : {};
 }
 
 /**

@@ -15,8 +15,16 @@ tern.route.open(function(req: OpenRequest, cx: WindowCx): RouteDecision?
 		return nil
 	end
 	local read, body = pcall(tern.fs.read, req.path, 64)
-	if not read or body ~= `{verb} {id}\n` then
+	if not read then
 		return nil
+	end
+	local session: number? = nil
+	if body ~= `{verb} {id}\n` then
+		local target = verb == "unpark" and string.match(body, `^unpark {id} (%d+)\n$`)
+		session = if target then tonumber(target) else nil
+		if session == nil then
+			return nil
+		end
 	end
 	pcall(tern.fs.remove, req.path)
 	local ok: boolean, err: string?
@@ -25,7 +33,7 @@ tern.route.open(function(req: OpenRequest, cx: WindowCx): RouteDecision?
 	else
 		-- Into a tab of its own, leaving the desktop on what it shows: the phone opens the pane.
 		local tab
-		tab, err = cx.layout:move_to_new_tab(pane, nil, { focus = false })
+		tab, err = cx.layout:move_to_new_tab(pane, session, { focus = false })
 		ok = tab ~= nil
 	end
 	if not ok then

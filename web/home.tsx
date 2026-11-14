@@ -1,8 +1,8 @@
 // The session list: projects with their rows, the filter, the bell, and the new-omp sheet.
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { post, postJson, type Closed, type Item } from "./api";
+import { launchAgent, post, type Closed, type Item } from "./api";
 import { keepsTool, matchesWords, parseSearch } from "../lib/search";
-import { age, folderLabel, isOld, jobsSummary, listProjects, onList, parseStoredList, rowText, toggled } from "./lib";
+import { age, folderLabel, isOld, jobsSummary, launchTarget, listProjects, onList, parseStoredList, pickedTernSession, rowText, storedTernSession, TERN_SESSION_KEY, toggled } from "./lib";
 import { buzz, Dot, PiMark } from "./parts";
 import { ExtensionBanner } from "./extension";
 import { goBack, useExitGuard, useNow, useStream } from "./hooks";
@@ -527,6 +527,29 @@ export function Home({
 }) {
   const { state, waiting, online } = useStream(null, "chat");
   const [q, setQ] = useState("");
+  // The Tern session chips scroll sideways when they don't fit: a faded edge says more are there,
+  // and the picked one is scrolled into view.
+  const chipsRef = useRef<HTMLDivElement>(null);
+  const [chipEdges, setChipEdges] = useState("");
+  const chipCount = state?.ternSessions.length ?? 0;
+  useEffect(() => {
+    const el = chipsRef.current;
+    if (!el) return;
+    el.querySelector(".tern-session.on")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const check = () => {
+      const left = el.scrollLeft > 2;
+      const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 2;
+      setChipEdges(`${left ? " more-left" : ""}${right ? " more-right" : ""}`);
+    };
+    check();
+    el.addEventListener("scroll", check, { passive: true });
+    const resize = new ResizeObserver(check);
+    resize.observe(el);
+    return () => {
+      el.removeEventListener("scroll", check);
+      resize.disconnect();
+    };
+  }, [chipCount, rail]);
   const [busy, setBusy] = useState<string | null>(null);
   const now = useNow(15_000);
   // The row whose peek is open (a long press or hover); null while none is.
@@ -545,9 +568,25 @@ export function Home({
   const oldCount = items.filter((i) => onList(i) && isOld(i, now, selected)).length;
   // Sessions whose omp runs another extension build than the server's (rows marked with !).
   const outdated = items.filter((i) => onList(i) && i.live?.mismatch).length;
+  // The Tern session the chips picked, remembered on this device; All (null) once Tern closes it.
+  // The rail has no chips, so it lists every session.
+  const [storedSession, setStoredSession] = useState(storedTernSession);
+  const ternSessions = state?.ternSessions ?? [];
+  const ternSession = rail ? null : pickedTernSession(ternSessions, storedSession);
+  function pickSession(name: string | null) {
+    if (name) localStorage.setItem(TERN_SESSION_KEY, name);
+    else localStorage.removeItem(TERN_SESSION_KEY);
+    setStoredSession(name);
+  }
+  // Launches read the stored pick (launchTarget), so a closed session is forgotten, not just hidden.
+  // An empty list (Tern unreadable) proves nothing.
+  const sessionGone = storedSession !== null && ternSessions.length > 0 && !ternSessions.some((s) => s.name === storedSession);
+  useEffect(() => {
+    if (sessionGone) pickSession(null);
+  }, [sessionGone]);
   const projects = useMemo(
-    () => (state ? listProjects(state.projects, needle, hideOld, now, selected) : []),
-    [state, needle, hideOld, now, selected],
+    () => (state ? listProjects(state.projects, needle, hideOld, now, selected, ternSession) : []),
+    [state, needle, hideOld, now, selected, ternSession],
   );
 
   const [picker, setPicker] = useState(false);
@@ -563,24 +602,11 @@ export function Home({
   // Only the phone's single-pane list guards against leaving on back.
   const exitHint = useExitGuard(!wide);
 
-  /**
-   * Starts an omp (`/api/new`) or resumes one (`/api/closed/resume`), then opens its block; `key`
-   * marks what is busy meanwhile. A resume the server wants confirmed goes again with `force`.
-   */
+  /** Starts or resumes an omp and opens it; `key` marks what is busy meanwhile. */
   async function launch(url: string, body: Record<string, unknown>, key: string) {
     setBusy(key);
-    try {
-      const r = await postJson(url, body);
-      const data: { block?: string; error?: string; confirm?: boolean } = await r.json().catch(() => ({}));
-      if (data.block) location.hash = `#/b/${data.block}`;
-      else if (data.confirm) {
-        if (confirm(`${data.error ?? ""} Open it anyway?`)) await launch(url, { ...body, force: true }, key);
-      } else if (data.error) alert(data.error);
-    } catch (err) {
-      alert(String(err));
-    } finally {
-      setBusy(null);
-    }
+    await launchAgent(url, body);
+    setBusy(null);
   }
 
   const sheet = picker && (
@@ -596,7 +622,7 @@ export function Home({
       onUnpark={async (i) => {
         setPicker(false);
         const from = location.hash;
-        const err = await post(`/api/blocks/${i.block}/unpark`, {});
+        const err = await post(`/api/blocks/${i.block}/unpark`, launchTarget());
         if (err) alert(`Unpark failed: ${err}`);
         // A slow Tern: opening something else meanwhile wins over this jump.
         else if (location.hash === from) location.hash = `#/b/${i.block}`;
@@ -712,7 +738,30 @@ export function Home({
           onInput={(e) => setQ(e.currentTarget.value)}
         />
       </div>
+      {/* The Tern session chips (only with more than one session) and the Waiting pill share a row. */}
+      {ternSessions.length > 1 ? (
+        <div class="list-tools">
+          <div class={`tern-sessions${chipEdges}`} ref={chipsRef} role="group" aria-label="Tern session">
+            {[{ id: "", name: "All", shown: false }, ...ternSessions].map((s) => {
+              const value = s.id ? s.name : null;
+              return (
+                <button
+                  key={s.id}
+                  class={`tern-session${ternSession === value ? " on" : ""}${s.shown ? " shown" : ""}`}
+                  aria-pressed={ternSession === value}
+                  title={s.shown ? `${s.name}, shown on the desktop` : s.name}
+                  onClick={() => pickSession(value)}
+                >
+                  {s.name}
+                </button>
+              );
+            })}
+          </div>
+          <WaitingStrip waiting={waiting} compact />
+        </div>
+      ) : (
         <WaitingStrip waiting={waiting} />
+      )}
       <main class="list">
         {!state && <div class="empty">Connecting…</div>}
         {state && <ExtensionBanner install={state.extension} />}

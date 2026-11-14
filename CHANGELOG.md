@@ -11,6 +11,7 @@
 - Session rows are one line unless something is live: a working row says what omp is doing now, a blocked one the question it asks. Press and hold a row, or rest the mouse on it, to see omp's recap or the last prompt, with the project, branch and model.
 - The Waiting popup's group names stand out, each with its colour: red for On me, green for Machine watching, violet for Waiting on something, grey for When I have time.
 - The new-omp sheet's first tab is called **New**.
+- With more than one Tern session in the window, chips under the list's header pick which one the list shows, for example `All · Default · pi-durable`. A picked session shows its own tabs plus parked panes that wait on you, and the header still counts everything. The pick is kept on each device, and **+ omp**, a resumed session and a pane unparked from the **Parked** tab open in a new tab of that session. Unparking into a session needs the updated Tern plugin: run `tern plugin reload tern-awui`.
 
 ### Fixes
 
@@ -19,6 +20,7 @@
 - The **+ omp** sheet keeps one height on all three tabs, so its top no longer jumps when you switch between New, Parked and Closed.
 - In the Parked and Closed tabs a short project name such as `work` no longer gets cut to `w…`; the title gives way first.
 - The Parked and Closed tabs lead each row with its project, as the Waiting popup does, so a closed session takes two lines instead of three. A parked row says what the pane did last or where it runs; a closed one its recap or last prompt.
+- Tern session chips that don't fit fade at the edge with more, and the picked one scrolls into view.
 - An answered ask card shows the notes added to chosen options in omp 18.18.8 and newer.
 - A markdown link inside a stretch arrives whole as the stretch opens, instead of a word at a time with its markup showing, and a file name the short form holds stays in place as it grows into its path.
 

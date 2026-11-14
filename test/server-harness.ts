@@ -82,7 +82,8 @@ case "$1" in
   *) printf '%s\\0' "$@" >> "$TERN_FAKE_DIR/calls"; printf '\\0' >> "$TERN_FAKE_DIR/calls"
      if [ -f "$TERN_FAKE_DIR/fail" ]; then cat "$TERN_FAKE_DIR/fail" >&2; fi
      if [ "$1" = new ]; then if [ -f "$TERN_FAKE_DIR/new-out" ]; then cat "$TERN_FAKE_DIR/new-out"; else printf '{"block":99}'; fi; fi
-     # What the tern-awui plugin does with an opened request file: the tree it leaves behind.
+     # What the tern-awui plugin does with an opened request file: the line it read, and the tree it leaves behind.
+     if [ "$1" = open ]; then cat "$2" >> "$TERN_FAKE_DIR/requests" 2>/dev/null; fi
      if [ "$1" = open ] && [ -f "$TERN_FAKE_DIR/open-tree.json" ]; then cp "$TERN_FAKE_DIR/open-tree.json" "$TERN_FAKE_DIR/tree.json"; printf 'tern open: cannot open in a file block\\n' >&2; exit 1; fi
      if [ -f "$TERN_FAKE_DIR/exit" ]; then exit "$(cat "$TERN_FAKE_DIR/exit")"; fi ;;
 esac

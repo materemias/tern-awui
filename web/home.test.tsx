@@ -478,3 +478,75 @@ describe("sidebar rail", () => {
     expect(toggles).toBe(2);
   });
 });
+
+describe("Tern session chips", () => {
+  const sessions = [{ id: "4", name: "Default", shown: true }, { id: "77", name: "pi-durable", shown: false }];
+  const items = () => [
+    item({ block: "5", title: "Home tab", ternSession: "Default", status: "working" }),
+    item({ block: "6", title: "Durable tab", ternSession: "pi-durable" }),
+    item({ block: "7", title: "Parked asks", ternSession: null, parked: true, status: "blocked" }),
+    item({ block: "8", title: "Parked quiet", ternSession: null, parked: true }),
+  ];
+  async function mountSessions(list = items(), ternSessions = sessions, wide = true) {
+    await act(() => render(<HomeHost wide={wide} selected={null} />, root));
+    await act(() => { FakeEventSource.last.open(); FakeEventSource.last.emit("state", state(list, { ternSessions, counts: { working: 1, blocked: 1 } })); });
+    await act(() => settle());
+  }
+  const chips = () => [...root.querySelectorAll<HTMLButtonElement>(".tern-session")];
+  const chip = (name: string) => chips().find((c) => c.textContent === name);
+  const rows = () => [...root.querySelectorAll(".list .row")].map((r) => r.getAttribute("href"));
+
+  test("one session: no chips, every row, launches name no session", async () => {
+    await mountSessions(items(), [sessions[0]]);
+    expect(root.querySelector(".tern-sessions")).toBeNull();
+    expect(rows()).toEqual(["#/b/5", "#/b/6", "#/b/7"]);
+    await click(root.querySelector('[aria-label="New omp in app"]'));
+    expect(net.to("/api/new")).toEqual([{ cwd: "/w/app" }]);
+  });
+
+  test("a picked session filters the list to its rows and parked ones that need you, is remembered, and is where launches and unparks open", async () => {
+    await mountSessions();
+    expect(chips().map((c) => [c.textContent, c.getAttribute("aria-pressed"), c.classList.contains("shown")])).toEqual([
+      ["All", "true", false],
+      ["Default", "false", true],
+      ["pi-durable", "false", false],
+    ]);
+    await click(chip("pi-durable"));
+    expect(localStorage.getItem("tern-mobile:tern-session")).toBe("pi-durable");
+    expect(chip("pi-durable")?.getAttribute("aria-pressed")).toBe("true");
+    expect(rows()).toEqual(["#/b/6", "#/b/7"]);
+    // The header still counts every session.
+    expect(root.querySelector(".counts")?.textContent).toBe("110");
+
+    await click(root.querySelector('[aria-label="New omp in app"]'));
+    expect(net.to("/api/new")).toEqual([{ session: "pi-durable", cwd: "/w/app" }]);
+    await click(root.querySelector('[aria-label="New omp in a project"]'));
+    await click([...root.querySelectorAll('[role="tab"]')].find((t) => t.textContent === "Parked"));
+    await click([...root.querySelectorAll(".sheet-list .parked-row .closed-main")].find((r) => r.textContent?.includes("Parked quiet")));
+    expect(net.to("/api/blocks/8/unpark")).toEqual([{ session: "pi-durable" }]);
+
+    await click(chip("All"));
+    expect(localStorage.getItem("tern-mobile:tern-session")).toBeNull();
+    expect(rows()).toEqual(["#/b/5", "#/b/6", "#/b/7"]);
+  });
+
+  test("a stored session Tern closed falls back to All; an unreadable (empty) session list keeps it", async () => {
+    localStorage.setItem("tern-mobile:tern-session", "pi-durable");
+    await mountSessions(items(), []);
+    expect(localStorage.getItem("tern-mobile:tern-session")).toBe("pi-durable");
+    await act(() => { FakeEventSource.last.emit("state", state(items(), { ternSessions: [sessions[0], { id: "9", name: "other", shown: false }] })); });
+    await act(() => settle());
+    expect(localStorage.getItem("tern-mobile:tern-session")).toBeNull();
+    expect(chip("All")?.getAttribute("aria-pressed")).toBe("true");
+    expect(rows()).toEqual(["#/b/5", "#/b/6", "#/b/7"]);
+  });
+
+  test("the rail shows no chips and every session", async () => {
+    localStorage.setItem("tern-mobile:tern-session", "pi-durable");
+    await act(() => render(<HomeHost wide rail selected={null} />, root));
+    await act(() => { FakeEventSource.last.open(); FakeEventSource.last.emit("state", state(items(), { ternSessions: sessions })); });
+    await act(() => settle());
+    expect(root.querySelector(".tern-sessions")).toBeNull();
+    expect(root.querySelector('.rail-item[href="#/b/5"]')).not.toBeNull();
+  });
+});

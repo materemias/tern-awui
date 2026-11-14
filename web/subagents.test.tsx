@@ -40,6 +40,7 @@ function item(jobs: Job[]): Item {
     doc: null,
     unseen: null,
     parked: false,
+    ternSession: null,
     activity: null,
   };
 }

@@ -858,6 +858,13 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .wd-bar .wd-stop-all { color: var(--muted); font-size: 13px; padding: 10px 12px; }
 .wd-bar .wd-stop-all.t-warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
 
+/* ---------- Tern session chips (home list, with more than one Tern session) ---------- */
+.tern-sessions { display: flex; gap: 6px; padding: 4px 12px 8px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+.tern-session { flex: none; position: relative; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line); background: none; color: var(--muted); font: inherit; font-size: 13px; white-space: nowrap; }
+.tern-session.on { color: var(--fg); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+/* The session the desktop shows: a small dot after its name. */
+.tern-session.shown::after { content: ""; display: inline-block; width: 5px; height: 5px; margin-left: 6px; border-radius: 50%; background: currentColor; opacity: .6; vertical-align: middle; }
+
 /* Session rows say only what is live: under a working row what omp does now, under a blocked one the
    question it asks. Everything else (recap, last prompt, where it runs) waits in the peek, opened by a
    long press or a resting mouse. Rows don't select text, so the press doesn't start a selection. */
@@ -873,6 +880,17 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
   .peek.above { transform-origin: bottom left; }
   @keyframes peek-in { from { opacity: 0; transform: scale(.97); } }
 }
+
+/* The list's tools row: the Tern session chips scroll on the left, the Waiting pill stays on the right. */
+.list-tools { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.list-tools .tern-sessions { flex: 1; min-width: 0; padding: 0; border: 0; }
+.wait-strip.compact { flex: none; gap: 6px; margin: 0; padding: 5px 10px 5px 9px; font-size: 13px; }
+.wait-strip.compact svg { width: 15px; height: 15px; }
+.wait-strip.compact .wait-strip-me { padding: 0 6px; }
+/* Chips that don't fit fade at the edge that has more. */
+.tern-sessions.more-right { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
+.tern-sessions.more-left { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); }
+.tern-sessions.more-left.more-right { -webkit-mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
 
 /* The sheet's Parked tab: project first, then title and age; under it what the pane did last. Panes
    left from a closed Tern session follow under their own heading, with a close button. */

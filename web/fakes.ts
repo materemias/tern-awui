@@ -172,6 +172,7 @@ export function item(over: Partial<Item> = {}): Item {
     doc: null,
     unseen: null,
     parked: false,
+    ternSession: null,
     activity: null,
     ...over,
   };
@@ -184,6 +185,7 @@ export function state(items: Item[], over: Partial<State> = {}): State {
     projects: [...projects].map(([name, list]) => ({ name, items: list })),
     counts: { working: items.filter((i) => i.status === "working").length, idle: items.filter((i) => i.status === "idle").length },
     roles: [],
+    ternSessions: [],
     badge: 0,
     at: 0,
     app: "",

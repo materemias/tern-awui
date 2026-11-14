@@ -555,6 +555,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     unseen: "done" | "blocked" | null;
     /** Parked in Tern: out of every tab, its program still running. The list leaves it out; the new-omp sheet's Parked tab shows it. */
     parked: boolean;
+    /** The name of the Tern session whose tab holds it; null while parked (Tern lists parked panes apart). */
+    ternSession: string | null;
     /** What it does or asks right now: omp's working-row intent while working, the ask's question while blocked. */
     activity: string | null;
   };
@@ -563,6 +565,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     projects: { name: string; items: Item[] }[];
     counts: Record<string, number>;
     roles: Role[];
+    /** The window's Tern sessions in Tern's order; `shown`: the one the desktop shows. */
+    ternSessions: TernSession[];
     /** Unseen updates across sessions: the app icon's badge. */
     badge: number;
     at: number;
@@ -664,6 +668,15 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     return entry.value;
   }
 
+  type TernSession = { id: string; name: string; shown: boolean };
+  /** A `tern ls --json` tree's sessions in Tern's order, ids as strings as block ids are. */
+  function ternSessionsOf(tree: Obj): TernSession[] {
+    return arr(tree.sessions)
+      .map(obj)
+      .filter((s) => str(s.name) && typeof s.id === "number")
+      .map((s) => ({ id: String(s.id), name: str(s.name), shown: s.shown === true }));
+  }
+
   async function buildState(): Promise<State> {
     const [ls, agents, settings] = await Promise.all([ternTree(), readAgents(), ompSettings()]);
     let tree: Obj = {};
@@ -678,6 +691,10 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     const detached = arr(tree.detached).map(obj);
     const parked = new Set(detached.map((b) => String(b.id)));
     const blocks = [...arr(tree.sessions).flatMap((s) => arr(obj(s).tabs).flatMap((t) => arr(obj(t).blocks).map(obj))), ...detached];
+    // The Tern session whose tab holds each block; parked ones are in none.
+    const sessionOf = new Map<string, string>();
+    for (const s of arr(tree.sessions).map(obj))
+      for (const t of arr(s.tabs)) for (const b of arr(obj(t).blocks)) sessionOf.set(String(obj(b).id), str(s.name));
     // Every distinct cwd at once; only a cwd seen for the first time waits for git.
     const cwds = [...new Set(blocks.map((b) => str(b.cwd, HOME)))];
     const repos = new Map(await Promise.all(cwds.map((cwd) => repoOf(cwd, HOME, invalidateState).then((r) => [cwd, r] as const))));
@@ -739,6 +756,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
         doc,
         unseen: unseen.get(id) ?? null,
         parked: parked.has(id),
+        ternSession: parked.has(id) ? null : sessionOf.get(id) || null,
       });
       groups.set(project, list);
     }
@@ -757,6 +775,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
       projects,
       counts,
       roles: settings.roles,
+      ternSessions: ternSessionsOf(tree),
       badge: unseen.size,
       at: Date.now(),
       app,
@@ -795,7 +814,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     if (!view) {
       const rows = rowKeys(s);
       const order: [string, string[]][] = s.projects.map((p) => [p.name, p.items.map((i) => i.block)]);
-      view = { rows, order, key: `${JSON.stringify([order, s.counts, s.roles, s.extension, s.badge, s.app])}\0${[...rows.values()].join("\0")}` };
+      view = { rows, order, key: `${JSON.stringify([order, s.counts, s.roles, s.ternSessions, s.extension, s.badge, s.app])}\0${[...rows.values()].join("\0")}` };
       stateViews.set(s, view);
     }
     return view;
@@ -914,11 +933,14 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   /** Park requests running per block: a second tap joins the first, an opposite one waits for it. */
   const parking = new Map<string, { park: boolean; done: Promise<string | null> }>();
 
-  /** Parks a pane in Tern, or unparks it into a tab of its own; null once `tern ls` shows it there. */
-  function parkPane(block: string, park: boolean): Promise<string | null> {
+  /**
+   * Parks a pane in Tern, or unparks it into a tab of its own, in Tern session `session` (an id)
+   * when given; null once `tern ls` shows it there.
+   */
+  function parkPane(block: string, park: boolean, session: string | null = null): Promise<string | null> {
     const running = parking.get(block);
     if (running?.park === park) return running.done;
-    const entry = { park, done: (running?.done ?? Promise.resolve(null)).then(() => requestPark(block, park)) };
+    const entry = { park, done: (running?.done ?? Promise.resolve(null)).then(() => requestPark(block, park, session)) };
     parking.set(block, entry);
     void entry.done.then(() => parking.get(block) === entry && parking.delete(block));
     return entry.done;
@@ -928,7 +950,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
    * Tern's CLI can't park or unpark: tern-awui's Tern plugin (tern-plugin/) does, claiming a `tern
    * open` of a request file. Without the plugin that open would show the file, so it is checked first.
    */
-  async function requestPark(block: string, park: boolean): Promise<string | null> {
+  async function requestPark(block: string, park: boolean, session: string | null): Promise<string | null> {
     const verb = park ? "park" : "unpark";
     const plugins = await tern(["plugin", "list", "--json"]);
     let plugin: Obj | undefined;
@@ -939,19 +961,23 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     }
     if (!plugin) return `To ${verb} panes, Tern needs tern-awui's plugin: run \`bun install.ts\` again`;
     if (plugin.status !== "ready") return `tern-awui's Tern plugin isn't ready (${str(plugin.status, "no status")}): see \`tern plugin list\``;
+    // 0.1 reads only `unpark <pane>`; a request it doesn't know would open as a file instead.
+    if (session && /^0\.[01]\./.test(str(plugin.version)))
+      return "tern-awui's Tern plugin predates unparking into a chosen session: run `tern plugin reload tern-awui`";
     const dir = join(CONFIG_DIR, "tern-awui-requests");
     const file = join(dir, `${verb}-${block}`);
     try {
       mkdirSync(dir, { recursive: true });
       // The plugin acts only on a file holding exactly this line.
-      writeFileSync(file, `${verb} ${block}\n`);
+      writeFileSync(file, `${verb} ${block}${session ? ` ${session}` : ""}\n`);
       // The plugin claims the open, so tern reports that no file block opened: only the list tells.
       await tern(["open", file]);
       for (let tries = 0; tries < 10; tries++) {
         const ls = await tern(["ls", "--json"]);
         if (ls.error) return ls.error;
         const tree = obj(JSON.parse(ls.out));
-        const there = park ? arr(tree.detached) : arr(tree.sessions).flatMap((s) => arr(obj(s).tabs).flatMap((t) => arr(obj(t).blocks)));
+        const tabs = arr(tree.sessions).filter((s) => !session || String(obj(s).id) === session);
+        const there = park ? arr(tree.detached) : tabs.flatMap((s) => arr(obj(s).tabs).flatMap((t) => arr(obj(t).blocks)));
         if (there.some((b) => String(obj(b).id) === block)) return null;
         await Bun.sleep(150);
       }
@@ -1403,9 +1429,25 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
 
   type Reply = { status: number; body: Obj };
 
-  /** Opens a Tern tab running `argv` in `cwd`; the reply names its block. */
-  async function newAgentTab(cwd: string, argv: string[]): Promise<Reply> {
-    const r = await tern(["new", "tab", "--cwd", cwd, "--json", "--", ...argv]);
+  /**
+   * The Tern session a launch names (`session`, from the phone's session chips), checked against
+   * Tern's current sessions: null when it names none, a 400 reply when Tern has no such session.
+   */
+  async function launchSession(body: Obj): Promise<TernSession | null | Reply> {
+    if (body.session == null) return null;
+    const name = str(body.session);
+    const ls = await ternTree();
+    let sessions: TernSession[] = [];
+    try {
+      sessions = ternSessionsOf(obj(JSON.parse(ls.out)));
+    } catch {}
+    if (ls.error) return { status: 503, body: { error: `can't list Tern's sessions: ${ls.error}. Try again.` } };
+    return sessions.find((s) => s.name === name) ?? { status: 400, body: { error: `Tern has no session named "${name}"` } };
+  }
+
+  /** Opens a Tern tab running `argv` in `cwd`, in Tern session `session` (a name) or the one Tern shows; the reply names its block. */
+  async function newAgentTab(cwd: string, argv: string[], session: string | null): Promise<Reply> {
+    const r = await tern(["new", "tab", ...(session ? [session] : []), "--cwd", cwd, "--json", "--", ...argv]);
     if (r.error) return { status: 502, body: { error: r.error } };
     invalidateTree();
     try {
@@ -1434,7 +1476,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
    * counts too: one whose command names the session is that pane, and one in the session's folder
    * asks for `force`.
    */
-  async function resumeSession(agent: ClosedAgent, id: string, force: boolean): Promise<Reply> {
+  async function resumeSession(agent: ClosedAgent, id: string, force: boolean, session: string | null): Promise<Reply> {
     let cwd: string;
     let argv: string[];
     if (agent === "omp") {
@@ -1472,7 +1514,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
       const what = agent === "omp" ? `An omp in ${cwd} isn't connected to tern-awui` : `${AGENT_NAMES[agent]} runs in a tab in ${cwd}`;
       return { status: 409, body: { error: `${what}, so it may be running this session.`, confirm: true } };
     }
-    return newAgentTab(cwd, argv);
+    return newAgentTab(cwd, argv, session);
   }
 
   async function handleApi(req: Request, url: URL): Promise<Response> {
@@ -1648,12 +1690,16 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           return done(err);
         }
         case "park":
-        case "unpark":
+        case "unpark": {
           // Already where it was asked to go (a second tap, another phone): nothing to do.
           if (item.parked === (action === "park")) return json({ ok: true });
           // A parked file block drops out of `tern ls` altogether: the phone could neither see nor unpark it.
           if (item.doc) return json({ error: "Files and notes can't be parked from here: Tern's list loses them once parked" }, 409);
-          return done(await parkPane(block, action === "park"));
+          // An unpark may name the Tern session whose new tab takes the pane.
+          const session = action === "unpark" ? await launchSession(body) : null;
+          if (session && "status" in session) return json(session.body, session.status);
+          return done(await parkPane(block, action === "park", session?.id ?? null));
+        }
         case "keys":
           return done(await sendKeys(block, arr(body.keys).map((k) => str(k))));
         case "type": {
@@ -1764,7 +1810,9 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
       const cwd = str(body.cwd);
       if (!isAbsolute(cwd) || !existsSync(cwd) || !statSync(cwd).isDirectory())
         return json({ error: "cwd must be an existing directory" }, 400);
-      const r = await newAgentTab(cwd, ["omp"]);
+      const session = await launchSession(body);
+      if (session && "status" in session) return json(session.body, session.status);
+      const r = await newAgentTab(cwd, ["omp"], session?.name ?? null);
       return json(r.body, r.status);
     }
     if (path === "/api/closed/resume" || path === "/api/closed/dismiss") {
@@ -1776,10 +1824,12 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
       }
       const agent = CLOSED_AGENTS.find((a) => a === (body.agent ?? "omp"));
       if (!agent) return json({ error: "unknown agent" }, 400);
+      const session = await launchSession(body);
+      if (session && "status" in session) return json(session.body, session.status);
       const key = `${agent}:${id}`;
       let pending = resuming.get(key);
       if (!pending) {
-        pending = resumeSession(agent, id, body.force === true).finally(() => resuming.delete(key));
+        pending = resumeSession(agent, id, body.force === true, session?.name ?? null).finally(() => resuming.delete(key));
         resuming.set(key, pending);
       }
       const r = await pending;

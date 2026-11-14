@@ -2,6 +2,7 @@ export type { BtwHistoryRecord, BtwHistoryTurn } from "../lib/btw-history";
 export type { ApprovalView, ContextUse, Run, StretchState, Voice } from "../lib/bridge-state";
 export type { Closed } from "../lib/closed";
 export type { Waiting, WaitingRow } from "../lib/waiting-view";
+import { launchTarget } from "./lib";
 
 // ---------- API shapes (mirror server.ts) ----------
 
@@ -74,15 +75,20 @@ export type Item = {
   unseen: "done" | "blocked" | null;
   /** Parked in Tern, its program still running: off the list, in the new-omp sheet's Parked tab. */
   parked: boolean;
+  /** The Tern session whose tab holds it; null while parked. */
+  ternSession: string | null;
   /** What it does or asks right now: omp's working intent, or the question it asks while blocked; null otherwise. */
   activity: string | null;
 };
 export type Role = { role: string; spec: string };
+export type TernSession = { id: string; name: string; shown: boolean };
 export type Project = { name: string; items: Item[] };
 export type State = {
   projects: Project[];
   counts: Record<string, number>;
   roles: Role[];
+  /** The window's Tern sessions in Tern's order; `shown`: the one the desktop shows. */
+  ternSessions: TernSession[];
   /** Unseen updates across sessions. */
   badge: number;
   at: number;
@@ -148,5 +154,23 @@ export async function post(path: string, body: unknown): Promise<string | null> 
     return data.error ?? `HTTP ${r.status}`;
   } catch (err) {
     return String(err);
+  }
+}
+
+/**
+ * Starts an omp (`/api/new`) or resumes one (`/api/closed/resume`), then opens its block, in the
+ * Tern session the list's chips picked (launchTarget). A resume the server wants confirmed goes
+ * again with `force`.
+ */
+export async function launchAgent(url: string, body: Record<string, unknown>): Promise<void> {
+  try {
+    const r = await postJson(url, { ...launchTarget(), ...body });
+    const data: { block?: string; error?: string; confirm?: boolean } = await r.json().catch(() => ({}));
+    if (data.block) location.hash = `#/b/${data.block}`;
+    else if (data.confirm) {
+      if (confirm(`${data.error ?? ""} Open it anyway?`)) await launchAgent(url, { ...body, force: true });
+    } else if (data.error) alert(data.error);
+  } catch (err) {
+    alert(String(err));
   }
 }

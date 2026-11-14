@@ -100,6 +100,7 @@ export class DemoServer {
       projects: [...projects].map(([name, list]) => ({ name, items: list })),
       counts: { working: count("working"), blocked: count("blocked"), idle: count("idle") },
       roles: ROLES,
+      ternSessions: [],
       badge: items.filter((i) => i.unseen).length,
       at: this.clock.now(),
       app: "",
