@@ -10,8 +10,6 @@ export const KEYS: Record<string, true> = {
   // Line editing in an ask form's text inputs: line end, delete to line start / end.
   "ctrl+e": true, "ctrl+u": true, "ctrl+k": true,
   PageUp: true, PageDown: true, "1": true, "2": true, "3": true, "4": true, "5": true, y: true, n: true,
-  // omp's approve key in a tool approval dialog.
-  "ctrl+q": true,
 };
 
 export type PromptImage = { data: string; mimeType: string };

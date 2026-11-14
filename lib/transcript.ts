@@ -348,13 +348,17 @@ export async function readChatFile(path: string, leaf: string, limit: number, ta
   return parseChat(await tailLines(path, tailBytes), leaf, limit);
 }
 
+/** A tool call without a result; `args` null when it is only a guess among several such calls (see {@link pendingCall}). */
+export type PendingCall = { id: string; name: string; args: Obj | null };
+
 /**
  * A tool call that has no result yet, from transcript lines: the one with `id`, or with "" the
- * newest one that isn't an `ask` (what an approval from an extension that names none waits on).
+ * newest one that isn't an `ask` (what an approval from an extension that names none waits on),
+ * without its arguments when other such calls lack a result too: any of them may be the one asked about.
  * omp writes the assistant message before it runs (or asks to run) its calls.
  */
-export function pendingCall(lines: string[], id: string): { id: string; name: string; args: Obj } | null {
-  const calls = new Map<string, { id: string; name: string; args: Obj }>();
+export function pendingCall(lines: string[], id: string): PendingCall | null {
+  const calls = new Map<string, PendingCall>();
   for (const line of lines) {
     if (!line.includes('"toolCall"') && !line.includes('"toolResult"')) continue;
     let msg: Obj;
@@ -369,11 +373,13 @@ export function pendingCall(lines: string[], id: string): { id: string; name: st
         if (part.type === "toolCall" && str(part.id)) calls.set(str(part.id), { id: str(part.id), name: str(part.name), args: obj(part.arguments) });
   }
   if (id) return calls.get(id) ?? null;
-  return [...calls.values()].findLast((c) => c.name !== "ask") ?? null;
+  const open = [...calls.values()].filter((c) => c.name !== "ask");
+  const newest = open.at(-1);
+  return newest ? { ...newest, args: open.length > 1 ? null : newest.args } : null;
 }
 
 /** {@link pendingCall} on a transcript file's tail. */
-export async function readPendingCall(path: string, id: string): Promise<{ id: string; name: string; args: Obj } | null> {
+export async function readPendingCall(path: string, id: string): Promise<PendingCall | null> {
   return pendingCall(await tailLines(path, CHAT_TAIL_BYTES), id);
 }
 

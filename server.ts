@@ -1113,7 +1113,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
    * The tool call a blocked pane asks to allow, with its arguments whole from the transcript (null
    * when the transcript's tail doesn't hold the call); null when it waits on nothing of the kind.
    * An extension from before protocol 5 reports no approvals: then the newest call without a
-   * result, unless an open question is what blocks it.
+   * result, unless an open question is what blocks it; without arguments when several calls lack
+   * a result (which one asks is a guess, so it can only be denied).
    */
   async function approvalView(pane: string): Promise<ApprovalView | null> {
     const s = bridges.get(pane)?.state;
@@ -1122,12 +1123,12 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     const call = path ? await readPendingCall(path, s.approval?.id ?? "").catch(() => null) : null;
     if (!s.approval) {
       if (!call) return null;
-      const ask = (await readChat(s.sessionId, 20).catch(() => null))?.entries.findLast((e) => e.role === "ask");
+      const ask = (await parseSessionChat(s.sessionId, 20).catch(() => null))?.entries.findLast((e) => e.role === "ask");
       if (ask?.role === "ask" && ask.answer === null) return null;
     }
-    const args = call
+    const args = call?.args
       ? Object.entries(call.args)
-          .filter(([key, value]) => key !== "i" && value !== undefined)
+          .filter(([key]) => key !== "i")
           .map(([key, value]) => ({ key, value: typeof value === "string" ? value : JSON.stringify(value) }))
       : null;
     return s.approval ? { ...s.approval, args } : { id: call!.id, tool: call!.name, reason: "", args };
@@ -1180,6 +1181,11 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     const bad = keys.find((k) => KEYS[k] !== true);
     if (bad !== undefined) return `key not allowed: ${bad}`;
     if (!keys.length) return null;
+    return pressKeys(block, keys);
+  }
+
+  /** Types keys into a pane unchecked: only for keys the server picks itself (see `sendKeys` for the phone's). */
+  async function pressKeys(block: string, keys: string[]): Promise<string | null> {
     const { error } = await tern(["send", block, "keys", ...keys]);
     forgetScreen(block);
     return error;
@@ -1225,6 +1231,13 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
 
   /** Per block, what the last send typed into its open ask: a resend after omp refused the form starts from there. */
   const appliedAnswers = new Map<string, { id: string } & Applied>();
+  /**
+   * Per block, the tool approval the phone answered last and when. A second answer to the same call
+   * within ANSWER_DEDUP_MS (another phone, a resend racing omp's next report) is refused; after that,
+   * a fresh snapshot still showing the dialog means omp ignored the key, and a retry may answer it.
+   */
+  const answeredApprovals = new Map<string, { id: string; at: number }>();
+  const ANSWER_DEDUP_MS = 5000;
 
   /** Answers the pending ask dialog by typing its keys (see `answerSteps`). */
   async function answer(block: string, item: Item, body: Obj): Promise<string | null> {
@@ -1795,10 +1808,22 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           // omp's approval dialog in the pane: its approve key (Ctrl+Q by default) allows the call
           // wherever the dialog's cursor sits and whatever the editor holds; Escape denies it. Typed
           // only while the pane still asks about this call, so a key never lands in the editor.
+          if (typeof body.allow !== "boolean") return json({ error: "allow must be true or false" }, 400);
+          // The last report can trail omp (the dialog closed on the desktop a moment ago): a fresh
+          // snapshot settles it. An extension before protocol 5 reports no approvals to settle.
+          if (bridge && bridge.state.protocol >= 5 && !(await bridgeRequest(bridge, { t: "sync" }))) return done("omp did not answer");
           const view = await approvalView(block);
-          if (!view || view.id !== str(body.id)) return json({ error: "omp no longer asks about this call" }, 409);
-          if (body.allow === true && !view.args) return json({ error: "the transcript doesn't show this call: approve it in the Tern pane" }, 409);
-          return done(await sendKeys(block, [body.allow === true ? "ctrl+q" : "Escape"]));
+          // A second answer to the same call (another phone, a retry) would land in what comes after the dialog.
+          const last = answeredApprovals.get(block);
+          if (!view || view.id !== str(body.id) || (last?.id === view.id && Date.now() - last.at < ANSWER_DEDUP_MS))
+            return json({ error: "omp no longer asks about this call" }, 409);
+          if (body.allow && !view.args) return json({ error: "the transcript doesn't show this call: approve it in the Tern pane" }, 409);
+          const mark = { id: view.id, at: Date.now() };
+          answeredApprovals.set(block, mark);
+          const error = await pressKeys(block, [body.allow ? "ctrl+q" : "Escape"]);
+          // Not typed: the call still waits, and a retry may answer it.
+          if (error && answeredApprovals.get(block) === mark) answeredApprovals.delete(block);
+          return done(error);
         }
         case "draft":
           if (!bridge) return json({ error: "no bridge" }, 409);
@@ -1921,6 +1946,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     emit(pane, "run", null);
     emit(pane, "stretch", null);
     emit(pane, "context", null);
+    emit(pane, "approval", null);
   }
 
   /** A connection stopped speaking for its pane: its pending requests fail now, not at their timeout. */
@@ -2123,12 +2149,15 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           if (JSON.stringify(before.queued) !== JSON.stringify(b.state.queued)) emit(pane, "queued", b.state.queued);
           if (JSON.stringify(before.run) !== JSON.stringify(b.state.run)) emit(pane, "run", b.state.run);
           if (JSON.stringify(before.stretch) !== JSON.stringify(b.state.stretch)) emit(pane, "stretch", b.state.stretch);
-          if (before.approval?.id !== b.state.approval?.id || before.status !== status) {
+          // While blocked, a moved leaf can bring the call's arguments into the transcript. Only phones
+          // watching the pane need it; one opening the session works it out then.
+          const approvalMoved = before.approval?.id !== b.state.approval?.id || before.status !== status || (status === "blocked" && before.leaf !== b.state.leaf);
+          if (approvalMoved && paneListeners.get(pane)?.size) {
             // The arguments come from the transcript; a newer report may have moved on meanwhile.
-            const asked = { id: b.state.approval?.id, status };
+            const asked = { id: b.state.approval?.id, status, leaf: b.state.leaf };
             void approvalView(pane).then((view) => {
               const now = bridges.get(pane)?.state;
-              if (now?.approval?.id === asked.id && now?.status === asked.status) emit(pane, "approval", view);
+              if (now?.approval?.id === asked.id && now?.status === asked.status && now?.leaf === asked.leaf) emit(pane, "approval", view);
             });
           }
           // The gauge moves every 2 s while omp works: it goes to that pane's phones, without rebuilding the list.

@@ -838,4 +838,9 @@ describe("pendingCall", () => {
     expect(pendingCall(lines, "")?.id).toBe("t2");
     expect(pendingCall([...lines, row({ role: "toolResult", toolCallId: "t2", content: [] })], "")).toBeNull();
   });
+  test("without an id, of several calls lacking a result the newest goes without arguments: any may be the one asked about", () => {
+    const both = [row({ role: "assistant", content: [call("b1", "bash", { command: "ls" }), call("b2", "edit", { input: "x" })] })];
+    expect(pendingCall(both, "")).toEqual({ id: "b2", name: "edit", args: null });
+    expect(pendingCall(both, "b1")).toEqual({ id: "b1", name: "bash", args: { command: "ls" } });
+  });
 });

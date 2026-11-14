@@ -419,7 +419,7 @@ function groupInputs(form: HTMLFormElement, name: string): HTMLInputElement[] {
  * How long a sent answer waits for omp's result before the card says omp didn't take it. omp
  * writes the result the moment its form closes; the transcript reaches the phone within seconds.
  */
-const ANSWER_TAKEN_MS = 10_000;
+export const ANSWER_TAKEN_MS = 10_000;
 
 /**
  * An open ask: omp's HTML form with the phone's own controls, plus the "Other" text omp gives a

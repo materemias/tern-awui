@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import type { Item } from "./api";
-import { FakeEventSource, Net, item, live, settle, specDom, state } from "./fakes";
+import { FakeEventSource, Net, item, live, settle, sleep, specDom, state } from "./fakes";
 
 GlobalRegistrator.register({ url: "http://localhost/" });
 const restoreDom = specDom();
@@ -384,6 +384,24 @@ test("Jump to latest shows only away from the end, marks output that arrived mea
   expect(jump()).toBeNull();
   await scrollTo(1000);
   expect(root.querySelector(".jump-dot")).toBeNull();
+});
+
+test("an approval omp doesn't take within 10 s says so and unlocks the card", async () => {
+  // Run the card's 10 s wait at once; shorter timers keep their delay.
+  const realTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = ((fn: () => void, ms?: number) => realTimeout(fn, ms === 10_000 ? 0 : ms)) as typeof setTimeout;
+  try {
+    await open(item({ status: "blocked" }));
+    await emit("chat", { entries: [] });
+    await emit("approval", { id: "c1", tool: "bash", reason: "", args: [{ key: "command", value: "ls" }] });
+    await click(".approval-allow");
+    expect(net.to("/api/blocks/5/approve")).toEqual([{ id: "c1", allow: true }]);
+    await act(() => sleep(20));
+    expect(root.querySelector(".approval .err")!.textContent).toBe("omp hasn't taken the answer: check the Tern pane.");
+    expect(root.querySelector<HTMLButtonElement>(".approval-allow")!.disabled).toBe(false);
+  } finally {
+    globalThis.setTimeout = realTimeout;
+  }
 });
 
 test("Jump to latest stays off the raw screen", async () => {

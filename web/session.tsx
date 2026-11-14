@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/ho
 import { highlightFile } from "./highlight";
 import { post, type ApprovalView, type ChatEntry, type Item, type Run, type TodoPhase } from "./api";
 import { age, backStep, can, elapsed, isNote, readPatch, routeHash, swipeOrder, todoSummary, type Route } from "./lib";
-import { Chat, Markdown, StretchContext, type StretchSync } from "./chat";
+import { ANSWER_TAKEN_MS, Chat, Markdown, StretchContext, type StretchSync } from "./chat";
 import { liveText, withOpen } from "./stretch";
 import { screenHtml } from "./markdown";
 import { buzz, Dot, PiMark } from "./parts";
@@ -332,7 +332,18 @@ const BODY_ARGS: Record<string, true> = { command: true, code: true, content: tr
  */
 function ApprovalCard({ block, approval }: { block: string; approval: ApprovalView }) {
   const [sending, setSending] = useState<"allow" | "deny" | null>(null);
+  const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Sent, but omp's dialog stayed open: the keys didn't reach it.
+  useEffect(() => {
+    if (!sent) return;
+    const timer = setTimeout(() => {
+      setSent(false);
+      setSending(null);
+      setError("omp hasn't taken the answer: check the Tern pane.");
+    }, ANSWER_TAKEN_MS);
+    return () => clearTimeout(timer);
+  }, [sent]);
   async function answer(allow: boolean) {
     setSending(allow ? "allow" : "deny");
     setError(null);
@@ -340,7 +351,10 @@ function ApprovalCard({ block, approval }: { block: string; approval: ApprovalVi
     if (err) {
       setSending(null);
       setError(err);
-    } else buzz();
+    } else {
+      buzz();
+      setSent(true);
+    }
   }
   return (
     <section class="approval" aria-label={`Allow ${approval.tool}?`}>

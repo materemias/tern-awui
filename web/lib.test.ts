@@ -849,4 +849,7 @@ describe("readPatch", () => {
   test("lines it can't place stay as text", () => {
     expect(readPatch("PUT sideways")).toEqual([{ kind: "text", text: "PUT sideways" }]);
   });
+  test("a one-line range reads as one line", () => {
+    expect(readPatch("PUT 4.=4:\nCUT 9.=9").filter((l) => l.kind === "step").map((l) => l.text)).toEqual(["Replace line 4 with these", "Delete line 9"]);
+  });
 });

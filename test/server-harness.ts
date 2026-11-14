@@ -199,7 +199,6 @@ export class Extension {
       const msg = obj(JSON.parse(String(event.data)));
       this.inbox.push(msg);
       if (this.silent || msg.t === "watch") return;
-      if (msg.t === "sync") return this.report({});
       const reply = (data: Message) => this.send({ t: "reply", seq: msg.seq, ...data });
       if (msg.t === "models") return reply({ models: [{ p: "test", id: "fast", name: "Fast", ctx: 200000, r: false, in: 0, out: 0, img: false }] });
       if (msg.t === "model") {

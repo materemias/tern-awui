@@ -470,11 +470,12 @@ export function readPatch(input: string): PatchLine[] {
     const op = paste ? line.slice(0, paste.index) : line;
     const what = paste ? `the lines cut as @${paste[1]}` : op.endsWith(":") ? "" : "the lines cut above";
     const step = (text: string): PatchLine => ({ kind: "step", text });
-    if ((m = /^PUT (\d+)\.=(\d+):?$/.exec(op))) return step(`Replace lines ${m[1]}–${m[2]} with ${what || "these"}`);
+    const lines = (a: string, b: string) => (a === b ? `line ${a}` : `lines ${a}–${b}`);
+    if ((m = /^PUT (\d+)\.=(\d+):?$/.exec(op))) return step(`Replace ${lines(m[1], m[2])} with ${what || "these"}`);
     if ((m = /^PUT (\d+)\*:?$/.exec(op))) return step(`Replace the block at line ${m[1]} with ${what || "these"}`);
     if ((m = /^PUT ([<>])(\d+|\$)(\*)?:?$/.exec(op)))
       return step(`${what ? `Paste ${what}` : "Insert"} ${m[1] === "<" ? "before" : "after"} ${m[3] ? "the block at " : ""}${m[2] === "$" ? "the end" : `line ${m[2]}`}`);
-    if ((m = /^CUT (\d+)\.=(\d+)$/.exec(op))) return step(`Delete lines ${m[1]}–${m[2]}${paste ? `, kept as @${paste[1]}` : ""}`);
+    if ((m = /^CUT (\d+)\.=(\d+)$/.exec(op))) return step(`Delete ${lines(m[1], m[2])}${paste ? `, kept as @${paste[1]}` : ""}`);
     if ((m = /^CUT (\d+)\*$/.exec(op))) return step(`Delete the block at line ${m[1]}${paste ? `, kept as @${paste[1]}` : ""}`);
     if (line === "REM") return step("Delete the file");
     if ((m = /^MV (.+)$/.exec(line))) return step(`Rename it to ${m[1].replace(/^"(.*)"$/, "$1")}`);
