@@ -405,6 +405,35 @@ export function parseAdvisorNote(note: string): { key: string | null; lines: { l
   return { key, lines: lines.filter((l) => l.label !== "Key") };
 }
 
+/** A line of an omp `edit` patch as the approval card shows it: the file, a step in words, a line it adds, or other text. */
+export type PatchLine = { kind: "file" | "step" | "add" | "text"; text: string };
+
+/**
+ * omp's hashline patch (the `edit` tool's `input`), readable: `[path#TAG]` headers become the file,
+ * operations become what they do to which lines, `+` rows the lines they write.
+ */
+export function readPatch(input: string): PatchLine[] {
+  return input.split("\n").map((line): PatchLine => {
+    let m = /^\[(.+?)(?:#[0-9A-Fa-f]{4})?\]$/.exec(line);
+    if (m) return { kind: "file", text: m[1] };
+    if (line.startsWith("+")) return { kind: "add", text: line.slice(1) };
+    // A PUT without a body (no `:`) pastes what a CUT took: a register named `@name`, else the last one.
+    const paste = / @(\S+)$/.exec(line);
+    const op = paste ? line.slice(0, paste.index) : line;
+    const what = paste ? `the lines cut as @${paste[1]}` : op.endsWith(":") ? "" : "the lines cut above";
+    const step = (text: string): PatchLine => ({ kind: "step", text });
+    if ((m = /^PUT (\d+)\.=(\d+):?$/.exec(op))) return step(`Replace lines ${m[1]}–${m[2]} with ${what || "these"}`);
+    if ((m = /^PUT (\d+)\*:?$/.exec(op))) return step(`Replace the block at line ${m[1]} with ${what || "these"}`);
+    if ((m = /^PUT ([<>])(\d+|\$)(\*)?:?$/.exec(op)))
+      return step(`${what ? `Paste ${what}` : "Insert"} ${m[1] === "<" ? "before" : "after"} ${m[3] ? "the block at " : ""}${m[2] === "$" ? "the end" : `line ${m[2]}`}`);
+    if ((m = /^CUT (\d+)\.=(\d+)$/.exec(op))) return step(`Delete lines ${m[1]}–${m[2]}${paste ? `, kept as @${paste[1]}` : ""}`);
+    if ((m = /^CUT (\d+)\*$/.exec(op))) return step(`Delete the block at line ${m[1]}${paste ? `, kept as @${paste[1]}` : ""}`);
+    if (line === "REM") return step("Delete the file");
+    if ((m = /^MV (.+)$/.exec(line))) return step(`Rename it to ${m[1].replace(/^"(.*)"$/, "$1")}`);
+    return { kind: "text", text: line };
+  });
+}
+
 // ---------- the composer ----------
 
 /** The keystrokes turning a shell line from `before` into `after`: Backspaces, then new text. */

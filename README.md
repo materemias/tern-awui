@@ -10,7 +10,7 @@ I built it for how I work. Tern stays open on the desktop with its panes, tern-a
 
 tern-awui runs no agents of its own. Every session it shows is an omp running in a Tern pane on your desktop, so the desktop and the phone work on the same sessions together:
 
-- **Whatever is open in Tern continues on the phone.** Read the reply, answer its question, steer the turn or send the next prompt, and the Tern pane shows it too.
+- **Whatever is open in Tern continues on the phone.** Read the reply, answer its question, allow or deny a tool call it waits on, steer the turn or send the next prompt, and the Tern pane shows it too.
 - **A session started on the phone opens a Tern tab on the desktop.** **+ omp** picks a project folder and starts omp there in a new tab, waiting for you when you sit back down.
 - **Both screens drive the same omp.** Drafts, answers, model changes and rewinds go to the omp in its Tern pane, so the two never disagree.
 
@@ -138,6 +138,7 @@ What it does protect against, and why, is in [how it works](docs/architecture.md
 - Swiping between sessions follows the list's hidden-old and folded projects, but not a filter typed in the desktop sidebar. A swipe that starts on something that scrolls sideways (a wide code block or table), or within 24 px of the screen edge, scrolls or goes back instead.
 - Parking needs Tern's plugins and the tern-awui plugin the installer links. When no Tern window is open, parking or unparking starts one.
 - Answering an `ask` needs omp 18.18.3 or newer, whose `ask` is an HTML form; an older omp's questions show as an ordinary tool call, to answer in the Tern pane. The phone types the answer into omp's form as keys. Radios and dropdowns end up as picked on the phone, but checkboxes are toggled from the values the form opened with, so a box the desktop already toggled in the same form may need a second look.
+- A tool approval offers **Approve once** and **Deny**; omp's other choices (approve for the session, a folder or always) stay in the Tern pane. The phone presses omp's approve key (Ctrl+Q, its default) or Escape in the pane, so a rebound approve key breaks **Approve once**. Why omp asks (such as `Restricted folder: …`) shows only once omp has loaded the updated extension.
 
 ## More
 

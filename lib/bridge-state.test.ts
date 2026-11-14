@@ -52,7 +52,15 @@ describe("parseBridgeState", () => {
       build: "0123456789abcdef",
       caps: snapshot.caps,
       stretch: snapshot.stretch,
+      approval: null,
     });
+  });
+
+  test("a pending approval: its id, tool and reason; none without an id", () => {
+    const s = parseBridgeState({ ...snapshot, status: "blocked", approval: { id: "toolu_1", tool: "edit", reason: "Restricted folder: ~/.omp" } }, fresh, 1);
+    expect(s.approval).toEqual({ id: "toolu_1", tool: "edit", reason: "Restricted folder: ~/.omp" });
+    expect(parseBridgeState({ ...snapshot, approval: { tool: "edit" } }, fresh, 1).approval).toBeNull();
+    expect(listChanged(parseBridgeState(snapshot, fresh, 1), s)).toBe(true);
   });
 
   test("old extensions: `idle` instead of status, plain-string queue items (steers)", () => {

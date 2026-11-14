@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { HASH, PNG, T0, Transcript, call, image, text } from "../test/fixtures";
-import { INLINE_IMAGE_CHARS, TranscriptImages, parseChat, readChatFile, recapStale, scanFacts, type ChatEntry } from "./transcript";
+import { INLINE_IMAGE_CHARS, TranscriptImages, parseChat, pendingCall, readChatFile, recapStale, scanFacts, type ChatEntry } from "./transcript";
 
 const dir = mkdtempSync(`${tmpdir()}/tern-awui-transcript-`);
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -764,4 +764,22 @@ describe("recapStale", () => {
     expect(recapStale({ createdAt: Math.floor(turn / 1000) - 2 }, turn)).toBe(true);
   });
   test("a session without turns keeps its recap current", () => expect(recapStale({ createdAt: 1 }, 0)).toBe(false));
+});
+
+describe("pendingCall", () => {
+  const row = (message: object) => JSON.stringify({ type: "message", message });
+  const lines = [
+    row({ role: "assistant", content: [call("t1", "read", { path: "a" }), call("t2", "edit", { i: "Fix", input: "[a#ABCD]\nPUT 1:\n+x" })] }),
+    row({ role: "toolResult", toolCallId: "t1", content: [] }),
+    row({ role: "assistant", content: [call("q1", "ask", { html: "<form></form>" })] }),
+    "{not json",
+  ];
+  test("the call with that id, while it has no result", () => {
+    expect(pendingCall(lines, "t2")).toEqual({ id: "t2", name: "edit", args: { i: "Fix", input: "[a#ABCD]\nPUT 1:\n+x" } });
+    expect(pendingCall(lines, "t1")).toBeNull();
+  });
+  test("without an id: the newest call without a result that isn't an ask", () => {
+    expect(pendingCall(lines, "")?.id).toBe("t2");
+    expect(pendingCall([...lines, row({ role: "toolResult", toolCallId: "t2", content: [] })], "")).toBeNull();
+  });
 });

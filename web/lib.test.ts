@@ -29,6 +29,7 @@ import {
   parseRoute,
   prettyModel,
   priceShort,
+  readPatch,
   routeHash,
   rowText,
   sessionNotice,
@@ -764,5 +765,27 @@ describe("routes", () => {
   test("a session opened from another session (the desktop sidebar) replaces itself with the list", () => {
     expect(walk(["#/", "#/b/5", "#/b/12"])).toEqual({ target: "#/", pop: false });
     expect(walk(["#/b/5/sub/A", "#/b/12"])).toEqual({ target: "#/", pop: false });
+  });
+});
+
+describe("readPatch", () => {
+  test("an edit patch reads as its file, each step in words, and the lines it writes", () => {
+    const patch = ["[/home/u/.omp/agent/secrets.yml#C442]", "PUT >94:", "+# PROBE", "+- type: regex", "CUT 3.=5 @old", "PUT <$ @old", "PUT 7*:", "+x", "PUT <1", "REM", 'MV "a b.ts"'].join("\n");
+    expect(readPatch(patch)).toEqual([
+      { kind: "file", text: "/home/u/.omp/agent/secrets.yml" },
+      { kind: "step", text: "Insert after line 94" },
+      { kind: "add", text: "# PROBE" },
+      { kind: "add", text: "- type: regex" },
+      { kind: "step", text: "Delete lines 3–5, kept as @old" },
+      { kind: "step", text: "Paste the lines cut as @old before the end" },
+      { kind: "step", text: "Replace the block at line 7 with these" },
+      { kind: "add", text: "x" },
+      { kind: "step", text: "Paste the lines cut above before line 1" },
+      { kind: "step", text: "Delete the file" },
+      { kind: "step", text: "Rename it to a b.ts" },
+    ]);
+  });
+  test("lines it can't place stay as text", () => {
+    expect(readPatch("PUT sideways")).toEqual([{ kind: "text", text: "PUT sideways" }]);
   });
 });

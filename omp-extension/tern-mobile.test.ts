@@ -150,7 +150,7 @@ describe("omp extension bridge contract", () => {
 
 	test("authenticates and snapshots all fields, sends only changes, and replaces main session context", async () => {
 		const f = fixture();
-		expect<unknown>(await f.start()).toEqual({ t: "state", pane: "test-pane", sessionId: "session-123", text: "desktop draft", model: "openai/reasoner", thinking: "medium", levels: ["off", "minimal", "low", "medium", "high", "xhigh"], tiers: ["", "flex", "priority"], tier: "", status: "idle", run: null, jobs: [], context: { tokens: 1234, window: 10000, percent: 12 }, queued: [], leaf: "entry-1", protocol: PROTOCOL, build: BUILD, caps: capsWithoutShim, stretch: null });
+		expect<unknown>(await f.start()).toEqual({ t: "state", pane: "test-pane", sessionId: "session-123", text: "desktop draft", model: "openai/reasoner", thinking: "medium", levels: ["off", "minimal", "low", "medium", "high", "xhigh"], tiers: ["", "flex", "priority"], tier: "", status: "idle", run: null, jobs: [], context: { tokens: 1234, window: 10000, percent: 12 }, queued: [], leaf: "entry-1", protocol: PROTOCOL, build: BUILD, caps: capsWithoutShim, stretch: null, approval: null });
 		expect(f.bridge.connections[0].data.token).toBe("test-bridge-secret");
 		expect(f.state.intervals).toEqual([100]);
 		f.state.poll!();
@@ -254,11 +254,15 @@ describe("omp extension bridge contract", () => {
 		const f = fixture(); await f.start();
 		f.state.idle = false;
 		expect((await f.bridge.request({ t: "sync" })).status).toBe("working");
-		f.emit("tool_approval_requested", { toolCallId: "approval", toolName: "bash" });
+		f.emit("tool_approval_requested", { toolCallId: "approval", toolName: "bash", reason: "Restricted folder: ~/.ssh" });
+		f.emit("tool_approval_requested", { toolCallId: "second", toolName: "edit" });
 		f.emit("tool_execution_start", { toolCallId: "question", toolName: "ask" });
-		expect((await f.bridge.request({ t: "sync" })).status).toBe("blocked");
+		// The first approval asked is the one omp's pane shows.
+		expect(await f.bridge.request({ t: "sync" })).toMatchObject({ status: "blocked", approval: { id: "approval", tool: "bash", reason: "Restricted folder: ~/.ssh" } });
 		f.emit("tool_approval_resolved", { toolCallId: "approval" });
-		expect((await f.bridge.request({ t: "sync" })).status).toBe("blocked");
+		expect(await f.bridge.request({ t: "sync" })).toMatchObject({ status: "blocked", approval: { id: "second", tool: "edit", reason: "" } });
+		f.emit("tool_approval_resolved", { toolCallId: "second" });
+		expect(await f.bridge.request({ t: "sync" })).toMatchObject({ status: "blocked", approval: null });
 		f.emit("tool_execution_end", { toolCallId: "question" });
 		f.state.idle = true;
 		for (const [type, status] of [["bash", "idle"], ["task", "working"], ["eval", "working"]]) {

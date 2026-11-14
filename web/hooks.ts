@@ -247,6 +247,8 @@ export function useStream(block: string | null, view: View, sub: string | null =
   const [stretch, setStretch] = useState<StretchState | null>(null);
   /** The pane's voice call as omp reports it; `ended` once, then null on the next stream. */
   const [voice, setVoice] = useState<Voice | null>(null);
+  /** The tool approval omp's pane shows now; null when none is pending. */
+  const [approval, setApproval] = useState<ApprovalView | null>(null);
   const [online, setOnline] = useState(false);
   // The gauge belongs to the block: switching chat and Raw on one block keeps it until the new stream resends it.
   useEffect(() => setContext(null), [block]);
@@ -259,6 +261,7 @@ export function useStream(block: string | null, view: View, sub: string | null =
     setStretch(null);
     setVoice(null);
     setRun(null);
+    setApproval(null);
     const qs = block ? `?block=${block}&view=${view}${sub ? `&sub=${encodeURIComponent(sub)}` : ""}` : "";
     let es: EventSource | null = null;
     let liveEnded = false;
@@ -388,6 +391,7 @@ export function useStream(block: string | null, view: View, sub: string | null =
       src.addEventListener("run", (e) => setRun(JSON.parse(e.data)));
       src.addEventListener("context", (e) => setContext(JSON.parse(e.data)));
       src.addEventListener("stretch", (e) => setStretch(JSON.parse(e.data)));
+      src.addEventListener("approval", (e) => setApproval(JSON.parse(e.data)));
       src.addEventListener("voice", (e) => setVoice(JSON.parse(e.data)));
       src.addEventListener("doc", (e) => setDoc(JSON.parse(e.data)));
       src.addEventListener("subagents", (e) => setSubagents(JSON.parse(e.data)));

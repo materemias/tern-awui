@@ -16,14 +16,14 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, watch, writeFile
 import type { Server, ServerWebSocket, Subprocess } from "bun";
 import webpush, { type PushSubscription, type RequestOptions } from "web-push";
 import { arr, num, obj, str, type Obj } from "./lib/json";
-import { IMAGE_MIMES, TranscriptImages, readChatFile, recapStale, scanFacts, type ChatEntry, type Facts } from "./lib/transcript";
+import { IMAGE_MIMES, TranscriptImages, readChatFile, readPendingCall, recapStale, scanFacts, type ChatEntry, type Facts } from "./lib/transcript";
 import { countSubagents, listSubagents, regularFile, subagentDir, subagentFile, validSubagentName, type Subagent, type SubagentFacts } from "./lib/subagents";
 import { readBtwHistory } from "./lib/btw-history";
 import { compactAtPercent, type Compaction } from "./lib/compaction";
 import { forgetRepos, repoOf } from "./lib/git";
 import { queryRecaps, querySessionRecaps, recapMark, withRecaps } from "./lib/recaps";
 import { answerSteps, KEYS, promptImages, type Applied, type PromptImage } from "./lib/input";
-import { emptyState, foldVoice, listChanged, parseBridgeState, PROTOCOL, STRETCH_BLOCK, type BridgeState, type Caps, type ContextUse, type Job, type Voice } from "./lib/bridge-state";
+import { approvalQuestion, emptyState, foldVoice, listChanged, parseBridgeState, PROTOCOL, STRETCH_BLOCK, type ApprovalView, type BridgeState, type Caps, type ContextUse, type Job, type Voice } from "./lib/bridge-state";
 import { extensionCheck, offersCommand, sessionMismatch, type InstallStatus, type Mismatch } from "./lib/extension-check";
 import { claudeDir, codexDir, configDir, docIcon, installedExtension, ompDataDir, ternNotesDir } from "./lib/paths";
 import { ensureToken, sameToken } from "./lib/auth";
@@ -183,8 +183,10 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     if (stopped) return;
     const ask = kind === "blocked" ? entries.findLast((e) => e.role === "ask") : undefined;
     const said = entries.findLast((e) => e.role === "assistant");
-    const detail =
-      ask?.role === "ask" ? ask.question : said?.role === "assistant" ? said.text.replace(/[*`#_>]/g, "") : "";
+    const approval = kind === "blocked" ? bridges.get(pane)?.state.approval : null;
+    const detail = approval
+      ? approvalQuestion(approval)
+      : ask?.role === "ask" ? ask.question : said?.role === "assistant" ? said.text.replace(/[*`#_>]/g, "") : "";
     const body = `${kind === "blocked" ? "Needs you" : "Finished"}${detail ? ` · ${detail.trim().slice(0, 160)}` : ""}`;
     // `badge`: the app icon's count of unseen updates, set by the service worker while the app is closed.
     const payload = JSON.stringify({ title, body, block: pane, badge: unseen.size });
@@ -960,6 +962,30 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     return chat && withImages(chat, transcriptPath(sessionId));
   }
 
+  /**
+   * The tool call a blocked pane asks to allow, with its arguments whole from the transcript (null
+   * when the transcript's tail doesn't hold the call); null when it waits on nothing of the kind.
+   * An extension from before protocol 5 reports no approvals: then the newest call without a
+   * result, unless an open question is what blocks it.
+   */
+  async function approvalView(pane: string): Promise<ApprovalView | null> {
+    const s = bridges.get(pane)?.state;
+    if (!s || s.status !== "blocked" || (!s.approval && s.protocol >= 5)) return null;
+    const path = transcriptPath(s.sessionId);
+    const call = path ? await readPendingCall(path, s.approval?.id ?? "").catch(() => null) : null;
+    if (!s.approval) {
+      if (!call) return null;
+      const ask = (await readChat(s.sessionId, 20).catch(() => null))?.entries.findLast((e) => e.role === "ask");
+      if (ask?.role === "ask" && ask.answer === null) return null;
+    }
+    const args = call
+      ? Object.entries(call.args)
+          .filter(([key, value]) => key !== "i" && value !== undefined)
+          .map(([key, value]) => ({ key, value: typeof value === "string" ? value : JSON.stringify(value) }))
+      : null;
+    return s.approval ? { ...s.approval, args } : { id: call!.id, tool: call!.name, reason: "", args };
+  }
+
   const subagentFacts = new Map<string, SubagentFacts>();
   /** A session's subagents; none while its omp isn't bridged (its transcript is unknown then). */
   async function readSubagents(item: Item): Promise<Subagent[]> {
@@ -1141,8 +1167,9 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
             onPane("run", b?.state.run ?? null);
             // Always, null included: the gauge comes only as this event, not in the list.
             void contextOf(b).then((context) => (bridges.get(block) ?? null) === b && onPane("context", context));
-            // Always, null included: a reconnecting phone must drop state from an omp that restarted without stretch.ts.
             onPane("stretch", b?.state.stretch ?? null);
+            // Always, null included: an approval answered while the phone was away must not linger.
+            void approvalView(block).then((view) => (bridges.get(block) ?? null) === b && onPane("approval", view));
             // Always, null included: a call that ended while the phone was away must not linger.
             onPane("voice", b?.voice ?? null);
             // Opening a session on the phone is seeing its update.
@@ -1450,7 +1477,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
 
     // Cross-site forms cannot set custom headers; this keeps the POSTs same-origin.
     if (req.headers.get("x-tern-mobile") !== "1") return json({ error: "missing header" }, 403);
-    const m = /^\/api\/blocks\/(\d+)\/(keys|type|submit|draft|answer|model|models|thinking|tier|focus|abort|btw|close|park|unpark|complete|completion|rewind|stretch|voice|hangup)$/.exec(path);
+    const m = /^\/api\/blocks\/(\d+)\/(keys|type|submit|draft|answer|approve|model|models|thinking|tier|focus|abort|btw|close|park|unpark|complete|completion|rewind|stretch|voice|hangup)$/.exec(path);
     // Commands with no arguments may omit the body; payload-bearing actions must send JSON.
     const bodyless = req.body === null && /^(models|focus|abort|close|park|unpark|hangup)$/.test(m?.[2] ?? "");
     const raw: unknown = bodyless ? {} : await req.json().catch(() => null);
@@ -1579,6 +1606,15 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
         }
         case "answer":
           return done(await answer(block, item, body));
+        case "approve": {
+          // omp's approval dialog in the pane: its approve key (Ctrl+Q by default) allows the call
+          // wherever the dialog's cursor sits and whatever the editor holds; Escape denies it. Typed
+          // only while the pane still asks about this call, so a key never lands in the editor.
+          const view = await approvalView(block);
+          if (!view || view.id !== str(body.id)) return json({ error: "omp no longer asks about this call" }, 409);
+          if (body.allow === true && !view.args) return json({ error: "the transcript doesn't show this call: approve it in the Tern pane" }, 409);
+          return done(await sendKeys(block, [body.allow === true ? "ctrl+q" : "Escape"]));
+        }
         case "draft":
           if (!bridge) return json({ error: "no bridge" }, 409);
           if (body.expectedSessionId !== undefined && typeof body.expectedSessionId !== "string")
@@ -1897,6 +1933,14 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           if (JSON.stringify(before.queued) !== JSON.stringify(b.state.queued)) emit(pane, "queued", b.state.queued);
           if (JSON.stringify(before.run) !== JSON.stringify(b.state.run)) emit(pane, "run", b.state.run);
           if (JSON.stringify(before.stretch) !== JSON.stringify(b.state.stretch)) emit(pane, "stretch", b.state.stretch);
+          if (before.approval?.id !== b.state.approval?.id || before.status !== status) {
+            // The arguments come from the transcript; a newer report may have moved on meanwhile.
+            const asked = { id: b.state.approval?.id, status };
+            void approvalView(pane).then((view) => {
+              const now = bridges.get(pane)?.state;
+              if (now?.approval?.id === asked.id && now?.status === asked.status) emit(pane, "approval", view);
+            });
+          }
           // The gauge moves every 2 s while omp works: it goes to that pane's phones, without rebuilding the list.
           // A new session's reset cleared it, so it goes again even when the numbers match.
           if (changedSession || JSON.stringify(before.context) !== JSON.stringify(b.state.context)) publishContext(pane, b);

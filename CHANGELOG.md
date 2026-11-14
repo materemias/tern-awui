@@ -5,6 +5,7 @@
 ### Features
 
 - A question with one answer field opens with that question, as omp's dialog names it at the top, and its explanation and choices follow. Before, a long explanation came first and the question only after it.
+- A tool call waiting for your approval shows as a card at the end of the chat: the tool, why omp asks (such as `Restricted folder: ~/.omp/agent/secrets.yml`) and what the call would do. An edit reads as its file, each step in words such as "Insert after line 94", and the lines it would write in green; a shell command shows whole. **Approve once** and **Deny** answer omp's dialog in the Tern pane, and a reply below denies it and steers. The session's row and its notification say what it asks, such as `Allow edit? Restricted folder: …`. Sessions on the old extension get the card too, without the reason, until omp reloads the extension.
 
 ### Fixes
 

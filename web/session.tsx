@@ -1,12 +1,12 @@
 // An open session (chat, raw screen or note, with the composer) and its subagent screens.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { highlightFile } from "./highlight";
-import { post, type ChatEntry, type Item, type Run, type TodoPhase } from "./api";
-import { age, backStep, can, elapsed, isNote, routeHash, swipeOrder, todoSummary, type Route } from "./lib";
+import { post, type ApprovalView, type ChatEntry, type Item, type Run, type TodoPhase } from "./api";
+import { age, backStep, can, elapsed, isNote, readPatch, routeHash, swipeOrder, todoSummary, type Route } from "./lib";
 import { Chat, Markdown, StretchContext, type StretchSync } from "./chat";
 import { liveText, withOpen } from "./stretch";
 import { screenHtml } from "./markdown";
-import { Dot, PiMark } from "./parts";
+import { buzz, Dot, PiMark } from "./parts";
 import { ExtensionNotice } from "./extension";
 import { JobsStrip, SubagentChat, SubagentList } from "./subagents";
 import { storedCollapsed, storedHideOld, Title } from "./home";
@@ -17,7 +17,7 @@ import { SwipeNav, type Siblings } from "./swipe";
 export function Session({ block }: { block: string }) {
   const [view, setView] = useState<View>("chat");
   // The server answers a chat request for a non-omp block with its screen.
-  const { state, chat, live, queued, run, context, btw, setBtw, screen, draft, doc, online, stretch, voice } = useStream(block, view);
+  const { state, chat, live, queued, run, context, btw, setBtw, screen, draft, doc, online, stretch, voice, approval } = useStream(block, view);
   // Open stretches: the omp session's (stretch.ts) when it reports them, else this page's own.
   const [opened, setOpened] = useState<Record<string, string[]>>({});
   // Whether `opened` mirrors the pane: then losing the report (omp restarted without stretch.ts) drops
@@ -237,6 +237,7 @@ export function Session({ block }: { block: string }) {
                   <span class="queued-text">{q.text}</span>
                 </div>
               ))}
+              {approval && <ApprovalCard key={approval.id} block={block} approval={approval} />}
             </>
           ) : screen != null ? (
             screen.html ? (
@@ -346,6 +347,68 @@ function WorkingRow({ run, since, todo, onTodo }: { run: Run | null; since: numb
         </button>
       )}
     </div>
+  );
+}
+
+/** Arguments that are the substance of a call: always shown whole, as a block. */
+const BODY_ARGS: Record<string, true> = { command: true, code: true, content: true, input: true, html: true };
+
+/**
+ * omp's tool approval dialog: which tool, why omp asks, and exactly what the call does, then Deny
+ * and Approve (once). An `edit` patch reads as its file and steps in words, with the lines it
+ * writes. An answer stays pending until omp closes its dialog, which drops the card.
+ */
+function ApprovalCard({ block, approval }: { block: string; approval: ApprovalView }) {
+  const [sending, setSending] = useState<"allow" | "deny" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  async function answer(allow: boolean) {
+    setSending(allow ? "allow" : "deny");
+    setError(null);
+    const err = await post(`/api/blocks/${block}/approve`, { id: approval.id, allow });
+    if (err) {
+      setSending(null);
+      setError(err);
+    } else buzz();
+  }
+  return (
+    <section class="approval" aria-label={`Allow ${approval.tool}?`}>
+      <h3 class="approval-title">
+        Allow <code class="approval-tool">{approval.tool}</code>?
+      </h3>
+      {approval.reason && <p class="approval-reason">{approval.reason}</p>}
+      {!approval.args && <p class="err small">The transcript doesn't show what this call does. Check it in the Tern pane before approving.</p>}
+      {approval.args?.map(({ key, value }) =>
+        approval.tool === "edit" && key === "input" ? (
+          <div key={key} class="approval-patch">
+            {readPatch(value).map((l, i) => (
+              <div key={i} class={`patch-${l.kind}`}>
+                {l.text || "\u00a0"}
+              </div>
+            ))}
+          </div>
+        ) : BODY_ARGS[key] || value.includes("\n") || value.length > 72 ? (
+          <div key={key} class="approval-arg">
+            <div class="approval-key">{key}</div>
+            <pre class="approval-body">{value}</pre>
+          </div>
+        ) : (
+          <div key={key} class="approval-arg approval-inline">
+            <span class="approval-key">{key}</span>
+            <code>{value}</code>
+          </div>
+        ),
+      )}
+      {error && <div class="err small">{error}</div>}
+      <div class="approval-actions">
+        <button class="approval-deny" type="button" disabled={sending !== null} onClick={() => void answer(false)}>
+          {sending === "deny" ? "Denying…" : "Deny"}
+        </button>
+        <button class="approval-allow" type="button" disabled={sending !== null || !approval.args} onClick={() => void answer(true)}>
+          {sending === "allow" ? "Approving…" : "Approve once"}
+        </button>
+      </div>
+      <p class="approval-hint">A reply below also denies it, and steers omp.</p>
+    </section>
   );
 }
 

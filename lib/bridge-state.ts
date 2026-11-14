@@ -5,9 +5,9 @@ import { arr, num, obj, str, type Obj } from "./json";
 /**
  * The bridge protocol this server speaks; omp-extension/tern-mobile.ts declares the same (a test
  * keeps them equal). 2: the extension reports its `build`. 3: it forwards ✦ presses (`deepen`).
- * 4: it runs voice calls (`voice`, `hangup`).
+ * 4: it runs voice calls (`voice`, `hangup`). 5: it reports pending tool approvals (`approval`).
  */
-export const PROTOCOL = 4;
+export const PROTOCOL = 5;
 
 /** `status`: blocked while an ask dialog or tool approval waits on the user; `since` when it last changed. */
 export type BridgeState = {
@@ -39,6 +39,8 @@ export type BridgeState = {
   caps: Caps | null;
   /** Open stretches of the session's replies, from omp's stretch.ts; null when it isn't loaded. */
   stretch: StretchState | null;
+  /** The tool approval omp's pane shows now; null when none is pending or the extension predates protocol 5. */
+  approval: Approval | null;
 };
 /**
  * `open`: stretch keys drawn open, per reply block (`<message timestamp>.<content index>`); `off`:
@@ -53,6 +55,14 @@ export type StretchState = {
   running: Record<string, { key: string; seconds: number; partial: string }[]>;
 };
 export type Context = { tokens: number; window: number; percent: number };
+/** A tool call omp asks the user to allow, as the extension reports it: `reason` why it asks (a restricted folder), "" for its approval mode. */
+export type Approval = { id: string; tool: string; reason: string };
+/** An approval as phones get it (`approval` stream event): the call's arguments whole from the transcript, `i` left out, each value as text; null when the transcript doesn't show the call. */
+export type ApprovalView = Approval & { args: { key: string; value: string }[] | null };
+/** A pending approval as one line, the way a blocked row or a notification asks it. */
+export function approvalQuestion(a: Approval): string {
+  return `Allow ${a.tool}?${a.reason ? ` ${a.reason}` : ""}`;
+}
 /** The context gauge as phones get it (`context` stream event); `compactAt`: percent of the window where omp auto-compacts, null when off. */
 export type ContextUse = Context & { compactAt: number | null };
 type Queued = { text: string; followUp: boolean };
@@ -88,7 +98,7 @@ export function foldVoice(before: Voice | null, msg: Obj): Voice {
 
 /** A connection that hasn't reported yet. */
 export function emptyState(now: number): BridgeState {
-  return { sessionId: "", text: "", model: "", thinking: "", status: "", since: now, context: null, queued: [], jobs: [], run: null, leaf: "", levels: [], tiers: [], tier: "", protocol: 0, build: "", caps: null, stretch: null };
+  return { sessionId: "", text: "", model: "", thinking: "", status: "", since: now, context: null, queued: [], jobs: [], run: null, leaf: "", levels: [], tiers: [], tier: "", protocol: 0, build: "", caps: null, stretch: null, approval: null };
 }
 
 /** The reported caps; a cap the extension doesn't name (or names oddly) is unsupported. */
@@ -138,6 +148,7 @@ export function parseBridgeState(msg: Obj, before: BridgeState, now: number): Br
   const c = obj(msg.context);
   const window = num(c.window);
   const run = obj(msg.run);
+  const approval = obj(msg.approval);
   return {
     sessionId: str(msg.sessionId),
     text: str(msg.text),
@@ -163,6 +174,7 @@ export function parseBridgeState(msg: Obj, before: BridgeState, now: number): Br
     build: str(msg.build),
     caps: parseCaps(msg.caps),
     stretch: parseStretch(msg.stretch, num(msg.protocol)),
+    approval: str(approval.id) ? { id: str(approval.id), tool: str(approval.tool).slice(0, 120), reason: str(approval.reason).slice(0, 500) } : null,
   };
 }
 
@@ -177,6 +189,8 @@ export function listChanged(before: BridgeState, after: BridgeState): boolean {
     before.protocol !== after.protocol ||
     before.build !== after.build ||
     JSON.stringify(before.caps) !== JSON.stringify(after.caps) ||
-    JSON.stringify(before.jobs) !== JSON.stringify(after.jobs)
+    JSON.stringify(before.jobs) !== JSON.stringify(after.jobs) ||
+    // The row's status line shows what the turn does, or the tool it asks to allow.
+    before.approval?.id !== after.approval?.id
   );
 }

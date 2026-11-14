@@ -9,8 +9,8 @@ import { fileURLToPath } from "node:url";
 
 const POLL_MS = 100;
 const RETRY_MS = 5000;
-/** The bridge protocol this extension speaks; the server flags whichever side is older. 2: `build`. 3: ✦ presses. 4: voice calls. */
-export const PROTOCOL = 4;
+/** The bridge protocol this extension speaks; the server flags whichever side is older. 2: `build`. 3: ✦ presses. 4: voice calls. 5: tool approvals. */
+export const PROTOCOL = 5;
 /**
  * This file's identity, read once when omp loads it, so a later `git pull` doesn't change what a
  * running session reports: the first 16 hex digits of its sha256, as the server computes for its
@@ -122,7 +122,7 @@ type Ctx = {
 	setInterval(callback: () => void, ms: number): unknown;
 	startLive?(options: LiveStart): Promise<LiveCall>;
 };
-type ToolEvent = { toolCallId: string; toolName: string; intent?: string };
+type ToolEvent = { toolCallId: string; toolName: string; intent?: string; reason?: string };
 type CompletionItem = { value: string; label: string; description?: string };
 /** pi-tui's AutocompleteProvider, the part this bridge calls. */
 type Completer = {
@@ -266,6 +266,9 @@ export default function ternMobile(pi: Pi): void {
 	let shutdown = false;
 	// Tool calls waiting on the user: an open ask dialog or a pending tool approval.
 	const waiting = new Set<string>();
+	// Pending tool approvals in the order omp asked them; the first is the one its pane shows. The
+	// server reads the call's arguments from the transcript.
+	const approvals = new Map<string, { id: string; tool: string; reason: string }>();
 	// Context usage is an estimate omp recomputes; sample it every 2 s, not on every 100 ms poll.
 	const CONTEXT_MS = 2000;
 	let context = { at: 0, value: null as { tokens: number; window: number; percent: number } | null };
@@ -376,6 +379,8 @@ export default function ternMobile(pi: Pi): void {
 			},
 			// The pane's open stretches, so the phone shows the same ones; null without stretch.ts.
 			stretch: stretchState(),
+			// The tool approval omp's pane shows now; null when none is pending.
+			approval: approvals.values().next().value ?? null,
 		};
 	};
 
@@ -685,6 +690,7 @@ export default function ternMobile(pi: Pi): void {
 		const first = ctx === null;
 		ctx = c;
 		waiting.clear();
+		approvals.clear();
 		queued = [];
 		run = null;
 		context = { at: 0, value: null };
@@ -739,9 +745,18 @@ export default function ternMobile(pi: Pi): void {
 		// omp resolves the label: the call's `i`, else the tool's own (eval's "running javascript").
 		if (typeof e.intent === "string") noteIntent(e.intent.trim().slice(0, INTENT_MAX));
 	});
-	pi.on("tool_approval_requested", (e) => waiting.add(e.toolCallId));
-	pi.on("tool_execution_end", (e) => waiting.delete(e.toolCallId));
-	pi.on("tool_approval_resolved", (e) => waiting.delete(e.toolCallId));
+	pi.on("tool_approval_requested", (e) => {
+		waiting.add(e.toolCallId);
+		approvals.set(e.toolCallId, { id: e.toolCallId, tool: e.toolName, reason: typeof e.reason === "string" ? e.reason : "" });
+	});
+	pi.on("tool_execution_end", (e) => {
+		waiting.delete(e.toolCallId);
+		approvals.delete(e.toolCallId);
+	});
+	pi.on("tool_approval_resolved", (e) => {
+		waiting.delete(e.toolCallId);
+		approvals.delete(e.toolCallId);
+	});
 	pi.on("session_shutdown", () => {
 		shutdown = true;
 		void hangUp().catch(() => {});

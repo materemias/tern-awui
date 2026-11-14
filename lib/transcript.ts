@@ -348,6 +348,35 @@ export async function readChatFile(path: string, leaf: string, limit: number, ta
   return parseChat(await tailLines(path, tailBytes), leaf, limit);
 }
 
+/**
+ * A tool call that has no result yet, from transcript lines: the one with `id`, or with "" the
+ * newest one that isn't an `ask` (what an approval from an extension that names none waits on).
+ * omp writes the assistant message before it runs (or asks to run) its calls.
+ */
+export function pendingCall(lines: string[], id: string): { id: string; name: string; args: Obj } | null {
+  const calls = new Map<string, { id: string; name: string; args: Obj }>();
+  for (const line of lines) {
+    if (!line.includes('"toolCall"') && !line.includes('"toolResult"')) continue;
+    let msg: Obj;
+    try {
+      msg = obj(obj(JSON.parse(line)).message);
+    } catch {
+      continue;
+    }
+    if (msg.role === "toolResult") calls.delete(str(msg.toolCallId));
+    else if (msg.role === "assistant")
+      for (const part of arr(msg.content).map(obj))
+        if (part.type === "toolCall" && str(part.id)) calls.set(str(part.id), { id: str(part.id), name: str(part.name), args: obj(part.arguments) });
+  }
+  if (id) return calls.get(id) ?? null;
+  return [...calls.values()].findLast((c) => c.name !== "ask") ?? null;
+}
+
+/** {@link pendingCall} on a transcript file's tail. */
+export async function readPendingCall(path: string, id: string): Promise<{ id: string; name: string; args: Obj } | null> {
+  return pendingCall(await tailLines(path, CHAT_TAIL_BYTES), id);
+}
+
 export function parseChat(lines: string[], leaf: string, limit: number): { entries: ChatEntry[] } {
   const entries: ChatEntry[] = [];
   const callsById = new Map<string, ToolCall>();
