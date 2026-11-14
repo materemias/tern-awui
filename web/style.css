@@ -213,8 +213,11 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .md th { background: var(--panel); color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
 .md tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--raise) 35%, transparent); }
 .md a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
-/* Stretchtext (omp's stretch.ts): a short form to tap open is plain accent text, dotted underline
-   on hover only, unlike a real link; « after an opened long form closes it. */
+/* Stretchtext (omp's stretch.ts): a short form to tap open is a muted link tint, as omp's TUI draws
+   extension links (`mdExtensionLink`: 45% the link colour, the rest the reply's text, in sRGB), with
+   a dotted underline on hover only, so it reads apart from a link that opens a page; « after an
+   opened long form closes it. */
+.md a[href^="#stretch/"] { color: color-mix(in srgb, var(--accent) 45%, #cfd3da); }
 .md a[href^="#stretch/open/"] { text-decoration: none; }
 .md a[href^="#stretch/open/"]:hover { text-decoration: underline dotted; text-decoration-thickness: 1.5px; }
 .md a[href^="#stretch/close/"] { text-decoration: none; padding: 0 3px; opacity: .75; }
