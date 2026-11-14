@@ -97,8 +97,10 @@ export function textOf(content: unknown): string {
 
 /**
  * What an ask's result says was answered: omp's `details.answers` as `question: answer` lines, each
- * followed by its `details.notes` (omp ≥ 18.18.8: a note on a chosen option) as `  Note on option: text`
- * lines (a timeout notes that omp took the form's own values), else the result's text (cancelled, errors).
+ * followed by its `details.notes` (omp ≥ 18.18.8: a note on a chosen option) as `  Note on "option": text`
+ * lines (`  Note: text` without an option), each under the one answer it belongs to (by name, or by
+ * question when the answers carry no names); a timeout notes that omp took the form's own values;
+ * else the result's text (cancelled, errors).
  */
 function askAnswer(msg: Obj): string {
   const details = obj(msg.details);
@@ -106,11 +108,12 @@ function askAnswer(msg: Obj): string {
   if (!answers.length) return textOf(msg.content).trim();
   const notes = arr(details.notes)
     .map(obj)
-    .map((n) => ({ name: str(n.name), option: str(n.option) || str(n.value), text: str(n.text).replace(/\s+/g, " ").trim() }))
-    .filter((n) => n.text);
-  const lines = answers.flatMap((a) => [
+    .map((n) => ({ name: str(n.name), question: str(n.question), option: str(n.option) || str(n.value), text: str(n.text).replace(/\s+/g, " ").trim() }))
+    .filter((n) => n.text)
+    .map((n) => ({ ...n, owner: answers.findIndex((a) => (n.name ? str(a.name) === n.name : !str(a.name) && str(a.question) === n.question)) }));
+  const lines = answers.flatMap((a, i) => [
     `${str(a.question, str(a.name))}: ${str(a.answer) || "(no answer)"}`,
-    ...notes.filter((n) => n.name === str(a.name)).map((n) => `  Note on "${n.option}": ${n.text}`),
+    ...notes.filter((n) => n.owner === i).map((n) => (n.option ? `  Note on "${n.option}": ${n.text}` : `  Note: ${n.text}`)),
   ]);
   return details.timedOut === true ? ["No answer in time; omp sent the form's own values", ...lines].join("\n") : lines.join("\n");
 }

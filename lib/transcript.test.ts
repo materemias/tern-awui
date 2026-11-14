@@ -546,6 +546,19 @@ describe("parseChat asks and advisor notes", () => {
     ]);
   });
 
+  test("a note without an option reads `Note:`; answers without names each keep only their own notes", () => {
+    const t = new Transcript();
+    t.user("decide", 0);
+    t.assistant([ask("q1")], 10, { stop: "toolUse" });
+    t.result("q1", "ask", 11, {
+      details: {
+        answers: [{ question: "Which?", answer: "B" }, { question: "Ship it?", answer: "Yes" }],
+        notes: [{ question: "Ship it?", text: "after review" }],
+      },
+    });
+    expect(only(parseChat(t.lines(), "", 80).entries, "ask")[0].answer).toBe("Which?: B\nShip it?: Yes\n  Note: after review");
+  });
+
   test("an ask without an html form (omp before 18.18.3) is an ordinary tool call", () => {
     const t = new Transcript();
     t.user("decide", 0);
