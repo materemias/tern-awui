@@ -42,6 +42,7 @@
 
 - The phone film no longer opens on an "outdated extension" warning.
 - The phone film shows the current app.
+- The README recommends omp-stretch, CodexBar AgentView and omp-compact, with install commands.
 - The handover film shows the current app.
 - A new film shows a tool approval and the Waiting popup handled from a phone.
 

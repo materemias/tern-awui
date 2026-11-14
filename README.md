@@ -2,6 +2,8 @@
 
 A web app for following and steering the [omp](https://github.com/can1357/oh-my-pi) agents running in [Tern](https://stencil.so/tern), from a phone or another browser.
 
+It is one piece of a small kit for running omp in Tern, next to [omp-stretch](https://github.com/materemias/omp-stretch), [CodexBar AgentView](https://github.com/materemias/codexbar-agentview) and [omp-compact](https://github.com/arksdev/omp-compact). tern-awui supports the first two out of the box and has omp-compact's one-line tool view built in; see [Works best with](#works-best-with).
+
 **[Try the demo](https://materemias.github.io/tern-awui/)**: the real app in your browser with sample sessions. It needs no Tern or omp, and nothing leaves the browser.
 
 I built it for how I work. Tern stays open on the desktop with its panes, tern-awui sits next to it in a browser tab, and the same app is installed on my Android phone as a PWA. When I step away, I can still see which agent finished, which one is waiting for an answer, and reply. It's a companion to Tern, not a replacement: a project-based, focused view of the sessions.
@@ -61,6 +63,34 @@ It has no login of its own. You reach it over a private network you control, suc
 - **Closed** in the same sheet lists the omp sessions you typed into that no Tern pane runs any more, newest first, with their title, recap and folder. Typing searches all your omp sessions on the server, plus Claude Code and Codex sessions; a tool's name (`claude`, `codex`, `omp`) shows only that tool's. A tap reopens one in a new Tern tab in its folder (`omp --resume`, `claude --resume`, `codex resume`), and × hides it from the list.
 - **Show on desktop** in a session's ⋯ menu (a button on the desktop) focuses that pane in the Tern window on the desktop.
 
+## Works best with
+
+These run on the desktop beside Tern and omp. tern-awui picks up omp-stretch and AgentView by itself, with nothing to configure on its side, and shows tools as compactly as omp-compact without it.
+
+- **[omp-stretch](https://github.com/materemias/omp-stretch).** omp's replies arrive as short gists, and a tap grows the detail in place. The phone shows the same stretches, opens and closes them in sync with the Tern pane, and its ✦ asks the model for more.
+
+  ```sh
+  omp plugin marketplace add materemias/omp-stretch
+  omp plugin install omp-stretch@omp-stretch
+  tern plugin link ~/.omp/plugins/node_modules/omp-stretch/tern-plugin
+  ```
+
+- **[CodexBar AgentView](https://github.com/materemias/codexbar-agentview).** Set a session aside in Tern with a sentence about what it waits for, and code watches the wait. The phone's **Waiting** strip counts what is back on you, and **Done**, **Snooze 1d** and notes go straight back to it.
+
+  ```sh
+  git clone https://github.com/materemias/codexbar-agentview
+  cd codexbar-agentview && tern plugin link tern
+  ```
+
+- **[omp-compact](https://github.com/arksdev/omp-compact).** Folds omp's tool log in the Tern pane to one line per action. tern-awui does the same on its own: each tool run is one short line, and a finished turn folds them behind `Worked … · N tools`, so the pane and the phone read alike.
+
+  ```sh
+  omp plugin marketplace add arksdev/omp-compact
+  omp plugin install omp-compact@arksdev
+  ```
+
+Restart omp after installing an omp plugin. Each project's README has the rest of its setup (omp-stretch's renderer settings, omp-compact's Extension Transcript Presenters switch).
+
 ## Requirements
 
 - [Bun](https://bun.sh) 1.4 or newer
@@ -88,6 +118,8 @@ Install tern-awui (https://github.com/materemias/tern-awui) on this machine.
 
 Never use Tailscale Funnel, port forwarding or a public tunnel.
 At the end, remind me to run /restart in omp sessions that were already running.
+Then ask whether I also want omp-stretch, CodexBar AgentView or omp-compact
+(the "Works best with" section) and install the ones I pick, following their READMEs.
 ```
 
 ### By hand
