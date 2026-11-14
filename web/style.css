@@ -771,8 +771,16 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 
 /* The list: plain rows on the sheet, divided by hairlines, under sentence-case group names that stay in
    view while their rows scroll. A row says who, where it stands in one line, and your note. */
+/* Each group name carries its colour: red for what is on you (as the strip), green for what the
+   machine watches, violet for what someone else holds, grey for when you have time. */
+.wait-group { --grp: var(--muted); }
+.wait-group.g-on_me { --grp: var(--blocked); }
+.wait-group.g-on_machine { --grp: var(--working); }
+.wait-group.g-on_someone { --grp: var(--gpt); }
 .wait-group + .wait-group h3 { margin-top: 6px; }
 .wait-group h3 { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; margin: 0; padding: 14px 12px 8px; background: var(--panel); color: var(--fg); font-size: 15px; font-weight: 700; }
+.wait-group h3::before { content: ""; width: 4px; height: 16px; border-radius: 2px; background: var(--grp); }
+.wait-group-count { padding: 0 7px; border-radius: 999px; background: color-mix(in srgb, var(--grp) 18%, transparent); color: var(--grp); font-size: 12px; font-weight: 650; line-height: 18px; font-variant-numeric: tabular-nums; }
 .wait-group ul { margin: 0; padding: 0; list-style: none; }
 .wrow { display: flex; align-items: center; gap: 4px; padding-right: 8px; }
 .wrow + .wrow { border-top: 1px solid var(--line); }
