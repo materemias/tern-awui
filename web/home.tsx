@@ -579,6 +579,9 @@ export function Home({
     flash(PUSH_LABEL[push[0]]);
   }, [push[0]]);
   const [q, setQ] = useState("");
+  // The phone's filter, opened from the header's search button; a typed filter keeps it open.
+  const [searching, setSearching] = useState(false);
+  const showSearch = wide || searching || q !== "";
   // The Tern session chips scroll sideways when they don't fit: a faded edge says more are there,
   // and the picked one is scrolled into view.
   const chipsRef = useRef<HTMLDivElement>(null);
@@ -765,18 +768,44 @@ export function Home({
               ))}
           </span>
         )}
+        {/* On the phone the filter opens from here, so the sessions start higher; the desktop always shows it. */}
+        {!wide && (
+          <button
+            class={`icon-btn search-btn${showSearch ? " on" : ""}`}
+            aria-label="Filter sessions"
+            aria-expanded={showSearch}
+            title="Filter sessions"
+            onClick={() => {
+              if (showSearch) setQ("");
+              setSearching(!showSearch);
+            }}
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <circle cx="8.8" cy="8.8" r="5" fill="none" stroke="currentColor" stroke-width="1.5" />
+              <path d="m12.6 12.6 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            </svg>
+          </button>
+        )}
         <button class="new-omp omp-play" onClick={() => setPicker(true)} aria-label="New omp in a project" title="New omp in a project">
           <PiMark plus />
         </button>
       </header>
-      <div class="search">
-        <input
-          type="search"
-          placeholder="Filter by title, prompt or project"
-          value={q}
-          onInput={(e) => setQ(e.currentTarget.value)}
-        />
-      </div>
+      {showSearch && (
+        <div class="search">
+          <input
+            type="search"
+            autoFocus={!wide}
+            placeholder="Filter by title, prompt or project"
+            value={q}
+            onInput={(e) => setQ(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Escape" || wide) return;
+              setQ("");
+              setSearching(false);
+            }}
+          />
+        </div>
+      )}
       {/* The Tern session chips (only with more than one session) and the Waiting pill share a row. */}
       {ternSessions.length > 1 ? (
         <div class="list-tools">

@@ -8,6 +8,13 @@ import { CHROMIUM, DESKTOP, closeBrowser, openApp, startSandbox, texts, until, t
 
 const EXTENSION_SOURCE = resolve(import.meta.dir, "../../omp-extension/tern-mobile.ts");
 
+/** The list's filter field; on the phone it opens from the header's search button. */
+async function openFilter(page: App["page"]) {
+  const input = page.locator(".search input");
+  if (!(await input.count())) await page.locator(".list-bar .search-btn").click();
+  return input;
+}
+
 describe.skipIf(!CHROMIUM)("session list", () => {
   let s: Sandbox;
   let app: App;
@@ -53,7 +60,7 @@ describe.skipIf(!CHROMIUM)("session list", () => {
 
   test("the filter matches project, tag, title and prompt; clearing it restores the list", async () => {
     const { page } = app;
-    const filter = page.locator(".search input");
+    const filter = await openFilter(page);
     await filter.fill("htop");
     await texts(page.locator(".row .title"), ["htop"]);
     await filter.fill("mobile");
@@ -77,9 +84,9 @@ describe.skipIf(!CHROMIUM)("session list", () => {
     await page.reload();
     await texts(page.locator(".row .title"), ["Terminal", "Note"]);
     expect(await page.locator("section.shut h2 > span:nth-child(2)").textContent()).toBe("alpha");
-    await page.locator(".search input").fill("phone");
+    await (await openFilter(page)).fill("phone");
     await texts(page.locator(".row .title"), ["Build phone UI"]);
-    await page.locator(".search input").fill("");
+    await (await openFilter(page)).fill("");
     await page.locator("h2.group-head", { hasText: "alpha" }).click();
     await texts(page.locator(".row .title"), ["Build phone UI", "htop", "Terminal", "Note"]);
     expect(await page.evaluate(() => localStorage.getItem("tern-mobile:collapsed-projects"))).toBe("[]");
@@ -95,9 +102,9 @@ describe.skipIf(!CHROMIUM)("session list", () => {
     expect(await clock.locator(".dock-label").textContent()).toBe("1 old hidden");
     expect(await clock.getAttribute("aria-pressed")).toBe("true");
     // A filter searches the hidden ones too.
-    await page.locator(".search input").fill("phone");
+    await (await openFilter(page)).fill("phone");
     await texts(page.locator(".row .title"), ["Build phone UI"]);
-    await page.locator(".search input").fill("");
+    await (await openFilter(page)).fill("");
     await page.reload();
     await texts(page.locator(".row .title"), ["htop", "Terminal", "Note"]);
     await clock.click();

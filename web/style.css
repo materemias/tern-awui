@@ -901,6 +901,10 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .wait-strip.compact { flex: none; gap: 6px; margin: 0; padding: 5px 10px 5px 9px; font-size: 13px; }
 .wait-strip.compact svg { width: 15px; height: 15px; }
 .wait-strip.compact .wait-strip-me { padding: 0 6px; }
+.list-bar .search-btn svg { width: 18px; height: 18px; }
+/* Each project's + π stays reachable but quiet, so the project names lead. */
+.group-head .new-omp { opacity: .55; }
+.group-head .new-omp:is(:hover, :focus-visible, :active) { opacity: 1; }
 /* Chips that don't fit fade at the edge that has more. */
 .tern-sessions.more-right { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
 .tern-sessions.more-left { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); }
