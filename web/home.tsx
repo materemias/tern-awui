@@ -1,9 +1,9 @@
 // The session list: projects with their rows, the filter, the bell, and the new-omp sheet.
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { post, postJson, type Closed, type Item } from "./api";
 import { keepsTool, matchesWords, parseSearch } from "../lib/search";
 import { age, folderLabel, isOld, jobsSummary, listProjects, onList, parseStoredList, rowText, toggled } from "./lib";
-import { Dot, PiMark } from "./parts";
+import { buzz, Dot, PiMark } from "./parts";
 import { ExtensionBanner } from "./extension";
 import { useExitGuard, useNow, useStream } from "./hooks";
 import { PUSH_LABEL, permissionHelp, type PushState } from "./push";
@@ -31,27 +31,91 @@ function TitleRow({ icon, tag, title }: { icon: Icon | null; tag: string | null;
   );
 }
 
-/** A session row; with `onPick` (the Parked tab's rows) a tap runs it instead of opening the session. */
-function Row({ item, now, selected, onPick }: { item: Item; now: number; selected?: boolean; onPick?: (item: Item) => void }) {
+/** How long a finger rests on a row before its peek opens, how far it may drift meanwhile, and how long a mouse hovers. */
+const PRESS_MS = 450;
+const PRESS_SLOP = 8;
+const HOVER_MS = 600;
+
+/**
+ * A row's peek gesture: a long press (touch) or a resting mouse calls `show`; leaving with the
+ * mouse calls `hide`. A long press swallows the tap that ends it and the browser's link menu.
+ */
+function usePeekGesture(show: (el: HTMLElement) => void, hide: () => void) {
+  const g = useRef({ timer: 0, x: 0, y: 0, touch: false, fired: false });
+  const clear = () => clearTimeout(g.current.timer);
+  const handlers = {
+    onPointerDown(e: PointerEvent) {
+      if (e.pointerType === "mouse") return;
+      const el = e.currentTarget as HTMLElement;
+      clear();
+      g.current = { x: e.clientX, y: e.clientY, touch: true, fired: false, timer: 0 };
+      g.current.timer = window.setTimeout(() => {
+        g.current.fired = true;
+        buzz();
+        show(el);
+      }, PRESS_MS);
+    },
+    onPointerMove(e: PointerEvent) {
+      if (g.current.touch && Math.hypot(e.clientX - g.current.x, e.clientY - g.current.y) > PRESS_SLOP) clear();
+    },
+    onPointerUp: clear,
+    onPointerCancel: clear,
+    onPointerEnter(e: PointerEvent) {
+      if (e.pointerType !== "mouse") return;
+      const el = e.currentTarget as HTMLElement;
+      g.current.touch = false;
+      clear();
+      g.current.timer = window.setTimeout(() => show(el), HOVER_MS);
+    },
+    onPointerLeave(e: PointerEvent) {
+      if (e.pointerType !== "mouse") return;
+      clear();
+      hide();
+    },
+    onContextMenu(e: Event) {
+      if (g.current.touch) e.preventDefault();
+    },
+  };
+  /** True once when the click ending a long press arrives: it must not open the row. */
+  function swallow(): boolean {
+    const fired = g.current.fired;
+    g.current.fired = false;
+    return fired;
+  }
+  return { handlers, swallow };
+}
+
+/** A row's peek: the session and the row's box, which it opens beside. */
+export type PeekAt = { item: Item; top: number; bottom: number; left: number; width: number };
+
+/**
+ * A session row. Its second line shows only while it works or asks something; `onPeek` gets the
+ * rest on a long press or hover (null: close).
+ */
+function Row({ item, now, selected, onPeek }: { item: Item; now: number; selected?: boolean; onPeek?: (at: PeekAt | null) => void }) {
   const state = item.status ?? undefined;
-  const { sub, recap, stale } = rowText(item, now);
+  const { status, stale } = rowText(item, now);
+  const { handlers, swallow } = usePeekGesture(
+    (el) => {
+      const r = el.getBoundingClientRect();
+      onPeek?.({ item, top: r.top, bottom: r.bottom, left: r.left, width: r.width });
+    },
+    () => onPeek?.(null),
+  );
   return (
     <a
       class={`row st-${state ?? "shell"}${item.doc ? " doc-row" : ""}${stale ? " stale" : ""}${item.unseen ? ` unseen-${item.unseen}` : ""}${selected ? " selected" : ""}`}
       href={`#/b/${item.block}`}
-      title={onPick && "Unpark into a tab of its own and open it"}
-      onClick={
-        onPick &&
-        ((e) => {
-          e.preventDefault();
-          onPick(item);
-        })
-      }
+      {...(onPeek ? handlers : {})}
+      onClick={(e) => {
+        if (onPeek && swallow()) return e.preventDefault();
+        onPeek?.(null);
+      }}
     >
       <Dot state={state} />
       <div class="row-main">
         <Title item={item} />
-        <div class={`row-sub${recap ? " recap" : ""}`}>{sub}</div>
+        {status && <div class={`row-sub row-status st-${state}`}>{status}</div>}
         {item.live?.jobs.length ? <div class="row-jobs">{jobsSummary(item.live.jobs)}</div> : null}
       </div>
       {/* Like Tern's tab icon: an unseen update colors the row's icon; rows without one get a dot. */}
@@ -62,7 +126,7 @@ function Row({ item, now, selected, onPick }: { item: Item; now: number; selecte
         </span>
       )}
       {/* On the list a parked pane shows only while it needs you (onList): say why it is out of Tern's tabs. */}
-      {item.parked && !onPick && (
+      {item.parked && (
         <span class="parked-mark" title="Parked in Tern: open it to unpark">
           P
         </span>
@@ -86,13 +150,13 @@ export function railGlyph(item: Item): { text: string; nf: boolean } {
 /** A session on the minimized sidebar: its glyph in a ring colored by status, the unseen dot, and the row's text as the tooltip. */
 function RailItem({ item, now, selected }: { item: Item; now: number; selected: boolean }) {
   const state = item.status ?? undefined;
-  const { sub, stale } = rowText(item, now);
+  const { status, peek, stale } = rowText(item, now);
   const glyph = railGlyph(item);
   return (
     <a
       class={`rail-item st-${state ?? "shell"}${stale ? " stale" : ""}${item.unseen ? ` unseen-${item.unseen}` : ""}${selected ? " selected" : ""}`}
       href={`#/b/${item.block}`}
-      title={sub ? `${item.title}\n${sub}` : item.title}
+      title={[item.title, status, peek].filter(Boolean).join("\n")}
       aria-label={item.title}
     >
       <span class={`rail-glyph${glyph.nf ? " nf" : ""}`}>{glyph.text}</span>
@@ -149,6 +213,42 @@ function PushButton({ push: [push, togglePush] }: { push: [PushState, () => void
         {push === "on" && <circle cx="15" cy="5" r="2.6" fill="var(--working)" stroke="none" />}
       </svg>
     </button>
+  );
+}
+
+/**
+ * What a row keeps out of the list, beside it: omp's recap or the last prompt (a file's folder, a
+ * shell's cwd), then where it runs. Any touch elsewhere, a scroll or Escape closes it.
+ */
+function Peek({ at, now, onClose }: { at: PeekAt; now: number; onClose: () => void }) {
+  const { item } = at;
+  const { peek } = rowText(item, now);
+  useEffect(() => {
+    const close = () => onClose();
+    const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    // The finger that opened it lifts after this: only a new touch closes.
+    document.addEventListener("pointerdown", close, true);
+    document.addEventListener("scroll", close, true);
+    document.addEventListener("keydown", key);
+    return () => {
+      document.removeEventListener("pointerdown", close, true);
+      document.removeEventListener("scroll", close, true);
+      document.removeEventListener("keydown", key);
+    };
+  }, [onClose]);
+  const where = [item.project, item.branch, item.live?.model].filter(Boolean).join(" · ");
+  // Below the row, unless the screen's lower part has no room: then above it.
+  const below = at.bottom < window.innerHeight * 0.6;
+  const style = {
+    left: `${at.left + 12}px`,
+    width: `${Math.min(at.width - 24, 420)}px`,
+    ...(below ? { top: `${at.bottom - 4}px` } : { bottom: `${window.innerHeight - at.top - 4}px` }),
+  };
+  return (
+    <div class={`peek ${below ? "below" : "above"}`} style={style} role="tooltip">
+      <p class={item.agent?.recap && item.status === "idle" ? "peek-recap" : ""}>{peek}</p>
+      {where && <div class="peek-where">{where}</div>}
+    </div>
   );
 }
 
@@ -379,6 +479,9 @@ export function Home({
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const now = useNow(15_000);
+  // The row whose peek is open (a long press or hover); null while none is.
+  const [peek, setPeek] = useState<PeekAt | null>(null);
+  const closePeek = useCallback(() => setPeek(null), []);
   // The rail has no filter field, so a filter typed before minimizing doesn't hide its sessions.
   const needle = rail ? "" : q.trim().toLowerCase();
   // Hiding sessions untouched for a day, remembered on this device. Working, waiting, unseen and
@@ -582,11 +685,12 @@ export function Home({
                 </button>
               </h2>
               {!shut &&
-                p.items.map((i) => <Row key={i.block} item={i} now={now} selected={i.block === selected} />)}
+                p.items.map((i) => <Row key={i.block} item={i} now={now} selected={i.block === selected} onPeek={setPeek} />)}
             </section>
           );
         })}
       </main>
+      {peek && <Peek at={peek} now={now} onClose={closePeek} />}
       {sheet}
       {exitHint && <div class="toast">Press back again to exit</div>}
     </div>

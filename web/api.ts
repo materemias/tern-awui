@@ -73,6 +73,8 @@ export type Item = {
   unseen: "done" | "blocked" | null;
   /** Parked in Tern, its program still running: off the list, in the new-omp sheet's Parked tab. */
   parked: boolean;
+  /** What it does or asks right now: omp's working intent, or the question it asks while blocked; null otherwise. */
+  activity: string | null;
 };
 export type Role = { role: string; spec: string };
 export type Project = { name: string; items: Item[] };

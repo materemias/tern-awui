@@ -220,13 +220,30 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     invalidateState();
   }
 
+  /** The question a blocked session asks, for its row; absent while it asks nothing (a tool approval) or isn't blocked. */
+  const asking = new Map<string, string>();
+  async function noteAsk(pane: string, sessionId: string) {
+    // The status's start time marks this blocked spell: a newer one (or another session) has its own call.
+    const spell = bridges.get(pane)?.state.since;
+    const entries = sessionId ? ((await readChat(sessionId, 20).catch(() => null))?.entries ?? []) : [];
+    const last = entries.findLast((e) => e.role === "ask");
+    // An answered ask is history: a tool approval after it asks nothing.
+    const ask = last?.role === "ask" && last.answer === null ? last : null;
+    const b = bridges.get(pane)?.state;
+    if (stopped || !ask?.question || b?.status !== "blocked" || b.since !== spell || b.sessionId !== sessionId) return;
+    asking.set(pane, ask.question.replace(/\s+/g, " ").trim().slice(0, 200));
+    invalidateState();
+  }
+
   const doneTimers = new Map<string, Timer>();
   /** working → idle is a finished turn once it settles; → blocked notifies at once. */
   function onStatusChange(pane: string, from: string, to: string, sessionId: string) {
     clearTimeout(doneTimers.get(pane));
     doneTimers.delete(pane);
+    if (asking.delete(pane)) invalidateState();
     if (to === "blocked") {
       markUnseen(pane, "blocked");
+      void noteAsk(pane, sessionId);
       void pushStatus(pane, "blocked", sessionId).catch((error) => console.error("push failed", error));
     } else if (to === "idle" && from === "working")
       doneTimers.set(
@@ -508,6 +525,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     unseen: "done" | "blocked" | null;
     /** Parked in Tern: out of every tab, its program still running. The list leaves it out; the new-omp sheet's Parked tab shows it. */
     parked: boolean;
+    /** What it does or asks right now: omp's working-row intent while working, the ask's question while blocked. */
+    activity: string | null;
   };
 
   type State = {
@@ -680,6 +699,12 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           : null,
         status,
         starting: !bridge && b.exited == null && /^omp(\s|$)/.test(str(b.command)),
+        activity:
+          status === "working"
+            ? bridge?.state.run?.intent || null
+            : status === "blocked"
+              ? (asking.get(id) ?? (bridge?.state.approval ? approvalQuestion(bridge.state.approval) : null))
+              : null,
         since,
         doc,
         unseen: unseen.get(id) ?? null,

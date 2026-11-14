@@ -319,14 +319,19 @@ export function swipeOrder(projects: Project[], o: { hideOld: boolean; collapsed
   );
 }
 
-/** A row's second line, whether it is omp's recap, and whether an idle row has gone stale (a day). */
-export function rowText(item: Item, now: number): { sub: string; recap: boolean; stale: boolean } {
+/**
+ * A row's text. `status`: its second line, only while there is something live to say: what a
+ * working omp does now, or the question a blocked one asks. `peek`: what a long press or hover
+ * shows: omp's recap when idle ("Earlier:" once turns followed it), else the last prompt; a file's
+ * folder; a shell's cwd. `stale`: an idle row untouched for a day.
+ */
+export function rowText(item: Item, now: number): { status: string | null; peek: string; stale: boolean } {
   const a = item.agent;
   const idle = item.status === "idle";
-  // Idle agents show omp's recap ("Earlier:" once turns followed it); others the last prompt.
-  const recap = idle && a?.recap ? `${a.recapStale ? "Earlier: " : ""}${a.recap}` : "";
-  const sub = item.doc ? docSub(item.doc, item.cwd) : recap || a?.lastPrompt || item.cwd;
-  return { sub, recap: !!recap, stale: idle && now - item.since > 86_400_000 };
+  const recap = a?.recap ? `${a.recapStale ? "Earlier: " : ""}${a.recap}` : "";
+  const peek = item.doc ? docSub(item.doc, item.cwd) : (idle && recap) || a?.lastPrompt || recap || item.cwd;
+  const status = item.status === "working" || item.status === "blocked" ? item.activity || null : null;
+  return { status, peek, stale: idle && now - item.since > 86_400_000 };
 }
 
 /** Tern's notes folder on any OS: …/tern/notes/ (Linux), …/Tern/notes/ (macOS), …\Tern\notes\ (Windows). */

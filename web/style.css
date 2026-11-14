@@ -726,3 +726,19 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .doc h2 { font-size: 18px; margin-top: 1.5em; padding-bottom: .25em; border-bottom: 1px solid var(--line); }
 .doc h3 { font-size: 16px; }
 .doc h1 + p, .doc h2 + p { margin-top: .4em; }
+
+/* Session rows say only what is live: under a working row what omp does now, under a blocked one the
+   question it asks. Everything else (recap, last prompt, where it runs) waits in the peek, opened by a
+   long press or a resting mouse. Rows don't select text, so the press doesn't start a selection. */
+.list .row { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.row-status.st-working { color: color-mix(in srgb, var(--working) 55%, var(--fg)); }
+.row-status.st-blocked { color: color-mix(in srgb, var(--blocked) 45%, var(--fg)); }
+.peek { position: fixed; z-index: 12; max-width: calc(100vw - 24px); padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--raise); box-shadow: 0 10px 30px rgb(0 0 0 / .5); font-size: 13.5px; line-height: 1.45; pointer-events: none; }
+.peek p { margin: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 8; -webkit-box-orient: vertical; overflow: hidden; }
+.peek .peek-recap { font-style: italic; }
+.peek-where { margin-top: 6px; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (prefers-reduced-motion: no-preference) {
+  .peek { animation: peek-in .12s ease-out; }
+  .peek.above { transform-origin: bottom left; }
+  @keyframes peek-in { from { opacity: 0; transform: scale(.97); } }
+}

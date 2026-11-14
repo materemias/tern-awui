@@ -191,6 +191,7 @@ export function listChanged(before: BridgeState, after: BridgeState): boolean {
     JSON.stringify(before.caps) !== JSON.stringify(after.caps) ||
     JSON.stringify(before.jobs) !== JSON.stringify(after.jobs) ||
     // The row's status line shows what the turn does, or the tool it asks to allow.
+    before.run?.intent !== after.run?.intent ||
     before.approval?.id !== after.approval?.id
   );
 }

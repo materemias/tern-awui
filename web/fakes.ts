@@ -172,6 +172,7 @@ export function item(over: Partial<Item> = {}): Item {
     doc: null,
     unseen: null,
     parked: false,
+    activity: null,
     ...over,
   };
 }

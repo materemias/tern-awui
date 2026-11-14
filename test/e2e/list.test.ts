@@ -36,15 +36,18 @@ describe.skipIf(!CHROMIUM)("session list", () => {
     expect(await omp.getAttribute("class")).toContain("st-idle");
     expect(await omp.locator(".dot").getAttribute("class")).toBe("dot dot-idle");
     expect(await omp.locator(".tag").textContent()).toBe("MOBILE");
-    // Idle: omp's recap, marked earlier since turns followed it.
-    expect(await omp.locator(".row-sub").getAttribute("class")).toBe("row-sub recap");
-    expect(await omp.locator(".row-sub").textContent()).toBe("Earlier: Earlier recap");
+    // Idle: one line; omp's recap, marked earlier since turns followed it, waits in the peek.
+    expect(await omp.locator(".row-sub").count()).toBe(0);
+    await omp.hover();
+    expect(await page.locator(".peek p").textContent()).toBe("Earlier: Earlier recap");
+    await page.mouse.move(0, 0);
+    await page.locator(".peek").waitFor({ state: "detached" });
     expect(await omp.locator(".age").textContent()).not.toBe("");
     // A shell has no status: a plain dot and no age.
     const shell = page.locator('a.row[href="#/b/2"]');
     expect(await shell.locator(".dot").getAttribute("class")).toBe("dot dot-shell");
     expect(await shell.locator(".age").textContent()).toBe("");
-    expect(await page.locator('a.row[href="#/b/3"] .row-sub').textContent()).toBe("Note");
+    expect(await page.locator('a.row[href="#/b/3"] .row-sub').count()).toBe(0);
     expect(await page.locator('.counts span[title="1 idle"]').textContent()).toBe("1");
   });
 

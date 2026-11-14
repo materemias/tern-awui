@@ -67,6 +67,7 @@ function item(live: Partial<Live> | null, status = "idle"): Item {
     doc: null,
     unseen: null,
     parked: false,
+    activity: null,
   };
 }
 

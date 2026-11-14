@@ -64,6 +64,7 @@ function item(over: Partial<Item> = {}): Item {
     doc: null,
     unseen: null,
     parked: false,
+    activity: null,
     ...over,
   };
 }
@@ -479,26 +480,29 @@ describe("inheritOrigin", () => {
 });
 
 describe("rowText", () => {
-  test("idle agents show the recap, marked once turns followed it", () => {
+  test("idle rows have no status line; their peek is the recap, marked once turns followed it", () => {
     const a = agent({ recap: "Refactored the parser", lastPrompt: "fix it" });
-    expect(rowText(item({ agent: a }), NOW)).toEqual({ sub: "Refactored the parser", recap: true, stale: false });
-    expect(rowText(item({ agent: { ...a, recapStale: true } }), NOW).sub).toBe("Earlier: Refactored the parser");
+    expect(rowText(item({ agent: a, activity: "ignored when idle" }), NOW)).toEqual({ status: null, peek: "Refactored the parser", stale: false });
+    expect(rowText(item({ agent: { ...a, recapStale: true } }), NOW).peek).toBe("Earlier: Refactored the parser");
   });
-  test("working agents show the last prompt even with a recap", () => {
-    const r = rowText(item({ status: "working", agent: agent({ recap: "old", lastPrompt: "fix it" }) }), NOW);
-    expect(r).toEqual({ sub: "fix it", recap: false, stale: false });
+  test("working and blocked rows show what they do or ask; the peek is the last prompt", () => {
+    const a = agent({ recap: "old", lastPrompt: "fix it" });
+    expect(rowText(item({ status: "working", agent: a, activity: "Running the tests" }), NOW)).toEqual({ status: "Running the tests", peek: "fix it", stale: false });
+    expect(rowText(item({ status: "blocked", agent: a, activity: "Which branch?" }), NOW).status).toBe("Which branch?");
+    // A tool approval asks no question: one line.
+    expect(rowText(item({ status: "blocked", agent: a, activity: null }), NOW).status).toBeNull();
   });
-  test("shells show their cwd; notes their kind, files their folder named from the project", () => {
-    expect(rowText(item({ status: null }), NOW).sub).toBe("/home/u/code/app");
-    expect(rowText(item({ doc: "/home/u/.local/state/tern/notes/x.md" }), NOW).sub).toBe("Note");
-    expect(rowText(item({ doc: "/home/u/code/app/README.md" }), NOW).sub).toBe("app");
-    expect(rowText(item({ doc: "/home/u/code/app/docs/a/b.md" }), NOW).sub).toBe("app/docs/a");
+  test("shells peek at their cwd; notes their kind, files their folder named from the project", () => {
+    expect(rowText(item({ status: null }), NOW).peek).toBe("/home/u/code/app");
+    expect(rowText(item({ doc: "/home/u/.local/state/tern/notes/x.md" }), NOW).peek).toBe("Note");
+    expect(rowText(item({ doc: "/home/u/code/app/README.md" }), NOW).peek).toBe("app");
+    expect(rowText(item({ doc: "/home/u/code/app/docs/a/b.md" }), NOW).peek).toBe("app/docs/a");
     // A sibling folder sharing the prefix is outside the project.
-    expect(rowText(item({ doc: "/home/u/code/app2/x.md" }), NOW).sub).toBe("/home/u/code/app2");
-    expect(rowText(item({ doc: "/home/u/todo.txt" }), NOW).sub).toBe("/home/u");
-    expect(rowText(item({ cwd: "C:\\code\\app", doc: "C:\\code\\app\\src\\x.md" }), NOW).sub).toBe("app\\src");
-    expect(rowText(item({ doc: "/Users/u/Library/Application Support/Tern/notes/x.md" }), NOW).sub).toBe("Note");
-    expect(rowText(item({ doc: "C:\\Users\\u\\AppData\\Local\\Tern\\notes\\x.md" }), NOW).sub).toBe("Note");
+    expect(rowText(item({ doc: "/home/u/code/app2/x.md" }), NOW).peek).toBe("/home/u/code/app2");
+    expect(rowText(item({ doc: "/home/u/todo.txt" }), NOW).peek).toBe("/home/u");
+    expect(rowText(item({ cwd: "C:\\code\\app", doc: "C:\\code\\app\\src\\x.md" }), NOW).peek).toBe("app\\src");
+    expect(rowText(item({ doc: "/Users/u/Library/Application Support/Tern/notes/x.md" }), NOW).peek).toBe("Note");
+    expect(rowText(item({ doc: "C:\\Users\\u\\AppData\\Local\\Tern\\notes\\x.md" }), NOW).peek).toBe("Note");
   });
   test("only idle rows go stale after a day", () => {
     expect(rowText(item({ since: NOW - 86_400_001 }), NOW).stale).toBe(true);
