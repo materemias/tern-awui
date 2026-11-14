@@ -168,15 +168,28 @@ import { SUBAGENT_NAME } from "../lib/subagent-name";
 import { matchesWords } from "../lib/search";
 export { SUBAGENT_NAME };
 
-/** The screen a URL hash shows: the list, a session, its subagents, or one subagent's chat. */
+/** The screen a URL hash shows: the list, the Waiting popup (one of its sessions with `id`), a session, its subagents, or one subagent's chat. */
 export type Route =
   | { view: "list" }
+  | { view: "waiting"; id?: string }
   | { view: "session"; block: string }
   | { view: "subagents"; block: string }
   | { view: "subagent"; block: string; name: string };
 
-/** `#/b/12`, `#/b/12/sub`, `#/b/12/sub/<name>`; anything else is the list, a bad name the subagent list. */
+const WAITING_HASH = "#/waiting";
+const isWaiting = (hash: string | undefined) => hash !== undefined && parseRoute(hash).view === "waiting";
+
+/** `#/waiting`, `#/waiting/<id>`, `#/b/12`, `#/b/12/sub`, `#/b/12/sub/<name>`; anything else is the list, a bad name the subagent list. */
 export function parseRoute(hash: string): Route {
+  if (hash === WAITING_HASH) return { view: "waiting" };
+  if (hash.startsWith(`${WAITING_HASH}/`)) {
+    try {
+      const id = decodeURIComponent(hash.slice(WAITING_HASH.length + 1));
+      return id ? { view: "waiting", id } : { view: "waiting" };
+    } catch {
+      return { view: "waiting" };
+    }
+  }
   const m = /^#\/b\/(\d+)(\/sub(?:\/([^/]+))?)?$/.exec(hash);
   if (!m) return { view: "list" };
   const [, block, sub, raw] = m;
@@ -192,14 +205,19 @@ export function parseRoute(hash: string): Route {
 
 export function routeHash(r: Route): string {
   if (r.view === "list") return "#/";
+  if (r.view === "waiting") return r.id ? `${WAITING_HASH}/${encodeURIComponent(r.id)}` : WAITING_HASH;
   const session = `#/b/${r.block}`;
   if (r.view === "session") return session;
   return r.view === "subagents" ? `${session}/sub` : `${session}/sub/${encodeURIComponent(r.name)}`;
 }
 
-/** Whether `to` is a screen above `from`: the list above all, a session above its subagent screens, the subagent list above each subagent. */
+/**
+ * Whether `to` is a screen above `from`: the list above all, the Waiting list above one of its
+ * sessions, a session above its subagent screens, the subagent list above each subagent.
+ */
 export function isAbove(to: Route, from: Route): boolean {
   if (to.view === "list") return from.view !== "list";
+  if (to.view === "waiting" || from.view === "waiting") return to.view === "waiting" && !to.id && from.view === "waiting" && !!from.id;
   if (from.view === "list" || to.block !== from.block) return false;
   return to.view === "session" ? from.view !== "session" : to.view === "subagents" && from.view === "subagent";
 }
@@ -211,7 +229,9 @@ export function isAbove(to: Route, from: Route): boolean {
 export function trackOrigin(origins: Map<string, string>, oldHash: string, newHash: string): void {
   const from = parseRoute(oldHash);
   const to = parseRoute(newHash);
-  if (!isAbove(to, from)) origins.set(routeHash(to), routeHash(from));
+  // Back in the Waiting popup from a session opened there: it keeps where it was entered from too.
+  const returning = to.view === "waiting" && isWaiting(origins.get(routeHash(from)));
+  if (!isAbove(to, from) && !returning) origins.set(routeHash(to), routeHash(from));
 }
 
 /**
@@ -228,12 +248,17 @@ export function inheritOrigin(origins: Map<string, string>, oldHash: string, new
 /**
  * Where ‹ leads from `r`, and whether that is a history pop (the target is the screen `r` was
  * entered from) rather than a replace (a deep link, a notification, a jump from elsewhere), so
- * back never stacks a screen it would reopen. A session goes to the list, the subagent list to
- * its session, a subagent to the subagent list when opened from there, else to its session.
+ * back never stacks a screen it would reopen. A session goes to the list, or to the Waiting popup
+ * when opened from there, the subagent list to its session, a subagent to the subagent list when
+ * opened from there, else to its session. The Waiting popup closes onto the screen it opened
+ * over, or the list.
  */
 export function backStep(origins: Map<string, string>, r: Route): { target: string; pop: boolean } {
   const origin = origins.get(routeHash(r));
   let target = "#/";
+  if (r.view === "session" && isWaiting(origin)) target = origin!;
+  if (r.view === "waiting" && r.id) target = WAITING_HASH;
+  else if (r.view === "waiting" && origin) target = origin;
   if (r.view === "subagents" || r.view === "subagent") {
     const session = `#/b/${r.block}`;
     target = r.view === "subagent" && origin === `${session}/sub` ? origin : session;

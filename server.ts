@@ -35,6 +35,8 @@ import { CLOSED_AGENTS, type ClosedAgent } from "./lib/search";
 import { rowKeys, statePatch } from "./lib/state-patch";
 import { chatKeys, chatUpdate, type ChatKeys } from "./lib/chat-patch";
 import { vapidSubject } from "./lib/push";
+import { WaitingWatch } from "./lib/waiting";
+import { blockOf, rowId, WAITING_ACTIONS, type OnMe } from "./lib/waiting-view";
 import { writePrivateFile } from "./lib/private-file";
 
 const DOC_MAX_BYTES = 512 * 1024;
@@ -65,6 +67,8 @@ const MAX_SDP = 64 * 1024;
 const DONE_SETTLE_MS = 3000;
 /** `TERN_AWUI_PROJECTS` gets this long to print its folders. */
 const PROJECTS_TIMEOUT_MS = 5000;
+/** `codexbar_waiting.py` takes its lock before it answers; a `tick` holds it only briefly. */
+const WAITING_TIMEOUT_MS = 10_000;
 /** Longest prompt or draft the API takes (characters). */
 const MAX_TEXT = 1_000_000;
 /** A phone's id for one prompt it sends (a UUID): a resend after a failed send carries the same one. */
@@ -189,7 +193,11 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
       : ask?.role === "ask" ? ask.question : said?.role === "assistant" ? said.text.replace(/[*`#_>]/g, "") : "";
     const body = `${kind === "blocked" ? "Needs you" : "Finished"}${detail ? ` · ${detail.trim().slice(0, 160)}` : ""}`;
     // `badge`: the app icon's count of unseen updates, set by the service worker while the app is closed.
-    const payload = JSON.stringify({ title, body, block: pane, badge: unseen.size });
+    await pushAll(JSON.stringify({ title, body, block: pane, badge: unseen.size }));
+  }
+
+  /** Delivers one notification to every subscribed phone. */
+  async function pushAll(payload: string) {
     await Promise.all(
       [...pushSubs.values()].map((sub) =>
         sendNotification(sub, payload, { TTL: 900, urgency: "high", vapidDetails }).catch((err: { statusCode?: number }) => {
@@ -205,6 +213,28 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           } else console.error("push failed", err.statusCode ?? err);
         }),
       ),
+    );
+  }
+
+  /**
+   * Rows that newly wait on the user. One running in a pane is a session that needs you like any
+   * other: unseen until opened, and its notification goes with that; the agent's own question,
+   * with the session blocked on it, was announced through that status. A closed one has no pane to
+   * open, so its notification leads to the Waiting screen, which clears it.
+   */
+  async function notifyWaiting(fresh: OnMe[]) {
+    const items = (await getState()).projects.flatMap((p) => p.items);
+    if (stopped) return;
+    const found = fresh.map((f) => ({ ...f, block: blockOf(items, f.row)?.block ?? null }));
+    for (const { block } of found) if (block) markUnseen(block, "blocked");
+    if (!pushSubs.size) return;
+    await Promise.all(
+      found
+        .filter(({ asking, block }) => !(asking && block && bridges.get(block)?.state.status === "blocked"))
+        .map(({ row, text, block }) => {
+          const opens = block ? { block } : { tag: `w${rowId(row)}`, url: "/#/waiting" };
+          return pushAll(JSON.stringify({ title: row.title, body: `Needs you · ${text.slice(0, 160)}`, ...opens, badge: unseen.size }));
+        }),
     );
   }
 
@@ -789,7 +819,19 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     treeCache = null;
     invalidateState();
   }
-  const safety = setInterval(() => stateWatchers.size && invalidateTree(), SAFETY_MS);
+  const safety = setInterval(() => {
+    if (stateWatchers.size) invalidateTree();
+    void waiting.check(stateWatchers.size > 0);
+  }, SAFETY_MS);
+
+  /** CodexBar AgentView's waits; off without it. List streams carry them, and it pushes what newly waits on the user. */
+  const waiting = new WaitingWatch({
+    env,
+    home: HOME,
+    run: (argv) => commandOutput(["python3", ...argv], WAITING_TIMEOUT_MS),
+    changed: invalidateState,
+    onMe: (fresh) => void notifyWaiting(fresh).catch((error) => console.error("push failed", error)),
+  });
 
   /** The running `tern events`, killed by `stop`. */
   let ternEvents: Subprocess | null = null;
@@ -1202,6 +1244,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           }
 
           let lastState = "";
+          /** The waits this stream sent last. */
+          let lastWaiting = "";
           /** The rows this stream sent last; after the first full `state`, only changed rows go (`patch`). */
           let lastRows: Map<string, string> | null = null;
           let lastDetail = "";
@@ -1248,6 +1292,14 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
               if (lastRows) send("patch", statePatch(s, list.order, list.rows, lastRows));
               else send("state", s);
               lastRows = list.rows;
+            }
+            if (!block) {
+              await waiting.view();
+              if (stop) return;
+              if (waiting.key !== lastWaiting) {
+                lastWaiting = waiting.key;
+                send("waiting", waiting.held);
+              }
             }
             const item = block ? await findItem(block) : undefined;
             if (stop) return;
@@ -1498,6 +1550,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
       return json({ sessions, home: HOME });
     }
     if (req.method === "GET" && path === "/api/push/key") return json({ key: VAPID.publicKey });
+    if (req.method === "GET" && path === "/api/waiting") return json(await waiting.view());
     if (req.method !== "POST") return json({ error: "not found" }, 404);
 
     // Cross-site forms cannot set custom headers; this keeps the POSTs same-origin.
@@ -1525,6 +1578,11 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     const done = (err: string | null) => (err ? json({ error: err }, 502) : json({ ok: true }));
     // Bun drops WebSocket frames over 16 MB, and a draft that big would loop the bridge's reconnects.
     if (typeof body.text === "string" && body.text.length > MAX_TEXT) return json({ error: "text too long" }, 400);
+    const waitingAction = WAITING_ACTIONS.find((action) => path === `/api/waiting/${action}`);
+    if (waitingAction) {
+      const r = await waiting.act(waitingAction, body);
+      return json(r.body, r.status);
+    }
 
     if (m) {
       const [, block, action] = m;
@@ -1827,6 +1885,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     ternEvents?.kill();
     for (const timer of voiceOrphans.values()) clearTimeout(timer);
     historyWatcher?.close();
+    waiting.stop();
     distWatcher?.close();
     for (const finish of [...openStreams]) finish();
     await server?.stop(true);

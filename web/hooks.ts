@@ -1,6 +1,6 @@
 // The app's hooks: the clock, the route and back navigation, the layout, and the server stream.
 import { useEffect, useState } from "preact/hooks";
-import type { Btw, ChatEntry, ContextUse, Doc, Item, Run, State, StretchState, Subagent, Voice } from "./api";
+import type { ApprovalView, Btw, ChatEntry, ContextUse, Doc, Item, Run, State, StretchState, Subagent, Voice, Waiting } from "./api";
 import { backStep, inheritOrigin, parseRoute, trackOrigin, type Route } from "./lib";
 import { applyStatePatch } from "../lib/state-patch";
 import { applyChatPatch } from "../lib/chat-patch";
@@ -225,10 +225,11 @@ export function useWakeLock(on: boolean) {
 
 /**
  * One SSE connection: always the block list, plus the open block's chat or screen and draft, its
- * subagent list (`view` "subagents"), or one subagent's chat (`sub`).
+ * subagent list (`view` "subagents"), or one subagent's chat (`sub`). Without a block, the waits too.
  */
 export function useStream(block: string | null, view: View, sub: string | null = null) {
   const [state, setState] = useState<State | null>(null);
+  const [waiting, setWaiting] = useState<Waiting | null>(null);
   const [chat, setChat] = useState<ChatEntry[] | null>(null);
   const [subagents, setSubagents] = useState<Subagent[] | null>(null);
   const [btw, setBtw] = useState<Btw | null>(null);
@@ -395,6 +396,7 @@ export function useStream(block: string | null, view: View, sub: string | null =
       src.addEventListener("voice", (e) => setVoice(JSON.parse(e.data)));
       src.addEventListener("doc", (e) => setDoc(JSON.parse(e.data)));
       src.addEventListener("subagents", (e) => setSubagents(JSON.parse(e.data)));
+      src.addEventListener("waiting", (e) => setWaiting(JSON.parse(e.data)));
     };
     const close = () => {
       notificationState = null;
@@ -443,5 +445,5 @@ export function useStream(block: string | null, view: View, sub: string | null =
       if ("serviceWorker" in navigator) navigator.serviceWorker.removeEventListener("message", onWorkerMessage);
     };
   }, [block, view, sub]);
-  return { state, chat, subagents, live, queued, run, context, btw, setBtw, screen, draft, doc, online, stretch, voice };
+  return { state, waiting, chat, subagents, live, queued, run, context, btw, setBtw, screen, draft, doc, online, stretch, voice, approval };
 }

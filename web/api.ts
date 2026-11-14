@@ -1,6 +1,7 @@
 export type { BtwHistoryRecord, BtwHistoryTurn } from "../lib/btw-history";
 export type { ApprovalView, ContextUse, Run, StretchState, Voice } from "../lib/bridge-state";
 export type { Closed } from "../lib/closed";
+export type { Waiting, WaitingRow } from "../lib/waiting-view";
 
 // ---------- API shapes (mirror server.ts) ----------
 

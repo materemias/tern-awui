@@ -5,8 +5,9 @@ import { keepsTool, matchesWords, parseSearch } from "../lib/search";
 import { age, folderLabel, isOld, jobsSummary, listProjects, onList, parseStoredList, rowText, toggled } from "./lib";
 import { buzz, Dot, PiMark } from "./parts";
 import { ExtensionBanner } from "./extension";
-import { useExitGuard, useNow, useStream } from "./hooks";
+import { goBack, useExitGuard, useNow, useStream } from "./hooks";
 import { PUSH_LABEL, permissionHelp, type PushState } from "./push";
+import { WaitingIcon, WaitingPopup, WaitingStrip } from "./waiting";
 
 /** The row's icon: the title's Nerd Font glyph, else Tern's π fallback for an omp not yet titled. */
 function iconOf(item: Item): { glyph: string; pi: boolean } | null {
@@ -459,7 +460,8 @@ export const storedCollapsed = () => new Set(parseStoredList(localStorage.getIte
 
 /**
  * The session list. `wide`: shown beside the open session, which `selected` marks. `rail`: minimized
- * to a column of session icons; `onRail` toggles that (desktop only).
+ * to a column of session icons; `onRail` toggles that (desktop only). `waitingOpen`: the Waiting
+ * popup shows over it (`#/waiting`).
  */
 export function Home({
   push,
@@ -467,6 +469,8 @@ export function Home({
   selected = null,
   rail = false,
   onRail,
+  waitingOpen = false,
+  waitingCard = null,
 }: {
   /** The bell's state and toggle, owned by the app so recovery runs on every screen. */
   push: [PushState, () => void];
@@ -474,8 +478,11 @@ export function Home({
   selected?: string | null;
   rail?: boolean;
   onRail?: () => void;
+  waitingOpen?: boolean;
+  /** The Waiting popup's open session (its row id); null on its list. */
+  waitingCard?: string | null;
 }) {
-  const { state, online } = useStream(null, "chat");
+  const { state, waiting, online } = useStream(null, "chat");
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const now = useNow(15_000);
@@ -557,6 +564,10 @@ export function Home({
       }}
     />
   );
+  // Every block, whatever the list filters: a card opens the session running it.
+  const waitingPopup = waitingOpen && (
+    <WaitingPopup waiting={waiting} card={waitingCard} items={state ? state.projects.flatMap((p) => p.items) : []} onClose={() => goBack({ view: "waiting" })} />
+  );
 
   if (rail) {
     const blocked = state?.counts.blocked ?? 0;
@@ -566,6 +577,7 @@ export function Home({
           <BrandToggle expand onClick={onRail} />
           <span class={`net ${online ? "on" : "off"}`} title={online ? "Connected" : "Offline"} />
           {blocked > 0 && <span class="c-blocked small" title={`${blocked} blocked`}>{blocked}</span>}
+          <WaitingIcon waiting={waiting} />
           <PushButton push={push} />
         </header>
         <nav class="list rail-list">
@@ -587,6 +599,7 @@ export function Home({
           +
         </button>
         {sheet}
+        {waitingPopup}
       </div>
     );
   }
@@ -656,6 +669,7 @@ export function Home({
           onInput={(e) => setQ(e.currentTarget.value)}
         />
       </div>
+        <WaitingStrip waiting={waiting} />
       <main class="list">
         {!state && <div class="empty">Connecting…</div>}
         {state && <ExtensionBanner install={state.extension} />}
@@ -692,6 +706,7 @@ export function Home({
       </main>
       {peek && <Peek at={peek} now={now} onClose={closePeek} />}
       {sheet}
+      {waitingPopup}
       {exitHint && <div class="toast">Press back again to exit</div>}
     </div>
   );

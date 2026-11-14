@@ -101,6 +101,12 @@ describe("push", () => {
     ]);
   });
 
+  test("a push without a block can bring its own tag and page", async () => {
+    const w = worker();
+    await w.push({ title: "Set aside", tag: "ws1", url: "/#/waiting" });
+    expect(w.calls.notifications[0].options).toMatchObject({ tag: "ws1", data: { url: "/#/waiting" } });
+  });
+
   test("sets the app badge to the count, clears it at zero, leaves it without one", async () => {
     const w = worker();
     await w.push({ title: "a", badge: 5 });

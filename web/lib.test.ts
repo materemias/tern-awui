@@ -700,6 +700,9 @@ describe("folderLabel", () => {
 describe("routes", () => {
   test.each<[string, Route]>([
     ["", { view: "list" }],
+    ["#/waiting", { view: "waiting" }],
+    ["#/waiting/01a1%2Fx", { view: "waiting", id: "01a1/x" }],
+    ["#/waiting/%E0%A4%A", { view: "waiting" }],
     ["#/", { view: "list" }],
     ["#/b/12", { view: "session", block: "12" }],
     ["#/b/12/sub", { view: "subagents", block: "12" }],
@@ -718,6 +721,8 @@ describe("routes", () => {
   test("a route's hash parses back to the same route", () => {
     const routes: Route[] = [
       { view: "list" },
+      { view: "waiting" },
+      { view: "waiting", id: "pane:7" },
       { view: "session", block: "3" },
       { view: "subagents", block: "3" },
       { view: "subagent", block: "3", name: "WebTests" },
@@ -743,6 +748,36 @@ describe("routes", () => {
     for (let i = 1; i < hashes.length; i++) trackOrigin(origins, hashes[i - 1], hashes[i]);
     return backStep(origins, parseRoute(hashes.at(-1)!));
   }
+
+  test("a session opened from the Waiting screen pops back there, which pops back to the list", () => {
+    const origins = new Map<string, string>();
+    trackOrigin(origins, "#/", "#/waiting");
+    trackOrigin(origins, "#/waiting", "#/b/1");
+    expect(backStep(origins, { view: "session", block: "1" })).toEqual({ target: "#/waiting", pop: true });
+    // Back on the screen, it still knows it came from the list.
+    trackOrigin(origins, "#/b/1", "#/waiting");
+    expect(backStep(origins, { view: "waiting" })).toEqual({ target: "#/", pop: true });
+  });
+
+  test("the Waiting screen deep-linked, from a notification, replaces its way to the list", () => {
+    expect(backStep(new Map(), { view: "waiting" })).toEqual({ target: "#/", pop: false });
+  });
+
+  test("the Waiting popup opened over a session closes back onto it", () => {
+    const origins = new Map<string, string>();
+    trackOrigin(origins, "#/b/4", "#/waiting");
+    expect(backStep(origins, { view: "waiting" })).toEqual({ target: "#/b/4", pop: true });
+  });
+
+  test("a Waiting session pops back to the Waiting list, and a chat opened from it back to that session", () => {
+    expect(walk(["", "#/waiting", "#/waiting/s1"])).toEqual({ target: "#/waiting", pop: true });
+    expect(walk(["", "#/waiting", "#/waiting/s1", "#/b/1"])).toEqual({ target: "#/waiting/s1", pop: true });
+    expect(walk(["", "#/waiting", "#/waiting/s1", "#/b/1", "#/waiting/s1"])).toEqual({ target: "#/waiting", pop: true });
+    // Back on the list, it still knows it came from the session list.
+    expect(walk(["", "#/waiting", "#/waiting/s1", "#/b/1", "#/waiting/s1", "#/waiting"])).toEqual({ target: "#/", pop: true });
+    // Deep-linked: ‹ replaces its way to the Waiting list.
+    expect(backStep(new Map(), { view: "waiting", id: "s1" })).toEqual({ target: "#/waiting", pop: false });
+  });
 
   test("a subagent opened from the session's strip pops back to the session, which pops back to the list", () => {
     expect(walk(["", "#/b/1", "#/b/1/sub/A"])).toEqual({ target: "#/b/1", pop: true });

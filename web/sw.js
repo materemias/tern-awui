@@ -14,11 +14,12 @@ self.addEventListener("push", (e) => {
       badge,
       self.registration.showNotification(d.title || "tern", {
         body: d.body || "",
-        // One notification per session: a newer one replaces it and still alerts.
-        tag: d.block ? `b${d.block}` : "tern",
+        // One notification per session: a newer one replaces it and still alerts. A session with
+        // no pane to open (one set aside and closed) brings its own tag and page.
+        tag: d.block ? `b${d.block}` : d.tag || "tern",
         renotify: true,
         icon: "/icon-v2-192.png",
-        data: { url: d.block ? `/#/b/${d.block}` : "/" },
+        data: { url: d.block ? `/#/b/${d.block}` : d.url || "/" },
       }).then(async () => {
         // A push can finish displaying after SSE already cleared its unseen state.
         const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });

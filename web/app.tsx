@@ -1,6 +1,6 @@
 import { render } from "preact";
-import { useEffect, useState } from "preact/hooks";
-import { routeHash } from "./lib";
+import { useEffect, useRef, useState } from "preact/hooks";
+import { routeHash, type Route } from "./lib";
 import { useRoute, useWide } from "./hooks";
 import { Home } from "./home";
 import { Session, SubagentScreen } from "./session";
@@ -33,14 +33,24 @@ function App() {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [wide]);
-  const key = routeHash(route);
+  // The Waiting popup opens over the list (Home draws it). On the desktop the session open before
+  // it stays underneath; a phone shows the list under its sheet.
+  const under = useRef<Route>({ view: "list" });
+  if (route.view !== "waiting") under.current = route;
+  const waitingOpen = route.view === "waiting";
+  // The session the Waiting popup shows in full; null on its list.
+  const waitingCard = route.view === "waiting" ? (route.id ?? null) : null;
+  const shown = waitingOpen ? (wide ? under.current : { view: "list" as const }) : route;
+  const key = routeHash(shown);
   const open =
-    route.view === "list" ? null : route.view === "session" ? <Session key={key} block={route.block} /> : <SubagentScreen key={key} route={route} />;
-  if (!wide) return open ?? <Home push={push} />;
+    shown.view === "list" || shown.view === "waiting" ? null
+    : shown.view === "session" ? <Session key={key} block={shown.block} />
+    : <SubagentScreen key={key} route={shown} />;
+  if (!wide) return open ?? <Home push={push} waitingOpen={waitingOpen} waitingCard={waitingCard} />;
   return (
     <div class={`desk${rail ? " rail" : ""}`}>
       <aside class="desk-side">
-        <Home push={push} wide rail={rail} onRail={toggleRail} selected={route.view === "list" ? null : route.block} />
+        <Home push={push} wide rail={rail} onRail={toggleRail} waitingOpen={waitingOpen} waitingCard={waitingCard} selected={"block" in shown ? shown.block : null} />
       </aside>
       <main class="desk-main">{open ?? <div class="empty desk-empty">Pick a session on the left.</div>}</main>
     </div>

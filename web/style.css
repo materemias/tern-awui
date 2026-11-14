@@ -727,6 +727,131 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .doc h3 { font-size: 16px; }
 .doc h1 + p, .doc h2 + p { margin-top: .4em; }
 
+/* Waiting: the strip under the list's filter (an hourglass on the rail), and its popup of cards.
+   Cards have their own raised surface and an outcome-coloured edge, so they never read as session rows. */
+.wait-strip { display: flex; align-items: center; gap: 8px; margin: 8px 12px 4px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--fg); font-size: 13.5px; }
+.wait-strip svg { width: 16px; height: 16px; flex: none; color: var(--muted); }
+.wait-strip.on-me { border-color: color-mix(in srgb, var(--blocked) 45%, var(--line)); background: color-mix(in srgb, var(--blocked) 8%, var(--panel)); }
+.wait-strip.on-me svg { color: var(--blocked); }
+.wait-strip-name { font-weight: 600; }
+.wait-strip-me { padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--blocked) 20%, transparent); color: var(--blocked); font-weight: 600; font-variant-numeric: tabular-nums; }
+.wait-strip-go { margin-left: auto; color: var(--muted); font-size: 18px; line-height: 1; }
+.wait-strip:active { background: var(--raise); }
+.waiting-btn { position: relative; }
+.waiting-btn .waiting-count { position: absolute; top: -3px; right: -4px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; background: var(--blocked); color: #fff; font-size: 10px; font-weight: 700; line-height: 15px; text-align: center; font-variant-numeric: tabular-nums; }
+/* Phone: a sheet over the list as tall as the screen; desktop: a dialog over the desk. */
+.wait-backdrop { z-index: 15; }
+.sheet.wait-sheet { height: calc(100dvh - 8px - env(safe-area-inset-top)); max-height: none; }
+@media (min-width: 1000px) { .sheet.wait-sheet { max-width: 680px; height: min(88vh, 960px); } }
+@media (prefers-reduced-motion: no-preference) {
+  .wait-sheet { animation: wait-up .22s ease-out; }
+  @media (min-width: 1000px) { .wait-sheet { animation: wait-in .16s ease-out; } }
+}
+@keyframes wait-up { from { transform: translateY(100%); } }
+@keyframes wait-in { from { opacity: 0; transform: scale(.98); } }
+.wait-head { display: flex; align-items: center; gap: 10px; padding: 6px 4px 8px 10px; }
+.wait-head-title { font-size: 18px; font-weight: 650; }
+.wait-head-count { color: var(--muted); font-size: 13px; }
+.wait-head .icon-btn svg { width: 18px; height: 18px; }
+.wait-close { font-size: 24px; }
+.wait-sheet > .sheet-filter { margin: 0 6px 6px; }
+.wait-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 0 8px; }
+.wait-error { margin: 4px 6px 8px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--warn) 10%, transparent); color: var(--warn); font-size: 13px; }
+.t-warn { color: var(--warn); }
+.t-ok { color: var(--working); }
+.t-bad { color: var(--blocked); }
+.t-info { color: var(--gpt); }
+
+/* State icons: a ring with a mark inside, one set for every wait, coloured by what it says. */
+.wglyph { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); }
+.wglyph circle { stroke-width: 1.3; opacity: .7; }
+.wglyph.k-done { color: var(--working); }
+.wglyph.k-attention, .wglyph.k-overdue { color: var(--warn); }
+.wglyph.k-working { color: var(--accent); }
+
+/* The list: plain rows on the sheet, divided by hairlines, under sentence-case group names that stay in
+   view while their rows scroll. A row says who, where it stands in one line, and your note. */
+.wait-group + .wait-group h3 { margin-top: 6px; }
+.wait-group h3 { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; margin: 0; padding: 14px 12px 8px; background: var(--panel); color: var(--fg); font-size: 15px; font-weight: 700; }
+.wait-group ul { margin: 0; padding: 0; list-style: none; }
+.wrow { display: flex; align-items: center; gap: 4px; padding-right: 8px; }
+.wrow + .wrow { border-top: 1px solid var(--line); }
+.wrow-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 11px 6px 11px 12px; color: var(--fg); }
+.wrow-main:active { background: var(--raise); }
+.wrow-top { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.wname { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 7px; overflow: hidden; white-space: nowrap; }
+.wname-project { flex: none; color: var(--accent); font-weight: 600; }
+.wname .nf { width: auto; font-size: 14px; }
+.wname-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.wrow.unseen .wname-title { font-weight: 650; }
+.wrow-time { flex: none; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.wrow-state { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 13.5px; color: var(--muted); }
+.wrow-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tone-warn .wrow-state { color: color-mix(in srgb, var(--warn) 75%, var(--fg)); }
+.tone-done .wrow-state { color: color-mix(in srgb, var(--working) 70%, var(--fg)); }
+.wrow-more { flex: none; padding: 0 6px; border-radius: 999px; background: var(--raise); color: var(--muted); font-size: 11.5px; line-height: 17px; font-variant-numeric: tabular-nums; }
+.wrow-note { padding-left: 22px; color: var(--muted); font-size: 13px; font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wrow-done { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 50%; background: none; color: var(--muted); }
+.wrow-done svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.wrow-done:active, .wrow-done:focus-visible { border-color: var(--working); color: var(--working); }
+@media (hover: hover) { .wrow-main:hover { background: color-mix(in srgb, var(--raise) 60%, transparent); } .wrow-done:hover { border-color: var(--working); color: var(--working); } }
+
+/* One session in full. Its standing is the one big sentence; the rest reads as plain text under small
+   headings, and the actions wait in a bar at the bottom, within thumb reach. */
+.wd-head { display: flex; align-items: center; gap: 6px; padding: 2px 8px 8px 0; border-bottom: 1px solid var(--line); }
+.wd-back { flex: none; font-size: 26px; line-height: 1; }
+.wd-head .wname { flex-wrap: wrap; white-space: normal; row-gap: 0; font-size: 15px; }
+.wd-head .wname-title { overflow: visible; }
+.wd-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 12px 12px; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.wd-state { display: flex; align-items: flex-start; gap: 10px; margin: 0; font-size: 19px; line-height: 1.35; font-weight: 600; }
+.wd-state .wglyph { width: 22px; height: 22px; margin-top: 2px; }
+.tone-warn .wd-state { color: color-mix(in srgb, var(--warn) 80%, var(--fg)); }
+.tone-done .wd-state { color: color-mix(in srgb, var(--working) 75%, var(--fg)); }
+.wd-detail { margin: 6px 0 0 32px; color: var(--muted); }
+.wd-sec { margin-top: 20px; }
+.wd-sec h4 { margin: 0 0 6px; color: var(--muted); font-size: 13px; font-weight: 600; }
+.wd-sec p { margin: 0; }
+.wd-note { display: block; width: 100%; padding: 2px 0 2px 12px; border: 0; border-left: 2px solid var(--line); background: none; color: var(--fg); font-style: italic; text-align: left; }
+.wd-add { padding: 4px 0; border: 0; background: none; color: var(--accent); font-size: 13.5px; }
+.wd-suggest { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 8px 10px; border-radius: 10px; background: var(--raise); font-size: 13.5px; }
+.wd-suggest-text { flex: 1; min-width: 0; }
+.wd-waits, .wd-prs, .wd-history { margin: 0; padding: 0; list-style: none; }
+.wd-waits li { display: flex; align-items: flex-start; gap: 8px; padding: 3px 0; }
+.wd-waits .wglyph { margin-top: 3px; }
+.wd-inline { padding: 0; border: 0; background: none; color: inherit; text-align: left; }
+.wd-prs li { padding: 4px 0; }
+.wd-prs a { color: var(--fg); }
+.wpr-num { color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
+.wpr-facts { display: block; color: var(--muted); font-size: 12.5px; }
+.wpr.muted a, .wpr.muted .wpr-num { color: var(--muted); }
+.wd-history li { display: grid; grid-template-columns: auto 1fr; gap: 10px; padding: 3px 0; }
+.wd-history time { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; padding-top: 1px; white-space: nowrap; }
+.wd-history .fired span { color: color-mix(in srgb, var(--working) 75%, var(--fg)); }
+.wd-recap summary { color: var(--muted); font-size: 13px; font-weight: 600; cursor: pointer; }
+.wd-recap p { margin-top: 6px; color: var(--muted); }
+.wd-onyou .wd-waits li { padding: 4px 0; }
+.wd-onyou .wd-waits strong { font-weight: 600; }
+.wd-report { display: block; margin-top: 4px; padding-left: 10px; border-left: 2px solid var(--line); color: var(--muted); font-size: 13px; white-space: normal; overflow-wrap: anywhere; }
+.wd-onyou .primary { display: block; width: 100%; margin-top: 10px; padding: 11px 16px; text-align: center; }
+.wd-watch summary { color: var(--muted); font-size: 13px; font-weight: 600; cursor: pointer; }
+.wd-watch ul { margin: 6px 0 0; padding: 0; list-style: none; }
+.wd-watch li { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+.wd-watch li > span { flex: 1; min-width: 0; }
+.wd-stop { flex: none; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); font-size: 18px; line-height: 1; }
+.wd-stop:active, .wd-stop:focus-visible { color: var(--warn); background: var(--raise); }
+@media (hover: hover) { .wd-stop:hover { color: var(--warn); background: var(--raise); } }
+.wd-facts { margin: 24px 0 0; color: var(--muted); font-size: 12.5px; }
+.wedit { display: flex; flex-direction: column; gap: 8px; }
+.wedit textarea { width: 100%; margin: 0; resize: vertical; font: inherit; }
+.wedit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.wedit .ghost { padding: 7px 14px; }
+.wd-bar { display: flex; align-items: center; gap: 8px; padding: 10px 8px 0; border-top: 1px solid var(--line); }
+.wd-bar .primary { flex: 1; align-self: auto; padding: 11px 16px; text-align: center; }
+.wd-bar .ghost { padding: 10px 16px; font-size: 14px; border-radius: 10px; color: var(--fg); }
+.wd-bar .ghost:disabled { opacity: .45; }
+.wd-bar .wd-stop-all { color: var(--muted); font-size: 13px; padding: 10px 12px; }
+.wd-bar .wd-stop-all.t-warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+
 /* Session rows say only what is live: under a working row what omp does now, under a blocked one the
    question it asks. Everything else (recap, last prompt, where it runs) waits in the peek, opened by a
    long press or a resting mouse. Rows don't select text, so the press doesn't start a selection. */
