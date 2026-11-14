@@ -1365,6 +1365,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
             onPane("run", b?.state.run ?? null);
             // Always, null included: the gauge comes only as this event, not in the list.
             void contextOf(b).then((context) => (bridges.get(block) ?? null) === b && onPane("context", context));
+            // Always, null included: a reconnecting phone must drop state from an omp that restarted without stretch.ts.
             onPane("stretch", b?.state.stretch ?? null);
             // Always, null included: an approval answered while the phone was away must not linger.
             void approvalView(block).then((view) => (bridges.get(block) ?? null) === b && onPane("approval", view));

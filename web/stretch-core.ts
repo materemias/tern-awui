@@ -370,8 +370,41 @@ type Token =
   | { kind: "link"; text: string; label: string }
   | { kind: "nested"; stretch: Stretch };
 
-/** A markdown link or image: a label, then a target with no space in it. */
-const LINK = /!?\[([^\]\n]+)\]\([^)\s]+\)/g;
+/**
+ * A markdown link or image: a label, then a target with no space in it, which may hold balanced parentheses
+ * (`wiki/A_(b)`) and be followed by a quoted or parenthesized title. A target that is neither still matches as
+ * `NARROW_LINK` does.
+ */
+const LINK =
+  /!?\[([^\]\n]+)\]\((?:(?:[^()\s]|\([^()\s]*\))+(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^()\n]*\)))?|[^)\s]+)\)/g;
+/** The link a match touching inline code is held to, so growth inside code stays as it was before `LINK` widened. */
+const NARROW_LINK = /!?\[([^\]\n]+)\]\([^)\s]+\)/y;
+/** An inline code span: a run of backticks, then text, then a run of the same length. */
+const CODE_SPAN = /(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g;
+
+/** The links in `text`, each matched as `NARROW_LINK` where it touches inline code, as `LINK` elsewhere. */
+function linksIn(text: string): RegExpExecArray[] {
+  const code = [...text.matchAll(CODE_SPAN)].map(span => [span.index, span.index + span[0].length] as const);
+  const links: RegExpExecArray[] = [];
+  const wide = new RegExp(LINK);
+  for (let link = wide.exec(text); link; link = wide.exec(text)) {
+    const { index } = link;
+    const end = index + link[0].length;
+    if (code.some(([from, to]) => index < to && end > from)) {
+      NARROW_LINK.lastIndex = index;
+      const narrow = NARROW_LINK.exec(text);
+      if (!narrow) {
+        wide.lastIndex = index + 1;
+        continue;
+      }
+      link = narrow;
+    }
+    links.push(link);
+    wide.lastIndex = link.index + link[0].length;
+  }
+  return links;
+}
+
 type Atom = string | Stretch;
 type Side = "before" | "between" | "after";
 
@@ -440,7 +473,7 @@ function tokenize(long: Segment[]): Token[] {
     if (typeof part !== "string") return [{ kind: "nested", stretch: part }];
     const tokens: Token[] = [];
     let at = 0;
-    for (const link of part.matchAll(LINK)) {
+    for (const link of linksIn(part)) {
       tokens.push(...plain(part.slice(at, link.index)), { kind: "link", text: link[0], label: link[1] ?? "" });
       at = link.index + link[0].length;
     }
@@ -450,7 +483,13 @@ function tokenize(long: Segment[]): Token[] {
 
 /** The short form's words, bare; a link in it reads as its label, as the reader reads it. */
 function wordsOf(short: string): string[] {
-  return short.replace(LINK, "$1").split(/\s+/).map(bare).filter(word => word !== "");
+  let text = "";
+  let at = 0;
+  for (const link of linksIn(short)) {
+    text += short.slice(at, link.index) + (link[1] ?? "");
+    at = link.index + link[0].length;
+  }
+  return (text + short.slice(at)).split(/\s+/).map(bare).filter(word => word !== "");
 }
 
 /** The long form's words, bare, each with the token carrying it (a nested stretch carries its short form's, a link its label's). */

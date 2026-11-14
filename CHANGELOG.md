@@ -36,7 +36,7 @@
 - The Parked and Closed tabs lead each row with its project, as the Waiting popup does, so a closed session takes two lines instead of three. A parked row says what the pane did last or where it runs; a closed one its recap or last prompt.
 - Tern session chips that don't fit fade at the edge with more, and the picked one scrolls into view.
 - An answered ask card shows the notes added to chosen options in omp 18.18.8 and newer.
-- A markdown link inside a stretch arrives whole as the stretch opens, instead of a word at a time with its markup showing, and a file name the short form holds stays in place as it grows into its path.
+- A markdown link in a stretch opens whole, including URLs with parentheses or a title.
 
 ### Docs
 
