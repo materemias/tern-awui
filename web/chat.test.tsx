@@ -332,6 +332,16 @@ describe("ask cards", () => {
     expect(root.querySelector("label[for]")!.getAttribute("for")).toBe(root.querySelector("select")!.id);
   });
 
+  test("a lone field's question heads the card, said once; a paragraph holding the field never hides", async () => {
+    await show([ask(`<p>Context first.</p>${DB}`)]);
+    expect(root.querySelector(".ask-head")!.textContent).toBe("Which DB?");
+    expect(root.querySelector("legend")!.classList.contains("ask-dup")).toBe(true);
+    expect(root.querySelector(".ask-body p")!.classList.contains("ask-dup")).toBe(false);
+    await show([{ ...ask(`<p><label>Name <input name="name"></label></p>`), id: "a2" }]);
+    expect(root.querySelector(".ask-head")!.textContent).toBe("Name");
+    expect(root.querySelector(".ask-dup")).toBeNull();
+  });
+
   test("controls inside a button and button-like inputs go, as omp skips them; id references get the prefix too", async () => {
     await show([ask(`<button><input name="hidden_in_button"></button><input type="reset"><input type="submit" value="Ship">
       <p id="hint">Days</p><input name="d" aria-describedby="hint">`)]);

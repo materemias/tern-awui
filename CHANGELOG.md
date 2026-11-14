@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features
+
+- A question with one answer field opens with that question, as omp's dialog names it at the top, and its explanation and choices follow. Before, a long explanation came first and the question only after it.
+
 ### Fixes
 
 - Opening a stretch no longer makes a Mermaid diagram above it flicker between its drawing and its source: a diagram drawn once goes straight back in each time the reply re-renders, before the screen paints.

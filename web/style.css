@@ -253,6 +253,8 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .ask-body input:not([type=radio], [type=checkbox]), .ask-body select, .ask-body textarea, .other-input { padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit; min-width: 0; }
 .ask-body :is(input, select, textarea):focus-visible, .other-input:focus-visible { border-color: var(--accent); outline: none; }
 .ask-form:disabled { opacity: .6; }
+.ask-head { font-size: 16px; }
+.ask-body .ask-dup { display: none; }
 .primary { align-self: flex-end; padding: 8px 16px; border-radius: 10px; border: 0; background: var(--accent); color: #0b0d10; font-weight: 600; }
 .primary:disabled { opacity: .45; }
 .working { color: var(--working); font-size: 12px; animation: blink 1.6s ease-in-out infinite; }

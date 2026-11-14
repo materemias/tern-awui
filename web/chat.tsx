@@ -445,6 +445,11 @@ function AskCard({ ask, block, pending }: { ask: Ask; block: string; pending: bo
     const form = formRef.current;
     if (!el || !form) return;
     el.replaceChildren(askFormHtml(ask.html));
+    // The question heads the card (as omp's dialog names it above the form): its own legend or
+    // heading further down would say it twice. Never one holding a control: that would hide the field.
+    if (lone?.question)
+      for (const q of el.querySelectorAll("legend, h1, h2, h3, h4, h5, h6, p"))
+        if (!q.querySelector("input, select, textarea") && (q.textContent ?? "").replace(/\s+/g, " ").trim() === lone.question) q.classList.add("ask-dup");
     for (const f of ask.fields) {
       if (f.kind !== "choice" || f.select) continue;
       const group = groupInputs(form, f.name);
@@ -555,6 +560,7 @@ function AskCard({ ask, block, pending }: { ask: Ask; block: string; pending: bo
       onInput={onInput}
       onClick={onClick}
     >
+      {lone?.question && <div class="ask-q ask-head">{lone.question}</div>}
       <fieldset class="ask-form" disabled={sending || sent}>
         {formBody}
       </fieldset>
