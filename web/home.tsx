@@ -420,7 +420,7 @@ function NewSheet({
         <div class="sheet-head">
           <div class="seg" role="tablist">
             <button type="button" role="tab" aria-selected={tab === "folder"} class={tab === "folder" ? "on" : ""} onClick={() => show("folder")}>
-              New omp in…
+              New
             </button>
             <button type="button" role="tab" aria-selected={tab === "parked"} class={tab === "parked" ? "on" : ""} onClick={() => show("parked")}>
               Parked

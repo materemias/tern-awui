@@ -10,6 +10,7 @@
 - With CodexBar AgentView on the desktop, a **Waiting** strip under the list's header (a pill beside the Tern session chips when there are several) says how many set-aside sessions are on you and how many wait on something else, and opens them in a popup (a full-height sheet on the phone, a dialog on the desktop). The popup lists them by who holds the next step: On me, Machine watching, Waiting on something, When I have time. Each row says in one line where the session stands, such as `4h passed` or `PR#1510 review on head +2`, with its project, title, time and your note; a row on you has a **Done** button of its own. A tap opens the session in full: its standing as one sentence, your note (tap to edit) and omp's suggested one (**Use it**), what else it waits on, the next step, its PRs with review and checks, what happened, and omp's recap. **Open** or **Resume**, **Snooze 1d** and **Done** sit at the bottom. The search button filters by title, note, project and wait. A session that lands on you sends a notification.
 - Session rows are one line unless something is live: a working row says what omp is doing now, a blocked one the question it asks. Press and hold a row, or rest the mouse on it, to see omp's recap or the last prompt, with the project, branch and model.
 - The Waiting popup's group names stand out, each with its colour: red for On me, green for Machine watching, violet for Waiting on something, grey for When I have time.
+- The new-omp sheet's first tab is called **New**.
 
 ### Fixes
 
