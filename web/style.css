@@ -562,7 +562,7 @@ button.turn-work:hover .turn-work-sum, button.turn-work:active .turn-work-sum { 
 @media (min-width: 1000px) {
   .desk { display: grid; grid-template-columns: 360px 1fr; height: 100dvh; }
   .desk-side { border-right: 1px solid var(--line); min-width: 0; overflow: hidden; }
-  .desk-main { --reading-width: 1100px; min-width: 0; overflow: hidden; }
+  .desk-main { --reading-width: 1100px; --chat-width: 720px; min-width: 0; overflow: hidden; }
   .desk-empty { padding-top: 30vh; }
   .desk .session-bar .back { display: none; }
   /* A subagent screen's ‹ leads to its session, which the sidebar doesn't show. */
@@ -571,11 +571,13 @@ button.turn-work:hover .turn-work-sum, button.turn-work:active .turn-work-sum { 
   .desk .row { cursor: pointer; }
   .desk .row:hover { background: var(--raise); }
   .desk .row.selected { background: color-mix(in srgb, var(--accent) 12%, var(--panel)); border-left-color: var(--accent); }
-  /* One reading column for the transcript, the composer and the header text. */
+  /* One reading column for the lists; an open session (its header, notice, chat and composer)
+     keeps a narrower one, a comfortable line length for prose, its title over the text. */
   .desk-main .scroll { padding-inline: max(24px, calc((100% - var(--reading-width)) / 2)); }
-  .desk-main .composer-wrap { padding-inline: max(16px, calc((100% - var(--reading-width) - 24px) / 2)); }
-  .desk-main .session-bar { padding-inline: max(16px, calc((100% - var(--reading-width) - 24px) / 2)); }
-  .desk-main .ext-session { margin-inline: max(12px, calc((100% - var(--reading-width)) / 2)); }
+  .desk-main .scroll:is(:has(> .welcome), :has(> .chat-turn)) { padding-inline: max(24px, calc((100% - var(--chat-width)) / 2)); }
+  .desk-main .composer-wrap { padding-inline: max(16px, calc((100% - var(--chat-width) - 24px) / 2)); }
+  .desk-main .session-bar { padding-inline: max(16px, calc((100% - var(--chat-width) - 24px) / 2)); }
+  .desk-main .ext-session { margin-inline: max(12px, calc((100% - var(--chat-width)) / 2)); }
   /* The sidebar minimized to a rail (Ctrl+\): one icon per session, ringed in its status colour. */
   .desk.rail { grid-template-columns: 56px 1fr; }
   .rail-head .brand-toggle { flex: none; padding: 6px 2px; }

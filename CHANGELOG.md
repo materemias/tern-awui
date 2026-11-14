@@ -22,6 +22,7 @@
 - Each turn in a session's chat now shows its prompt, one line such as `Worked 7m12s · 38 tools · 3 failed` with the model and end time, and the final reply. The tool runs, interim messages, todo lists and notes in between fold behind that line; tap it to see them. The running turn stays open, a question waiting for your answer is never folded away, and a turn of tool runs only keeps its last group in view. This line replaces the time-and-model footer under each turn. Subagent chats work the same way.
 - Prompts look like omp's in the terminal: a flat, full-width band with a hairline above each turn. Prompts over six lines fold with a fade, and a tap shows the rest. While you read a long reply, its prompt's first line stays pinned at the top, ending in … when the prompt goes on; the mouse pointer shows the whole prompt, and a tap scrolls back to it.
 - Tool lines, todo lists, injected rules and cache-miss markers use the regular font in a smaller size, so only code, file names and terminal output stay monospaced.
+- On a desktop browser the chat and the composer keep to a 720 px column, so lines of text stay easy to read. The session's header and its extension notice line up with that column.
 
 ### Fixes
 

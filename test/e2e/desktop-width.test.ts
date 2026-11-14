@@ -51,7 +51,8 @@ describe.skipIf(!CHROMIUM)("session reading width", () => {
       if (width >= 1000) {
         expect(layout.sidebar?.width).toBe(360);
         expect(Math.abs((layout.message.left + layout.message.right) - (layout.main.left + layout.main.right))).toBeLessThan(2);
-        expect(layout.message.width).toBeCloseTo(Math.min(1100, layout.main.width - 48), 0);
+        // The chat keeps a 720 px column (`--chat-width`), a comfortable line length for prose.
+        expect(layout.message.width).toBeCloseTo(Math.min(720, layout.main.width - 48), 0);
         expect(layout.header.left).toBeLessThanOrEqual(layout.message.left);
         expect(layout.header.right).toBeGreaterThanOrEqual(layout.message.right);
         expect(layout.message.left - layout.header.left).toBeLessThanOrEqual(12);
@@ -62,7 +63,7 @@ describe.skipIf(!CHROMIUM)("session reading width", () => {
         expect(layout.notice.right).toBeGreaterThanOrEqual(layout.message.right);
         expect(layout.message.left - layout.notice.left).toBeLessThanOrEqual(12);
         expect(layout.notice.right - layout.message.right).toBeLessThanOrEqual(12);
-        if (width >= 1400) expect(layout.message.width).toBeGreaterThan(780);
+        if (width >= 1400) expect(layout.message.width).toBeCloseTo(720, 0);
       }
     } finally {
       await context.close();
