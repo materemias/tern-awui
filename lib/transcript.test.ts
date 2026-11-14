@@ -47,6 +47,19 @@ describe("assistant markdown image transport", () => {
     for (const src of Object.values(entry.imageSources!)) expect((await cache.get(srcHash(src)))?.bytes).toEqual(new Uint8Array(PNG));
   });
 
+  test("local:// images resolve in the session's local folder, never outside it", async () => {
+    const cache = new TranscriptImages();
+    const local = `${dir}/session/local`;
+    mkdirSync(local, { recursive: true });
+    writeFileSync(`${local}/shot.png`, PNG);
+    writeFileSync(`${dir}/session/outside.png`, PNG);
+    const md = "![a](local://shot.png)\n\n![b](local://../outside.png)\n\n![c](local://missing.png)";
+    const entry = only((await cache.attach(chat(md), local)).entries, "assistant")[0];
+    expect(Object.keys(entry.imageSources!)).toEqual(["local://shot.png"]);
+    // Without the folder (a session whose transcript is unknown) the name stays as written.
+    expect(only((await cache.attach(chat(md))).entries, "assistant")[0].imageSources).toBeUndefined();
+  });
+
   test("only the displayed assistant path authorizes local files, never user text or abandoned branches", async () => {
     const cache = new TranscriptImages();
     const path = `${dir}/abandoned.png`;

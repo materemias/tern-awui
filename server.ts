@@ -929,8 +929,13 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
    * Local images go onto a copy of each entry: a shared parse stays image-free, and every delivery
    * rechecks the image files (one overwritten in place gets its new hash).
    */
-  function withImages(chat: { entries: ChatEntry[] }): Promise<{ entries: ChatEntry[] }> {
-    return transcriptImages.attach({ entries: chat.entries.map((e) => ({ ...e })) });
+  function withImages(chat: { entries: ChatEntry[] }, transcript: string | null): Promise<{ entries: ChatEntry[] }> {
+    return transcriptImages.attach({ entries: chat.entries.map((e) => ({ ...e })) }, transcript ? localDirOf(transcript) : undefined);
+  }
+
+  /** A session's `local://` folder: beside its transcript, named like it without `.jsonl`. Its subagents share it. */
+  function localDirOf(transcript: string): string {
+    return join(transcript.replace(/\.jsonl$/, ""), "local");
   }
 
   /** Each shared parse's keys, serialised once for every stream that sends it. */
@@ -940,19 +945,19 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
    * it by. Only entries that got images are serialised again: their hashes can change between
    * deliveries; every other entry is the parse's own, unchanged.
    */
-  async function chatToSend(parsed: { entries: ChatEntry[] } | null): Promise<{ chat: { entries: ChatEntry[] }; keys: ChatKeys }> {
+  async function chatToSend(parsed: { entries: ChatEntry[] } | null, transcript: string | null): Promise<{ chat: { entries: ChatEntry[] }; keys: ChatKeys }> {
     if (!parsed) return { chat: { entries: [] }, keys: { rest: "{}", entries: [] } };
     let shared = parsedKeys.get(parsed);
     if (!shared) parsedKeys.set(parsed, (shared = chatKeys(parsed)));
     const base = shared;
-    const chat = await withImages(parsed);
+    const chat = await withImages(parsed, transcript);
     const entries = chat.entries.map((e, i) => (e.role === "assistant" && e.imageSources ? JSON.stringify(e) : base.entries[i]));
     return { chat, keys: { rest: JSON.stringify({ ...chat, entries: undefined }), entries } };
   }
 
   async function readChat(sessionId: string, limit: number): Promise<{ entries: ChatEntry[] } | null> {
     const chat = await parseSessionChat(sessionId, limit);
-    return chat && withImages(chat);
+    return chat && withImages(chat, transcriptPath(sessionId));
   }
 
   const subagentFacts = new Map<string, SubagentFacts>();
@@ -1214,7 +1219,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
                 const etag = st ? `${file}:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}` : "none";
                 if (etag !== lastDetail) {
                   // No bridge speaks for a subagent: its file's last entry is its leaf.
-                  const sent = await chatToSend(file ? await sharedRead(`chat:${file}`, etag, () => readChatFile(file, "", 80)) : null);
+                  const sent = await chatToSend(file ? await sharedRead(`chat:${file}`, etag, () => readChatFile(file, "", 80)) : null, transcript);
                   lastDetail = etag;
                   sendChat(sent);
                 }
@@ -1240,7 +1245,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
               if (etag !== lastDetail) {
                 const sessionId = item.agent.sessionId;
                 // Keyed by session: sessions without a transcript yet all have no path.
-                const sent = await chatToSend(await sharedRead(`chat:session:${sessionId}`, etag, () => parseSessionChat(sessionId, 80)));
+                const sent = await chatToSend(await sharedRead(`chat:session:${sessionId}`, etag, () => parseSessionChat(sessionId, 80)), path);
                 lastDetail = etag;
                 sendChat(sent);
               }

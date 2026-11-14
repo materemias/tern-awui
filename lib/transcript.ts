@@ -247,11 +247,11 @@ export class TranscriptImages {
    * The local images `text`'s markdown embeds, as `[href, file, /api/blob/… src]`. Absolute paths
    * always; with `dir`, also relative ones (`docs/shot.png`) resolved against it, as a README's are.
    */
-  private async resolveAll(text: string, dir?: string): Promise<[href: string, file: string, src: string][]> {
+  private async resolveAll(text: string, dir?: string, localDir?: string): Promise<[href: string, file: string, src: string][]> {
     const files = new Map<string, string>();
     marked.walkTokens(marked.lexer(text), (token) => {
       if (token.type !== "image") return;
-      const file = localImagePath(token.href, dir);
+      const file = localImagePath(token.href, dir, localDir);
       if (file) files.set(token.href, file);
     });
     const found: [string, string, string][] = [];
@@ -274,18 +274,23 @@ export class TranscriptImages {
     return !!reference && src === `/api/blob/${reference.hash}?type=${encodeURIComponent(reference.type)}`;
   }
 
-  async attach(chat: { entries: ChatEntry[] }): Promise<{ entries: ChatEntry[] }> {
+  /** `localDir`: the session's `local://` folder, where omp keeps the files a reply names `local://<name>`. */
+  async attach(chat: { entries: ChatEntry[] }, localDir?: string): Promise<{ entries: ChatEntry[] }> {
+    // The file behind each href, for the recheck below: a `local://` href isn't its file's path.
+    const files = new Map<ChatEntry, Map<string, string>>();
     for (const entry of chat.entries) {
       if (entry.role !== "assistant" || !entry.text.includes("!")) continue;
       delete entry.imageSources;
-      // In replies an image's href is its absolute path.
-      const found = await this.resolveAll(entry.text);
-      if (found.length) entry.imageSources = Object.fromEntries(found.map(([href, , src]) => [href, src]));
+      // In replies an image's href is its absolute path, or `local://<name>`.
+      const found = await this.resolveAll(entry.text, undefined, localDir);
+      if (!found.length) continue;
+      entry.imageSources = Object.fromEntries(found.map(([href, , src]) => [href, src]));
+      files.set(entry, new Map(found.map(([href, file]) => [href, file])));
     }
     // A single oversized transcript must not emit hashes already evicted from the authority index.
-    for (const entry of chat.entries) {
+    for (const [entry, byHref] of files) {
       if (entry.role !== "assistant" || !entry.imageSources) continue;
-      for (const path of Object.keys(entry.imageSources)) if (!this.current(path, entry.imageSources[path])) delete entry.imageSources[path];
+      for (const [href, file] of byHref) if (!this.current(file, entry.imageSources[href])) delete entry.imageSources[href];
       if (!Object.keys(entry.imageSources).length) delete entry.imageSources;
     }
     return chat;
@@ -305,7 +310,16 @@ export class TranscriptImages {
  * written. With `dir` (an opened file): an absolute or relative path, percent-decoded, its
  * `?query`/`#fragment` dropped, relative ones against `dir`; never a scheme, `//host` or `#…`.
  */
-function localImagePath(href: string, dir?: string): string | null {
+function localImagePath(href: string, dir?: string, localDir?: string): string | null {
+  if (localDir && href.startsWith("local://")) {
+    try {
+      const file = resolve(localDir, decodeURIComponent(href.slice("local://".length).replace(/[?#].*$/s, "")));
+      // Only files inside the session's folder.
+      return file.startsWith(`${resolve(localDir)}/`) ? file : null;
+    } catch {
+      return null;
+    }
+  }
   if (!dir) return isAbsolute(href) ? href : null;
   if (/^[/\\]{2}|^[#?]/.test(href) || (!isAbsolute(href) && /^[a-z][a-z0-9+.-]*:/i.test(href))) return null;
   try {
