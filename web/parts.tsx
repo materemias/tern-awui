@@ -264,7 +264,7 @@ export function PromptText({ children }: { children: ComponentChildren }) {
 }
 
 /** How omp names a pasted image in the prompt: `[Image #2, 990x943]`. */
-const IMAGE_REF = /\[Image #(\d+)(?:, \d+x\d+)?\]/g;
+export const IMAGE_REF = /\[Image #(\d+)(?:, \d+x\d+)?\]/g;
 
 /** A prompt's text with each `[Image #N, …]` that has an image as a chip opening it; others stay text. */
 export function withImageChips(text: string, images: Img[], show: (i: Img) => void): ComponentChildren[] {

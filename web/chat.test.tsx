@@ -177,6 +177,11 @@ describe("turns", () => {
     expect(root.querySelector(".advisor")).toBeNull();
   });
 
+  test("a final reply omp wrote in several text blocks shows whole", async () => {
+    await show([user("ship it"), group({ name: "edit", intent: "Fixing" }), said("Interim."), group({ name: "bash", intent: "Testing" }), said("Shipped."), said("Notes follow."), ended(60_000)]);
+    expect(replies()).toEqual(["Shipped.", "Notes follow."]);
+  });
+
   test("the last turn stays unfolded while it runs, then folds once it ends", async () => {
     const running = finished.slice(0, 6);
     await show([user("earlier"), said("ok"), ended(1_000), ...running]);

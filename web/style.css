@@ -233,6 +233,8 @@ button.turn-work:hover .turn-work-sum, button.turn-work:active .turn-work-sum { 
 .code-card > pre { margin: 0; padding-top: 22px; }
 .code-card > .block-copy { position: absolute; top: 2px; right: 3px; }
 .md blockquote > .block-copy { float: right; margin: 0 0 2px 8px; }
+/* A reply's images and figures never run past the chat column. */
+.md img, .md svg { max-width: 100%; height: auto; }
 /* Tables as cards: no inner grid, row rules, small caps header, faint zebra; wide ones scroll. */
 .md table { border-collapse: separate; border-spacing: 0; display: block; width: max-content; max-width: 100%; overflow-x: auto; font-size: 13px; line-height: 1.4; margin: .5em 0 .8em; border: 1px solid var(--line); border-radius: 10px; hyphens: manual; }
 .md th, .md td { border: 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent); padding: 7px 10px; min-width: 7ch; vertical-align: top; text-align: left; }
@@ -389,7 +391,6 @@ button.turn-work:hover .turn-work-sum, button.turn-work:active .turn-work-sum { 
 .thumbs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 /* Like Tern: the whole image at its own aspect ratio, capped in height, never upscaled or cropped. */
 .thumb { display: block; width: auto; height: auto; max-width: min(100%, 480px); max-height: 180px; object-fit: contain; border-radius: 8px; border: 1px solid var(--line); background: var(--raise); }
-/* In a prompt the images come first, as Tern draws them, then the text. */
 /* Opaque, in the app's own colour: a see-through backdrop let the chat show through the photo. */
 .lightbox { position: fixed; inset: 0; z-index: 20; background: var(--bg); }
 /* One image per page; touch swipes snap page by page, desktop pages with ‹ › and the arrow keys. */
@@ -571,10 +572,12 @@ button.turn-work:hover .turn-work-sum, button.turn-work:active .turn-work-sum { 
   .desk .row { cursor: pointer; }
   .desk .row:hover { background: var(--raise); }
   .desk .row.selected { background: color-mix(in srgb, var(--accent) 12%, var(--panel)); border-left-color: var(--accent); }
-  /* One reading column for the lists; an open session (its header, notice, chat and composer)
-     keeps a narrower one, a comfortable line length for prose, its title over the text. */
-  .desk-main .scroll { padding-inline: max(24px, calc((100% - var(--reading-width)) / 2)); }
-  .desk-main .scroll:is(:has(> .welcome), :has(> .chat-turn)) { padding-inline: max(24px, calc((100% - var(--chat-width)) / 2)); }
+  /* One reading column for the lists; an open session (its header, notice, chat, file and composer)
+     keeps a narrower one, a comfortable line length for prose, its title over the text. Only a plain
+     file or the raw screen, whose lines don't wrap, keeps the wider column. */
+  .desk-main .scroll { padding-inline: max(24px, calc((100% - var(--chat-width)) / 2)); }
+  .desk-main .scroll:has(> .term) { padding-inline: max(24px, calc((100% - var(--reading-width)) / 2)); }
+  .desk-main .sub-bar ~ .list .row { padding-inline: max(14px, calc((100% - var(--chat-width)) / 2)); }
   .desk-main .composer-wrap { padding-inline: max(16px, calc((100% - var(--chat-width) - 24px) / 2)); }
   .desk-main .session-bar { padding-inline: max(16px, calc((100% - var(--chat-width) - 24px) / 2)); }
   .desk-main .ext-session { margin-inline: max(12px, calc((100% - var(--chat-width)) / 2)); }
@@ -684,7 +687,6 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .icon-btn.push-stopped { color: var(--blocked); }
 
 .icon-btn { position: relative; }
-/* Hide-old toggle: an eye; while hiding, a lit pill with the hidden count beside the eye. */
 /* The list header's icons sized to its 13 px counts: 16 px glyphs in 30 px buttons. */
 .list-bar .icon-btn { width: 30px; height: 30px; }
 .list-bar .icon-btn svg { width: 16px; height: 16px; }

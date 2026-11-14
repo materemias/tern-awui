@@ -16,8 +16,7 @@ function Counts({ added, removed }: { added: number | null; removed: number | nu
   );
 }
 
-/** `block`: the pane the session runs in (kept for opening files once the app can show them). */
-export function ChangedFiles({ files }: { files: ChangedFile[]; block: string }) {
+export function ChangedFiles({ files }: { files: ChangedFile[] }) {
   const [open, setOpen] = useState(files.length <= OPEN_MAX);
   // A total counts only the files that report it; unknown everywhere → omitted.
   const total = (key: "added" | "removed") => (files.some((f) => f[key] !== null) ? files.reduce((n, f) => n + (f[key] ?? 0), 0) : null);

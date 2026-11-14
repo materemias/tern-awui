@@ -65,9 +65,17 @@ export function Session({ block }: { block: string }) {
     const el = scroller.current;
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
   }, [chat, live, queued, screen, view]);
-  // Output arriving while the reader is scrolled up lights the jump button's dot; reaching the end clears it.
+  // Output arriving while the reader is scrolled up lights the jump button's dot; reaching the end
+  // clears it. Only growth counts: a reconnect's same snapshot, the live text clearing or a rewind
+  // bring nothing new.
+  const seen = useRef({ entries: 0, last: 0, live: 0 });
   useEffect(() => {
-    if (!pinned.current) setUnread(true);
+    const last = chat?.[chat.length - 1];
+    const size = { entries: chat?.length ?? 0, last: last ? JSON.stringify(last).length : 0, live: live ? liveText(live).length : 0 };
+    const was = seen.current;
+    seen.current = size;
+    const grew = size.entries > was.entries || (size.entries === was.entries && size.last > was.last) || size.live > was.live;
+    if (grew && !pinned.current) setUnread(true);
   }, [chat, live]);
   useEffect(() => {
     if (atEnd) setUnread(false);
@@ -207,7 +215,7 @@ export function Session({ block }: { block: string }) {
                   </span>
                   <span class="welcome-name">omp</span>
                 </div>
-                <Chat entries={chat} block={block} rewind={can(item?.live, "rewind")} />
+                <Chat entries={chat} block={block} rewind={can(item?.live, "rewind")} working={shownState === "working" || shownState === "blocked" ? true : shownState === "idle" ? false : undefined} />
               </StretchContext.Provider>
               {live && <Markdown class="msg assistant md live" mermaid={false} text={liveText(live)} />}
               {queued.map((q, i) => (
@@ -505,6 +513,8 @@ function SessionMenu({ block, item }: { block: string; item: Item | undefined })
     park && {
       label: park.parked ? "Unpark" : "Park",
       title: park.parked ? "Back into a tab of its own in Tern" : "Put it away in Tern, still running",
+      // Lit while the pane is parked.
+      on: park.parked,
       run: async () => {
         const action = park.parked ? "unpark" : "park";
         const err = await post(`/api/blocks/${block}/${action}`, {});
@@ -524,6 +534,7 @@ function SessionMenu({ block, item }: { block: string; item: Item | undefined })
       label: "Show on desktop",
       title: "Show this pane in Tern on the desktop",
       run: () => void post(`/api/blocks/${block}/focus`, {}),
+      on: false,
       // A monitor with an arrow out of its corner, like an "open elsewhere" link.
       icon: (
         <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -537,7 +548,7 @@ function SessionMenu({ block, item }: { block: string; item: Item | undefined })
     return (
       <>
         {actions.map((a) => (
-          <button key={a.label} type="button" class="icon-btn" aria-label={a.label} title={`${a.label}: ${a.title}`} onClick={() => void a.run()}>
+          <button key={a.label} type="button" class={`icon-btn${a.on ? " on" : ""}`} aria-label={a.label} title={`${a.label}: ${a.title}`} onClick={() => void a.run()}>
             {a.icon}
           </button>
         ))}

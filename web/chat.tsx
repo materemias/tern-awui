@@ -8,7 +8,7 @@ import { post, type AdvisorNote, type Ask, type AskField, type ChatEntry, type I
 import { clock, duration, langOf, parseAdvisorNote, prettyModel, tokensShort } from "./lib";
 import { askFormHtml, FORM_NAME_PREFIX, renderMarkdown } from "./markdown";
 import { highlightFences } from "./highlight";
-import { buzz, CopyButton, PromptText, Thumbs, Todo, UserMsg } from "./parts";
+import { buzz, CopyButton, IMAGE_REF, PromptText, Thumbs, Todo, UserMsg } from "./parts";
 import { ChangedFiles } from "./changed-files";
 import {
   DEEPEN,
@@ -595,7 +595,7 @@ type WorkSummary = { running: boolean; ms: number | null; tools: number; failed:
  */
 function firstLine(text: string): string {
   const lines = text.split("\n").filter((l) => l.trim());
-  const line = (lines[0] ?? "").replace(/^#+\s*/, "").replace(/\[Image #(\d+)(?:, \d+x\d+)?\]/g, "[image $1]").trim();
+  const line = (lines[0] ?? "").replace(/^#+\s*/, "").replace(IMAGE_REF, "[image $1]").trim();
   return lines.length > 1 ? `${line.replace(/[\s…]+$/, "")} …` : line;
 }
 
@@ -714,7 +714,7 @@ export function Chat({
   }, [entries]);
 
   function row(e: ChatEntry, n: number, key: number | string): VNode | null {
-    if (e.role === "turn") return e.files?.length ? <ChangedFiles key={key} files={e.files} block={block} /> : null;
+    if (e.role === "turn") return e.files?.length ? <ChangedFiles key={key} files={e.files} /> : null;
     if (e.role === "assistant") return <Reply key={key} entry={e} />;
     if (e.role === "advisor") return <AdvisorCard key={key} notes={e.notes} />;
     if (e.role === "rule") return <RuleCard key={key} rules={e.rules} />;
@@ -768,14 +768,20 @@ export function Chat({
         const end = starts[t + 1] ?? entries.length;
         const body = entries.slice(start + 1, end);
         // The final reply: the last thing said, else (a turn of tool calls only) the last tool group.
+        const lastTools = body.findLastIndex((b) => b.role === "tools");
         let final = body.findLastIndex((b) => b.role === "assistant");
-        if (final < 0) final = body.findLastIndex((b) => b.role === "tools");
+        if (final < 0) final = lastTools;
+        // Each entry's nearest earlier one that isn't a turn marker.
+        const prev: number[] = [];
+        for (let i = 0, p = -1; i < body.length; i++) {
+          prev.push(p);
+          if (body[i].role !== "turn") p = i;
+        }
         // An advisor note right after a reply (and the turn marker omp ends it with) came once the
         // turn had answered: that reply is the answer and stays in sight, as do the notes after it;
         // the work they caused folds, and the last reply (to the notes) shows too.
-        const before = (i: number) => body.slice(0, i).findLastIndex((b) => b.role !== "turn");
-        const noted = body.findIndex((b, i) => b.role === "advisor" && before(i) >= 0 && body[before(i)].role === "assistant" && before(i) < final);
-        const answer = noted < 0 ? final : before(noted);
+        const noted = body.findIndex((b, i) => b.role === "advisor" && prev[i] >= 0 && body[prev[i]].role === "assistant" && prev[i] < final);
+        const answer = noted < 0 ? final : prev[noted];
         // A turn that answered an advisor note ends twice: the last marker is its end, and a turn
         // whose work went on past its last marker still runs.
         const doneAt = body.findLastIndex((b) => b.role === "turn");
@@ -786,8 +792,10 @@ export function Chat({
         const last = body[body.length - 1];
         const rows = body.map((b, i): TurnRow => {
           const n = start + 1 + i;
-          // An open ask never folds: it waits on the reader.
-          const hidden = i < answer || (i > answer && i < final && b.role !== "advisor");
+          // An open ask never folds: it waits on the reader. Nor does any text after the last tool
+          // group: a reply omp wrote in several text blocks shows whole.
+          const reply = b.role === "assistant" && i > lastTools && i <= final;
+          const hidden = !reply && (i < answer || (i > answer && i < final && b.role !== "advisor"));
           const fold = hidden && b.role !== "recap" && b.role !== "turn" && !(b.role === "ask" && b.answer === null && !readOnly && n > lastTalk);
           // The newest todo list with work left stays in sight in a folded turn: the working row leads to it.
           const stand =

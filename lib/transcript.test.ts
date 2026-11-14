@@ -244,6 +244,7 @@ describe("parseChat turns", () => {
         call("w2", "write", { path: "local://scratch.md", content: "skip" }),
         call("e2", "edit", { input: "[lib/a.ts#EF56]\nPUT 3.=3:\n+z" }),
         call("e3", "edit", { input: "[x.ts#0000]\nPUT 1.=1:\n+q" }),
+        call("e4", "edit", { input: "[local://plan.md#AAAA]\nPUT 1.=1:\n+p\n[lib/c.ts#BBBB]\nPUT 1.=1:\n+c" }),
       ],
       10,
       { stop: "toolUse" },
@@ -260,6 +261,10 @@ describe("parseChat turns", () => {
     t.result("w2", "write", 22, { details: { resolvedPath: "/home/x/.omp/local/scratch.md" } });
     t.result("e2", "edit", 23, { details: { path: "/tmp/proj/lib/a.ts", diff: "-3|a\n+3|z" } });
     t.result("e3", "edit", 24, { isError: true, details: { diff: "", errorKind: "unseen_lines" } });
+    // A call naming a `local://` file beside a project file: only the project file counts.
+    t.result("e4", "edit", 25, {
+      details: { perFileResults: [{ path: "/home/x/.omp/s/local/plan.md", diff: "+1|p" }, { path: "/tmp/proj/lib/c.ts", diff: "-1|a\n+1|c" }] },
+    });
     t.say("Done.", 30);
     const turn = only(parseChat(t.lines(), "", 80).entries, "turn")[0];
     expect(turn.files).toEqual([
@@ -267,6 +272,7 @@ describe("parseChat turns", () => {
       { path: "docs/b.md", added: 1, removed: 0 },
       // A write may overwrite a whole file: its content's length says nothing about the lines changed.
       { path: "notes.txt", added: null, removed: null },
+      { path: "lib/c.ts", added: 1, removed: 1 },
     ]);
   });
 

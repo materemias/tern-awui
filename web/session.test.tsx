@@ -365,6 +365,9 @@ test("Jump to latest shows only away from the end, marks output that arrived mea
   expect(root.querySelectorAll(".jump-prev").length).toBe(1);
   expect(jump()!.getAttribute("aria-label")).toBe("Jump to latest");
   expect(root.querySelector(".jump-dot")).toBeNull();
+  // A reconnect's same snapshot brings nothing new.
+  await emit("chat", { entries: [prompt("u1", 1), prompt("u2", 2)] });
+  expect(root.querySelector(".jump-dot")).toBeNull();
 
   await emit("chat", { entries: [prompt("u1", 1), prompt("u2", 2), { role: "assistant", text: "new below", ts: 3 }] });
   expect(root.querySelector(".jump-dot")).not.toBeNull();
@@ -384,6 +387,13 @@ test("Jump to latest shows only away from the end, marks output that arrived mea
   expect(jump()).toBeNull();
   await scrollTo(1000);
   expect(root.querySelector(".jump-dot")).toBeNull();
+});
+
+test("an idle session's last turn counts as over though omp never ended it", async () => {
+  await open(item({ status: "idle" }));
+  const tools = { role: "tools", calls: [{ name: "read", intent: "Reading" }], images: [], todo: null, ts: 2 };
+  await emit("chat", { entries: [{ role: "user", id: "u1", text: "look", images: [], ts: 1 }, tools, { role: "assistant", text: "Stopped.", ts: 3 }] });
+  expect(root.querySelector(".turn-work-sum")!.textContent).toBe("Worked 0s · 1 tool");
 });
 
 test("an approval omp doesn't take within 10 s says so and unlocks the card", async () => {

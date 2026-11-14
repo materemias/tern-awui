@@ -276,22 +276,19 @@ export class TranscriptImages {
 
   /** `localDir`: the session's `local://` folder, where omp keeps the files a reply names `local://<name>`. */
   async attach(chat: { entries: ChatEntry[] }, localDir?: string): Promise<{ entries: ChatEntry[] }> {
-    // The file behind each href, for the recheck below: a `local://` href isn't its file's path.
-    const files = new Map<ChatEntry, Map<string, string>>();
+    // Each reply's images, kept as `[href, file, src]` for the recheck below: a `local://` href isn't its file's path.
+    const files = new Map<Extract<ChatEntry, { role: "assistant" }>, [string, string, string][]>();
     for (const entry of chat.entries) {
       if (entry.role !== "assistant" || !entry.text.includes("!")) continue;
       delete entry.imageSources;
       // In replies an image's href is its absolute path, or `local://<name>`.
       const found = await this.resolveAll(entry.text, undefined, localDir);
-      if (!found.length) continue;
-      entry.imageSources = Object.fromEntries(found.map(([href, , src]) => [href, src]));
-      files.set(entry, new Map(found.map(([href, file]) => [href, file])));
+      if (found.length) files.set(entry, found);
     }
     // A single oversized transcript must not emit hashes already evicted from the authority index.
-    for (const [entry, byHref] of files) {
-      if (entry.role !== "assistant" || !entry.imageSources) continue;
-      for (const [href, file] of byHref) if (!this.current(file, entry.imageSources[href])) delete entry.imageSources[href];
-      if (!Object.keys(entry.imageSources).length) delete entry.imageSources;
+    for (const [entry, found] of files) {
+      const current = found.filter(([, file, src]) => this.current(file, src));
+      if (current.length) entry.imageSources = Object.fromEntries(current.map(([href, , src]) => [href, src]));
     }
     return chat;
   }
@@ -314,7 +311,8 @@ function localImagePath(href: string, dir?: string, localDir?: string): string |
   if (localDir && href.startsWith("local://")) {
     try {
       const file = resolve(localDir, decodeURIComponent(href.slice("local://".length).replace(/[?#].*$/s, "")));
-      // Only files inside the session's folder.
+      // Only paths inside the session's folder as written: a lexical check, so a symlinked folder
+      // in it can still lead elsewhere (as an absolute path in a reply may anyway).
       return file.startsWith(`${resolve(localDir)}/`) ? file : null;
     } catch {
       return null;
@@ -416,20 +414,30 @@ function changedFiles(name: string, args: Obj, details: Obj, cwd: string): Chang
   // Hashline `[PATH#TAG]` section headers, else `path`: the paths as the agent wrote them.
   const headers = [...str(args.input).matchAll(/^\[(.+?)#[0-9A-Fa-f]{4}\]$/gm)].map((m) => m[1].trim());
   const named = headers.length ? headers : str(args.path) ? [str(args.path)] : [];
-  if (named.some((p) => VIRTUAL_PATH.test(p))) return [];
+  // A virtual path (`local://`, `xd://`) names no project file, and its result comes back resolved
+  // to the file behind it: known by the name the path ends with. The call's other files still count.
+  const virtual = named.filter((p) => VIRTUAL_PATH.test(p)).map((p) => `/${p.replace(VIRTUAL_PATH, "")}`);
   if (name === "write") {
     // A write may replace a file whole: its content's length isn't the lines it changed.
-    const path = shownPath(str(details.resolvedPath) || named[0] || "", named, cwd);
+    const abs = str(details.resolvedPath) || named[0] || "";
+    const path = virtual.some((v) => abs.endsWith(v)) ? null : shownPath(abs, named, cwd);
     return path ? [{ path, added: null, removed: null }] : [];
   }
   const results = details.perFileResults ? arr(details.perFileResults).map(obj) : [details];
-  const files = results.filter((r) => r.isError !== true && str(r.path)).map((r) => ({ path: str(r.path), ...diffCounts(r.diff) }));
+  const files = results
+    .filter((r) => r.isError !== true && str(r.path) && !virtual.some((v) => str(r.path).endsWith(v)))
+    .map((r) => ({ path: str(r.path), ...diffCounts(r.diff) }));
   // Without a path in the result (older omp, ast_edit), the arguments name the files; counts unknown.
   const found = files.length ? files : named.map((path) => ({ path, added: null, removed: null }));
   return found.flatMap((f) => {
     const path = shownPath(f.path, named, cwd);
     return path ? [{ ...f, path }] : [];
   });
+}
+
+/** Two line counts together; unknown when either is. */
+function addCounts(a: number | null, b: number | null): number | null {
+  return a === null || b === null ? null : a + b;
 }
 
 export function parseChat(lines: string[], leaf: string, limit: number): { entries: ChatEntry[] } {
@@ -541,7 +549,7 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
       }
       if (turnStart !== null && msg.stopReason !== "toolUse") {
         const files = [...turnFiles.values()];
-        entries.push(files.length ? { role: "turn", ms: ts - turnStart, model: str(msg.model), ts, files } : { role: "turn", ms: ts - turnStart, model: str(msg.model), ts });
+        entries.push({ role: "turn", ms: ts - turnStart, model: str(msg.model), ts, ...(files.length ? { files } : {}) });
         turnStart = null;
         turnFiles.clear();
       }
@@ -551,11 +559,11 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
       const call = callsById.get(str(msg.toolCallId));
       if (call && msg.isError === true) call.error = true;
       const fileCall = fileCalls.get(str(msg.toolCallId));
+      fileCalls.delete(str(msg.toolCallId));
       if (fileCall && msg.isError !== true && turnStart !== null)
         for (const f of changedFiles(fileCall.name, fileCall.args, obj(msg.details), cwd)) {
           const had = turnFiles.get(f.path);
-          const sum = (a: number | null, b: number | null) => (a === null || b === null ? null : a + b);
-          turnFiles.set(f.path, had ? { path: f.path, added: sum(had.added, f.added), removed: sum(had.removed, f.removed) } : f);
+          turnFiles.set(f.path, had ? { path: f.path, added: addCounts(had.added, f.added), removed: addCounts(had.removed, f.removed) } : f);
         }
       const group = groupByCall.get(str(msg.toolCallId));
       group?.images.push(...imagesOf(msg.content));

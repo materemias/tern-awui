@@ -22,7 +22,7 @@ const texts = (sel: string) => [...root.querySelectorAll(sel)].map((e) => e.text
 
 describe("ChangedFiles", () => {
   test("up to three files show open with totals and per-file counts", () => {
-    render(<ChangedFiles block="b1" files={[{ path: "lib/a.ts", added: 4, removed: 1 }, { path: "README.md", added: 2, removed: null }]} />, root);
+    render(<ChangedFiles files={[{ path: "lib/a.ts", added: 4, removed: 1 }, { path: "README.md", added: 2, removed: null }]} />, root);
     expect(root.querySelector(".cf-head")!.textContent).toBe("2 changed files+6−1›");
     expect(texts(".cf-name")).toEqual(["a.ts", "README.md"]);
     expect(texts(".cf-dir")).toEqual(["lib"]);
@@ -31,7 +31,7 @@ describe("ChangedFiles", () => {
 
   test("more than three files start collapsed and open on a tap", async () => {
     const files = ["a", "b", "c", "d"].map((p) => ({ path: p, added: null, removed: null }));
-    render(<ChangedFiles block="b1" files={files} />, root);
+    render(<ChangedFiles files={files} />, root);
     expect(root.querySelector(".cf-list")).toBeNull();
     expect(root.querySelector(".cf-head .cf-counts")!.textContent).toBe("");
     await act(() => void (root.querySelector(".cf-head") as HTMLElement).click());
