@@ -40,8 +40,8 @@ export type Wait = {
   due: number;
   /** It runs a prompt when it fires. */
   hasPrompt: boolean;
-  /** It repeats: Snooze 1d moves its next run whatever it does now. */
-  repeats: boolean;
+  /** Snooze 1d takes it: it is on the user, as AgentView's `snoozable` says. */
+  snoozable: boolean;
 };
 
 /** A PR the session waits on, created, or only mentioned (muted). */
@@ -159,7 +159,7 @@ function waits(value: unknown): Wait[] {
       mark: str(w.mark).trim(),
       due: time(w.due_at),
       hasPrompt: w.has_prompt === true,
-      repeats: w.repeat != null,
+      snoozable: w.snoozable === true,
     }];
   });
 }
@@ -302,21 +302,13 @@ export function rowId(row: WaitingRow): string {
 }
 
 /**
- * The wait Snooze 1d pushes, as AgentView picks it: one on the user first, then the earliest due.
- * It skips what `snooze` refuses: a chain step not started, one done, "when I have time", a job
- * still running in time, and one whose prompt the agent runs now. None: nothing to snooze.
+ * The wait Snooze 1d pushes, as AgentView picks it: of those on the user that `snooze` takes
+ * (`snoozable`), the earliest due. None: nothing on the user to push.
  */
 export function snoozeTarget(row: WaitingRow): Wait | undefined {
   let first: Wait | undefined;
   for (const w of row.waits) {
-    const refused =
-      w.state === "pending" || w.state === "done" || w.kind === "later" ||
-      (w.kind === "job" && w.state === "waiting" && !w.overdue) ||
-      (w.state === "acting" && w.kind !== "time" && !w.repeats);
-    if (refused) continue;
-    const mine = w.ball === "on_me";
-    const firstMine = first?.ball === "on_me";
-    if (!first || (mine && !firstMine) || (mine === firstMine && (w.due || Infinity) < (first.due || Infinity))) first = w;
+    if (w.snoozable && (!first || (w.due || Infinity) < (first.due || Infinity))) first = w;
   }
   return first;
 }

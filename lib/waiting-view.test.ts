@@ -86,7 +86,7 @@ describe("parseView", () => {
     });
     // A wait on a timer stays on its row, though no group shows timers.
     expect(row.waits).toMatchObject([
-      { id: "w1", kind: "time", state: "review", outcome: "fulfilled", mark: "✅", hasPrompt: true, repeats: false, due: Date.parse("2026-11-12T13:09:05+01:00") },
+      { id: "w1", kind: "time", state: "review", outcome: "fulfilled", mark: "✅", hasPrompt: true, snoozable: false, due: Date.parse("2026-11-12T13:09:05+01:00") },
       { id: "w2", ball: "on_timer", outcome: null, due: 0 },
     ]);
     expect(rows([session("b", { ball: "on_timer" })])).toEqual([]);
@@ -96,28 +96,18 @@ describe("parseView", () => {
 describe("snoozeTarget", () => {
   const row = (...waits: unknown[]) => rows([session("a", { waits })])[0];
 
-  test("one on the user first, else the earliest due", () => {
-    const late = wait("w1", "on_machine", { due_at: "2026-11-20T10:00:00Z" });
-    const soon = wait("w2", "on_machine", { due_at: "2026-11-13T10:00:00Z" });
-    const none = wait("w3", "on_someone");
-    expect(snoozeTarget(row(none, late, soon))?.id).toBe("w2");
-    expect(snoozeTarget(row(late, soon, wait("w4", "on_me")))?.id).toBe("w4");
-    expect(snoozeTarget(row(none))?.id).toBe("w3");
+  test("only what AgentView marks snoozable, the earliest due first", () => {
+    const late = wait("w1", "on_me", { snoozable: true, due_at: "2026-11-20T10:00:00Z" });
+    const soon = wait("w2", "on_me", { snoozable: true, due_at: "2026-11-13T10:00:00Z" });
+    expect(snoozeTarget(row(late, soon))?.id).toBe("w2");
+    expect(snoozeTarget(row(wait("w3", "on_me", { snoozable: true }), late))?.id).toBe("w1");
   });
 
-  test("skips what snooze refuses", () => {
-    const refused = [
-      wait("p", "on_machine", { state: "pending" }),
-      wait("d", "on_machine", { state: "done" }),
-      wait("l", "on_my_time", { kind: "later" }),
-      wait("j", "on_machine", { kind: "job", state: "waiting", overdue: false }),
-      wait("a", "on_me", { kind: "pr", state: "acting" }),
-    ];
-    expect(snoozeTarget(row(...refused))).toBeUndefined();
-    // An overdue job, a time wait running its prompt and a repeat's run can move.
-    expect(snoozeTarget(row(wait("j", "on_me", { kind: "job", state: "waiting", overdue: true })))?.id).toBe("j");
-    expect(snoozeTarget(row(wait("t", "on_me", { kind: "time", state: "acting" })))?.id).toBe("t");
-    expect(snoozeTarget(row(wait("r", "on_me", { kind: "command", state: "acting", repeat: { every_s: 60 } })))?.id).toBe("r");
+  test("a wait still watched or on a timer has no Snooze 1d", () => {
+    const watched = wait("m", "on_machine", { kind: "pr", due_at: "2026-11-13T10:00:00Z" });
+    const timer = wait("t", "on_timer", { kind: "time", due_at: "2026-11-13T09:00:00Z" });
+    expect(snoozeTarget(row(watched, timer))).toBeUndefined();
+    expect(snoozeTarget(row(watched, timer, wait("r", "on_me", { snoozable: true })))?.id).toBe("r");
   });
 });
 

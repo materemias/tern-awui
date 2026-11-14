@@ -465,7 +465,7 @@ describe("a session in full", () => {
 
   test("Snooze 1d pushes the wait AgentView picks; the On you block shows what came, and Seen closes it", async () => {
     const onYou = [{ id: "w2", label: "Review", mark: "⚠️", text: "ran, take a look", report: "Fixed the flaky test" }];
-    await mount(view(session("a", { ball: "on_me", on_you: onYou, stoppable: 2, waits: [wait("w1", "on_machine", { due_at: "2026-11-20T10:00:00Z" }), wait("w2", "on_me")] })), [block7], "a");
+    await mount(view(session("a", { ball: "on_me", on_you: onYou, stoppable: 2, waits: [wait("w1", "on_machine", { due_at: "2026-11-20T10:00:00Z" }), wait("w2", "on_me", { snoozable: true })] })), [block7], "a");
     expect(detail(".wd-onyou")?.textContent).toContain("Review: ran, take a lookFixed the flaky test");
     await click(button("Snooze 1d"));
     await click(button("Seen"));
@@ -508,13 +508,13 @@ describe("a session in full", () => {
 
   test("a refused action says why", async () => {
     net.reply = () => Response.json({ error: "w1 has not started yet" }, { status: 502 });
-    await mount(view(session("a", { ball: "on_me" })), [block7], "a");
+    await mount(view(session("a", { ball: "on_me", waits: [wait("w1", "on_me", { snoozable: true })] })), [block7], "a");
     await click(button("Snooze 1d"));
     expect(alerts).toEqual(["w1 has not started yet"]);
   });
 
   test("a plain pane acts as a pane", async () => {
-    const pane = { pane: 7, label: "bun test", ball: "on_me", line: "job failed", waits: [wait("w9", "on_me", { kind: "job", overdue: true })] };
+    const pane = { pane: 7, label: "bun test", ball: "on_me", line: "job failed", waits: [wait("w9", "on_me", { kind: "job", overdue: true, snoozable: true })] };
     const parsed = parseView({ ok: true, counts: {}, sessions: [], panes: [pane] })!;
     await mount({ available: true, ...parsed }, [item({ block: "7" })], "pane:7");
     expect(root.querySelector('.wd-bar a[href="#/b/7"]')).not.toBeNull();
