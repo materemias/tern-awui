@@ -299,14 +299,16 @@ function ParkedRow({ item, now, onPick, onDrop }: { item: Item; now: number; onP
 
 /**
  * The new-omp sheet. Folder: where a new omp can open (open blocks and past omp sessions, newest
- * first). Parked: panes parked in Tern, which a tap unparks into a tab of their own. Closed: omp
- * sessions no pane runs now, which a tap resumes in a new tab. All filter as you type; Closed also
- * asks the server, which searches every omp session and Claude Code's and Codex's too. The tab
- * last used is remembered on this device.
+ * first). Parked: panes parked in Tern, which a tap unparks into a tab of their own, then those left
+ * from a Tern session that has closed (`stranded`), which Tern can't bring back: a tap opens one
+ * here, × closes it. Closed: omp sessions no pane runs now, which a tap resumes in a new tab. All
+ * filter as you type; Closed also asks the server, which searches every omp session and Claude
+ * Code's and Codex's too. The tab last used is remembered on this device.
  */
 function NewSheet({
   open,
   parked,
+  stranded,
   now,
   onPick,
   onUnpark,
@@ -315,6 +317,7 @@ function NewSheet({
 }: {
   open: Set<string>;
   parked: Item[];
+  stranded: Item[];
   now: number;
   onPick: (dir: string) => void;
   onUnpark: (item: Item) => void;
@@ -400,6 +403,12 @@ function NewSheet({
   const parkedText = (i: Item) => `${i.project} ${i.tag ?? ""} ${i.title} ${i.agent?.lastPrompt ?? ""} ${i.cwd}`;
   const newest = (a: Item, b: Item) => b.since - a.since;
   const shownParked = parked.filter((i) => matchesWords(q, parkedText(i))).sort(newest);
+  const shownStranded = stranded.filter((i) => matchesWords(q, parkedText(i))).sort(newest);
+  async function drop(i: Item) {
+    if (!confirm(`Close “${i.title}”?\n\nIts program ends. Tern can't bring it back into a tab, as its Tern session has closed.`)) return;
+    const err = await post(`/api/blocks/${i.block}/close`, {});
+    if (err) alert(`Close failed: ${err}`);
+  }
   // Until the server answers, the loaded rows (all omp's) filter as you type, tool names as the server reads them.
   const searched = query && found?.q === query ? found : null;
   const local = parseSearch(q);
@@ -454,7 +463,16 @@ function NewSheet({
               );
             })}
           {tab === "parked" && shownParked.map((i) => <ParkedRow key={i.block} item={i} now={now} onPick={onUnpark} />)}
-          {tab === "parked" && parked.length === 0 && <div class="empty">Nothing is parked. Park a pane from its top bar.</div>}
+          {tab === "parked" && shownStranded.length > 0 && (
+            <>
+              <h4 class="sheet-sec">From a closed Tern session</h4>
+              <p class="sheet-sec-note">Tern can't bring these back into a tab. Open one to read it here, or close it.</p>
+              {shownStranded.map((i) => (
+                <ParkedRow key={i.block} item={i} now={now} onPick={() => (location.hash = `#/b/${i.block}`)} onDrop={(x) => void drop(x)} />
+              ))}
+            </>
+          )}
+          {tab === "parked" && parked.length + stranded.length === 0 && <div class="empty">Nothing is parked. Park a pane from its top bar.</div>}
           {tab === "closed" &&
             shownClosed.map((s) => {
               const other = s.agent === "omp" ? null : OTHER_AGENTS[s.agent];
@@ -612,7 +630,8 @@ export function Home({
   const sheet = picker && (
     <NewSheet
       open={new Set(items.map((i) => i.cwd))}
-      parked={items.filter((i) => i.parked)}
+      parked={items.filter((i) => i.parked && !i.stranded)}
+      stranded={items.filter((i) => i.stranded)}
       now={now}
       onClose={() => setPicker(false)}
       onPick={(dir) => {

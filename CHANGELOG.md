@@ -19,6 +19,7 @@
 - Images an agent puts in a reply as `local://<name>` (files in its session's `local://` folder) show in the chat instead of a broken image.
 - The **+ omp** sheet keeps one height on all three tabs, so its top no longer jumps when you switch between New, Parked and Closed.
 - In the Parked and Closed tabs a short project name such as `work` no longer gets cut to `w…`; the title gives way first.
+- The **Parked** tab counts and lists only the panes Tern can bring back, the ones its own parked deck shows. Panes parked in a Tern session that has closed since sit apart under **From a closed Tern session**: a tap opens one in the app, × closes it after asking. Before, they were listed as parked and a tap failed without saying why. Needs the updated Tern plugin: run `tern plugin reload tern-awui`.
 - The Parked and Closed tabs lead each row with its project, as the Waiting popup does, so a closed session takes two lines instead of three. A parked row says what the pane did last or where it runs; a closed one its recap or last prompt.
 - Tern session chips that don't fit fade at the edge with more, and the picked one scrolls into view.
 - An answered ask card shows the notes added to chosen options in omp 18.18.8 and newer.

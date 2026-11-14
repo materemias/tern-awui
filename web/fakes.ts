@@ -174,6 +174,7 @@ export function item(over: Partial<Item> = {}): Item {
     parked: false,
     ternSession: null,
     activity: null,
+    stranded: false,
     ...over,
   };
 }

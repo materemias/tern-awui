@@ -69,6 +69,7 @@ function item(live: Partial<Live> | null, status = "idle"): Item {
     parked: false,
     ternSession: null,
     activity: null,
+    stranded: false,
   };
 }
 

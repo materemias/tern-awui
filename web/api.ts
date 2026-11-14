@@ -75,6 +75,8 @@ export type Item = {
   unseen: "done" | "blocked" | null;
   /** Parked in Tern, its program still running: off the list, in the new-omp sheet's Parked tab. */
   parked: boolean;
+  /** Parked in a Tern session that has closed since: Tern can't bring it back, only close it. */
+  stranded: boolean;
   /** The Tern session whose tab holds it; null while parked. */
   ternSession: string | null;
   /** What it does or asks right now: omp's working intent, or the question it asks while blocked; null otherwise. */

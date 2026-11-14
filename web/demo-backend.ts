@@ -454,7 +454,7 @@ export class DemoServer {
     const project = this.sessions.find((s) => s.item.cwd === cwd)?.item.project ?? cwd.split("/").filter(Boolean).at(-1) ?? "home";
     const now = this.clock.now();
     const s: Session = {
-      item: { block, icon: null, tag: null, title: "New session", cwd, project, branch: "main", agent: null, live: null, status: null, starting: true, since: now, doc: null, unseen: null, parked: false },
+      item: { block, icon: null, tag: null, title: "New session", cwd, project, branch: "main", agent: null, live: null, status: null, starting: true, since: now, doc: null, unseen: null, parked: false, ternSession: null, activity: null, stranded: false },
       chat: [],
       screen: "",
       subagents: [],

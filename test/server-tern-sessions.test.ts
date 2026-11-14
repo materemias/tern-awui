@@ -90,3 +90,37 @@ test("an unpark naming a session asks the plugin for a tab there; an older plugi
     s.signal();
   }
 });
+
+test("a pane in no tab and in no deck of the window is stranded: listed apart, and unpark refuses it", async () => {
+  const left = { id: 9, cwd: `${s.home}/beta`, program: "/bin/zsh", title: "Left behind" };
+  s.tree = { ...s.tree, detached: [away, left] };
+  s.saveTree();
+  writeFileSync(`${s.home}/plugins.json`, JSON.stringify({ plugins: [{ id: "tern-awui", status: "ready", version: "0.3.0" }] }));
+  writeFileSync(`${s.home}/decks`, "6\n");
+  try {
+    s.signal();
+    let state = await s.state();
+    for (let tries = 0; tries < 20 && !item(state, 9)?.stranded; tries++) {
+      await Bun.sleep(100);
+      state = await s.state();
+    }
+    expect([6, 9].map((b) => [item(state, b).parked, item(state, b).stranded])).toEqual([[true, false], [true, true]]);
+    const refused = await s.action(9, "unpark");
+    expect(refused.status).toBe(409);
+    expect(String(obj(await refused.json()).error)).toContain("can't bring it back");
+    // An older plugin can't tell: every pane in no tab counts as parked, as before.
+    writeFileSync(`${s.home}/plugins.json`, JSON.stringify({ plugins: [{ id: "tern-awui", status: "ready", version: "0.2.0" }] }));
+    s.signal();
+    for (let tries = 0; tries < 20 && item(state, 9).stranded; tries++) {
+      await Bun.sleep(100);
+      state = await s.state();
+    }
+    expect(item(state, 9).stranded).toBe(false);
+  } finally {
+    rmSync(`${s.home}/plugins.json`, { force: true });
+    rmSync(`${s.home}/decks`, { force: true });
+    s.tree = { ...s.tree, detached: [away] };
+    s.saveTree();
+    s.signal();
+  }
+});

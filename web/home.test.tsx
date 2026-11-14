@@ -318,6 +318,28 @@ describe("Home", () => {
     expect(location.hash).toBe("");
   });
 
+  test("panes left from a closed Tern session sit apart in the Parked tab: a tap opens one here, × closes it after asking", async () => {
+    confirmed = false;
+    await mount([item({ block: "6", title: "Put away", project: "alpha", parked: true }), item({ block: "9", title: "Left behind", project: "beta", parked: true, stranded: true })]);
+    await click(root.querySelector('[aria-label="New omp in a project"]'));
+    await click([...root.querySelectorAll('[role="tab"]')].find((t) => t.textContent === "Parked"));
+    // The count matches what Tern's own deck shows.
+    expect(root.querySelector(".sheet-head")?.textContent).toContain("1 parked");
+    const rows = [...root.querySelectorAll(".sheet-list .parked-row")];
+    expect(rows.map((r) => r.querySelector(".wname-project")?.textContent)).toEqual(["alpha", "beta"]);
+    expect(root.querySelector(".sheet-sec")?.textContent).toBe("From a closed Tern session");
+    expect(rows[0].querySelector('[aria-label="Close"]')).toBeNull();
+    await click(rows[1].querySelector('[aria-label="Close"]')!);
+    expect(net.to("/api/blocks/9/close")).toEqual([]);
+    expect(prompts.at(-1)).toContain("Left behind");
+    confirmed = true;
+    await click(rows[1].querySelector('[aria-label="Close"]')!);
+    expect(net.to("/api/blocks/9/close")).toEqual([{}]);
+    await click(rows[1].querySelector(".closed-main")!);
+    expect(net.to("/api/blocks/9/unpark")).toEqual([]);
+    expect(location.hash).toBe("#/b/9");
+  });
+
   test("Closed tab says when it can't load and retries; a failed dismissal puts the row back; a resume the server doubts asks first", async () => {
     localStorage.setItem("tern-mobile:new-sheet-tab", "closed");
     let down = true;

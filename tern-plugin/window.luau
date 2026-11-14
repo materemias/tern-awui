@@ -2,8 +2,12 @@
 -- tern-awui's part in Tern: parking and unparking panes, which Tern's command line can't do. The
 -- server writes a request file named `park-<pane>` or `unpark-<pane>`, holding `<verb> <pane>`, into
 -- a `tern-awui-requests` folder and runs `tern open` on it; this route claims that open instead of
--- showing the file. The server then reads `tern ls --json` to see whether the pane moved. A file of
--- that name holding anything else is someone else's: it opens as usual and stays.
+-- showing the file. An unpark may also name a session, `unpark <pane> <session id>`: the pane's new
+-- tab opens there instead of in the session it was parked from. The server then reads `tern ls
+-- --json` to see whether the pane moved. `decks-0`, holding `decks 0`, asks which panes sit parked
+-- in this window's sessions: their ids go one per line into `decks.out` beside it. A pane `tern ls`
+-- lists in no tab and that isn't among them (parked in a session since closed) can't come back.
+-- A file of that name holding anything else is someone else's: it opens as usual and stays.
 
 tern.route.open(function(req: OpenRequest, cx: WindowCx): RouteDecision?
 	if req.origin ~= "cli" then
@@ -11,6 +15,25 @@ tern.route.open(function(req: OpenRequest, cx: WindowCx): RouteDecision?
 	end
 	local verb, id = string.match(req.path, "[/\\]tern%-awui%-requests[/\\](%a+)%-(%d+)$")
 	local pane = tonumber(id)
+	if verb == "decks" and id == "0" then
+		local read, body = pcall(tern.fs.read, req.path, 64)
+		if not read or body ~= "decks 0\n" then
+			return nil
+		end
+		pcall(tern.fs.remove, req.path)
+		local ids = {}
+		for _, p in cx.session:panes() do
+			if p.parked then
+				table.insert(ids, tostring(p.pane))
+			end
+		end
+		local out = string.gsub(req.path, "decks%-0$", "decks.out")
+		local wrote, err = pcall(tern.fs.write, out, table.concat(ids, "\n") .. "\n")
+		if not wrote then
+			tern.log.warn("tern-awui: decks", err)
+		end
+		return { handled = true }
+	end
 	if (verb ~= "park" and verb ~= "unpark") or pane == nil then
 		return nil
 	end

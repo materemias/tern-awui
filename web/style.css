@@ -901,6 +901,8 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .prow-sub { padding-left: calc(8px + 9px); }
 .parked-row.st-working .prow-sub { color: color-mix(in srgb, var(--working) 55%, var(--fg)); }
 .parked-row.st-blocked .prow-sub { color: color-mix(in srgb, var(--blocked) 45%, var(--fg)); }
+.sheet-sec { margin: 18px 10px 2px; color: var(--muted); font-size: 13px; font-weight: 600; }
+.sheet-sec-note { margin: 0 10px 6px; color: var(--muted); font-size: 12.5px; }
 /* A closed session's second line: its recap or last prompt, one line, the project leading the first. */
 .closed-sub, .closed-sub.recap { padding-left: 0; -webkit-line-clamp: 1; }
 /* A long project name gives way before the title does. */

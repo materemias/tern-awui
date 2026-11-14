@@ -13,6 +13,7 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, watch, writeFileSync, type FSWatcher } from "node:fs";
+import { readFile } from "node:fs/promises";
 import type { Server, ServerWebSocket, Subprocess } from "bun";
 import webpush, { type PushSubscription, type RequestOptions } from "web-push";
 import { arr, num, obj, str, type Obj } from "./lib/json";
@@ -555,6 +556,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     unseen: "done" | "blocked" | null;
     /** Parked in Tern: out of every tab, its program still running. The list leaves it out; the new-omp sheet's Parked tab shows it. */
     parked: boolean;
+    /** Parked in a Tern session that has closed since: no window can bring it back, only close it. */
+    stranded: boolean;
     /** The name of the Tern session whose tab holds it; null while parked (Tern lists parked panes apart). */
     ternSession: string | null;
     /** What it does or asks right now: omp's working-row intent while working, the ask's question while blocked. */
@@ -677,8 +680,56 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
       .map((s) => ({ id: String(s.id), name: str(s.name), shown: s.shown === true }));
   }
 
+  /**
+   * The panes parked in this window's sessions, which tern-awui's Tern plugin (0.3 and newer) lists;
+   * null when it can't tell (no plugin, an older one, no answer). `tern ls` lists among `detached`
+   * every pane in no tab, also one parked in a session that has since closed, which no window can
+   * bring back. Asked once per `tern ls`, and only when that lists a pane in no tab.
+   */
+  let decksCache: { tree: Promise<{ out: string; error: string | null }>; value: Promise<Set<string> | null> } | null = null;
+  function ternDecks(tree: Promise<{ out: string; error: string | null }>): Promise<Set<string> | null> {
+    if (decksCache?.tree !== tree) decksCache = { tree, value: tree.then((ls) => (hasDetached(ls.out) ? askDecks() : new Set<string>())) };
+    return decksCache.value;
+  }
+  function hasDetached(out: string): boolean {
+    try {
+      return arr(obj(JSON.parse(out)).detached).length > 0;
+    } catch {
+      return false;
+    }
+  }
+  async function askDecks(): Promise<Set<string> | null> {
+    const plugins = await tern(["plugin", "list", "--json"]);
+    let plugin: Obj | undefined;
+    try {
+      plugin = arr(obj(JSON.parse(plugins.out)).plugins).map(obj).find((p) => p.id === "tern-awui");
+    } catch {
+      return null;
+    }
+    // 0.2 and older don't know `decks`: Tern would open the request as a file.
+    if (!plugin || plugin.status !== "ready" || /^0\.[012]\./.test(str(plugin.version))) return null;
+    const dir = join(CONFIG_DIR, "tern-awui-requests");
+    const file = join(dir, "decks-0");
+    const out = join(dir, "decks.out");
+    try {
+      mkdirSync(dir, { recursive: true });
+      rmSync(out, { force: true });
+      writeFileSync(file, "decks 0\n");
+      // The plugin writes its answer before the open returns.
+      await tern(["open", file]);
+      const text = await readFile(out, "utf8");
+      return new Set(text.split("\n").filter((l) => /^\d+$/.test(l)));
+    } catch {
+      return null;
+    } finally {
+      rmSync(file, { force: true });
+      rmSync(out, { force: true });
+    }
+  }
+
   async function buildState(): Promise<State> {
-    const [ls, agents, settings] = await Promise.all([ternTree(), readAgents(), ompSettings()]);
+    const treeCall = ternTree();
+    const [ls, agents, settings, decks] = await Promise.all([treeCall, readAgents(), ompSettings(), ternDecks(treeCall)]);
     let tree: Obj = {};
     try {
       tree = obj(JSON.parse(ls.out));
@@ -690,6 +741,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     // Parked panes are listed apart from the tabs, as `detached`.
     const detached = arr(tree.detached).map(obj);
     const parked = new Set(detached.map((b) => String(b.id)));
+    // In no tab and in no deck of this window: parked in a Tern session that has closed since.
+    const stranded = new Set(decks ? [...parked].filter((id) => !decks.has(id)) : []);
     const blocks = [...arr(tree.sessions).flatMap((s) => arr(obj(s).tabs).flatMap((t) => arr(obj(t).blocks).map(obj))), ...detached];
     // The Tern session whose tab holds each block; parked ones are in none.
     const sessionOf = new Map<string, string>();
@@ -756,6 +809,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
         doc,
         unseen: unseen.get(id) ?? null,
         parked: parked.has(id),
+        stranded: stranded.has(id),
         ternSession: parked.has(id) ? null : sessionOf.get(id) || null,
       });
       groups.set(project, list);
@@ -1693,6 +1747,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
         case "unpark": {
           // Already where it was asked to go (a second tap, another phone): nothing to do.
           if (item.parked === (action === "park")) return json({ ok: true });
+          if (action === "unpark" && item.stranded)
+            return json({ error: "It was parked in a Tern session that has closed since, so Tern can't bring it back. You can still open it here, or close it." }, 409);
           // A parked file block drops out of `tern ls` altogether: the phone could neither see nor unpark it.
           if (item.doc) return json({ error: "Files and notes can't be parked from here: Tern's list loses them once parked" }, 409);
           // An unpark may name the Tern session whose new tab takes the pane.
