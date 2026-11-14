@@ -5,6 +5,7 @@
 ### Fixes
 
 - An answered ask card shows the notes added to chosen options in omp 18.18.8 and newer.
+- A markdown link inside a stretch arrives whole as the stretch opens, instead of a word at a time with its markup showing, and a file name the short form holds stays in place as it grows into its path.
 
 ### Docs
 
