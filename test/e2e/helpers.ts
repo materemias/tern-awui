@@ -81,6 +81,9 @@ export async function openApp(s: Sandbox, viewport = PHONE, hash = "#/"): Promis
   await context.route("**/*", (route) =>
     new URL(route.request().url()).origin === s.base ? route.continue() : route.abort(),
   );
+  // The first-run guide would cover what each test taps; this device has seen it. Only the app's
+  // pages: about:blank, where some tests go, has no storage and throws.
+  await context.addInitScript(() => location.protocol.startsWith("http") && localStorage.setItem("tern-mobile:guide", "done"));
   const page = await context.newPage();
   const posts: App["posts"] = [];
   const errors: string[] = [];

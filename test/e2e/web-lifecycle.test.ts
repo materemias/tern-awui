@@ -44,6 +44,7 @@ describe.skipIf(!CHROMIUM)("browser connection lifecycle", () => {
     dialogs = [];
     context = await (await launch()).newContext({ viewport: PHONE, serviceWorkers: "block" });
     context.setDefaultTimeout(3500);
+    await context.addInitScript(() => location.protocol.startsWith("http") && localStorage.setItem("tern-mobile:guide", "done"));
     page = await context.newPage();
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("dialog", async (dialog) => { dialogs.push(dialog.message()); await dialog.accept(); });

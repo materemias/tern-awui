@@ -73,6 +73,27 @@ describe.skipIf(!CHROMIUM)("session list", () => {
     await texts(page.locator(".row .title"), ["Build phone UI", "htop", "Terminal", "Note"]);
   });
 
+  test("the guide keeps Tab on its card, and Esc closes it with focus back where it was", async () => {
+    const { page } = app;
+    const link = page.locator(".dock .guide-btn");
+    await link.focus();
+    await page.keyboard.press("Enter");
+    await page.locator(".guide-card").waitFor();
+    const focused = () => page.evaluate(() => document.activeElement?.closest(".guide-card") ? document.activeElement.textContent : `outside: ${document.activeElement?.className}`);
+    expect(await focused()).toBe("Next");
+    // Step 1 has Skip and Next: Tab wraps between them and never reaches the list behind.
+    for (const want of ["Skip", "Next", "Skip"]) {
+      await page.keyboard.press("Tab");
+      expect(await focused()).toBe(want);
+    }
+    await page.keyboard.press("Shift+Tab");
+    expect(await focused()).toBe("Next");
+    await page.keyboard.press("Escape");
+    await page.locator(".guide").waitFor({ state: "detached" });
+    expect(await page.evaluate(() => document.activeElement?.className)).toBe("dock-btn guide-btn");
+    expect(await page.evaluate(() => localStorage.getItem("tern-mobile:guide"))).toBe("done");
+  });
+
   test("a folded project stays folded across reloads, and a filter still finds its rows", async () => {
     const { page } = app;
     await page.locator("h2.group-head", { hasText: "alpha" }).click();

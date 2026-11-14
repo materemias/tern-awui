@@ -855,6 +855,23 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .wd-bar .wd-stop-all { color: var(--muted); font-size: 13px; padding: 10px 12px; }
 .wd-bar .wd-stop-all.t-warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
 
+/* First-run guide: the hole's shadow darkens everything around the control it explains; the overlay
+   takes every tap, so the tour never presses what it points at. */
+.guide { position: fixed; inset: 0; z-index: 40; }
+.guide-dim { position: absolute; inset: 0; background: rgb(0 0 0 / .68); }
+.guide-hole { position: absolute; border-radius: 12px; box-shadow: 0 0 0 1px var(--accent), 0 0 0 200vmax rgb(0 0 0 / .68); }
+.guide-card { position: absolute; background: var(--raise); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px 12px; box-shadow: 0 10px 34px rgb(0 0 0 / .5); }
+.guide-card h3 { margin: 2px 0 6px; font-size: 17px; }
+.guide-card p { margin: 0 0 14px; color: var(--fg); opacity: .88; }
+.guide-step { font-size: 12px; }
+.guide-actions { display: flex; align-items: center; gap: 8px; }
+.guide-actions .primary { align-self: auto; }
+.guide-actions .ghost { padding: 7px 14px; font-size: 14px; border-radius: 10px; }
+.guide-skip { background: none; border: 0; padding: 8px 4px; color: var(--muted); font-size: 14px; }
+@media (prefers-reduced-motion: no-preference) {
+  .guide-hole, .guide-card { transition: top .25s ease, left .25s ease, bottom .25s ease, width .25s ease, height .25s ease; }
+}
+
 /* ---------- Tern session chips (home list, with more than one Tern session) ---------- */
 .tern-sessions { display: flex; gap: 6px; padding: 4px 12px 8px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
 .tern-session { flex: none; position: relative; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line); background: none; color: var(--muted); font: inherit; font-size: 13px; white-space: nowrap; }
