@@ -947,3 +947,18 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .sheet.new-sheet { height: 82dvh; }
 .new-sheet .sheet-list { flex: 1; min-height: 0; }
 @media (min-width: 1000px) { .sheet.new-sheet { height: min(78vh, 720px); } }
+
+/* Changed files: the card at a turn's end (web/changed-files.tsx). */
+.changed-files { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); font-size: 13px; overflow: hidden; }
+.cf-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; background: none; border: 0; color: var(--fg); font: inherit; text-align: left; }
+.cf-head > span:first-child { flex: 1; }
+.cf-counts { display: inline-flex; gap: 6px; font-variant-numeric: tabular-nums; flex: none; }
+.cf-add { color: var(--working); }
+.cf-del { color: var(--blocked); }
+.cf-chevron { color: var(--muted); transition: transform .15s; }
+.cf-chevron.open { transform: rotate(90deg); }
+.cf-list { list-style: none; margin: 0; padding: 0 12px 6px; border-top: 1px solid var(--line); }
+.cf-row { display: flex; align-items: baseline; gap: 8px; padding: 5px 0; min-width: 0; }
+.cf-name { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-dir { flex: 1; min-width: 0; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.cf-row .cf-counts { margin-left: auto; font-size: 12px; }

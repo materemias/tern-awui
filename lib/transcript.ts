@@ -28,7 +28,7 @@ export type ChatEntry =
   | { role: "assistant"; text: string; block?: string; imageSources?: Record<string, string>; ts: number }
   | { role: "tools"; calls: ToolCall[]; images: Img[]; todo: TodoPhase[] | null; ts: number }
   | AskEntry
-  | { role: "turn"; ms: number; model: string; ts: number }
+  | { role: "turn"; ms: number; model: string; ts: number; files?: ChangedFile[] }
   | { role: "advisor"; notes: AdvisorNote[]; ts: number }
   /** omp rules injected mid-turn (TTSR); `text` is the rule body when omp wrote it to the transcript, else "". */
   | { role: "rule"; rules: InjectedRule[]; ts: number }
@@ -377,10 +377,63 @@ export async function readPendingCall(path: string, id: string): Promise<{ id: s
   return pendingCall(await tailLines(path, CHAT_TAIL_BYTES), id);
 }
 
+/** A file a turn's edit/write/ast_edit calls changed; line counts are null when the transcript doesn't tell. */
+export type ChangedFile = { path: string; added: number | null; removed: number | null };
+
+const VIRTUAL_PATH = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+/** Added and removed lines of omp's numbered diff (`+12|…`, `-12|…`); null without one. */
+function diffCounts(diff: unknown): { added: number | null; removed: number | null } {
+  if (typeof diff !== "string" || !diff) return { added: null, removed: null };
+  let added = 0;
+  let removed = 0;
+  for (const line of diff.split("\n")) {
+    if (/^\+\s*\d+\|/.test(line)) added++;
+    else if (/^-\s*\d+\|/.test(line)) removed++;
+  }
+  return { added, removed };
+}
+
+/**
+ * `abs` as the turn shows it: relative to `cwd` when inside it, else the argument path it ends
+ * with (the agent's own relative spelling), else as is. Null for virtual paths (`local://`, `xd://`).
+ */
+function shownPath(abs: string, named: string[], cwd: string): string | null {
+  if (!abs || VIRTUAL_PATH.test(abs)) return null;
+  if (cwd && abs.startsWith(`${cwd}/`)) return abs.slice(cwd.length + 1);
+  const arg = named.map((p) => p.replace(/^\.\//, "")).find((p) => !isAbsolute(p) && (abs === p || abs.endsWith(`/${p}`)));
+  return arg ?? abs;
+}
+
+/** The files one successful edit/write/ast_edit result changed. */
+function changedFiles(name: string, args: Obj, details: Obj, cwd: string): ChangedFile[] {
+  // Hashline `[PATH#TAG]` section headers, else `path`: the paths as the agent wrote them.
+  const headers = [...str(args.input).matchAll(/^\[(.+?)#[0-9A-Fa-f]{4}\]$/gm)].map((m) => m[1].trim());
+  const named = headers.length ? headers : str(args.path) ? [str(args.path)] : [];
+  if (named.some((p) => VIRTUAL_PATH.test(p))) return [];
+  if (name === "write") {
+    // A write may replace a file whole: its content's length isn't the lines it changed.
+    const path = shownPath(str(details.resolvedPath) || named[0] || "", named, cwd);
+    return path ? [{ path, added: null, removed: null }] : [];
+  }
+  const results = details.perFileResults ? arr(details.perFileResults).map(obj) : [details];
+  const files = results.filter((r) => r.isError !== true && str(r.path)).map((r) => ({ path: str(r.path), ...diffCounts(r.diff) }));
+  // Without a path in the result (older omp, ast_edit), the arguments name the files; counts unknown.
+  const found = files.length ? files : named.map((path) => ({ path, added: null, removed: null }));
+  return found.flatMap((f) => {
+    const path = shownPath(f.path, named, cwd);
+    return path ? [{ ...f, path }] : [];
+  });
+}
+
 export function parseChat(lines: string[], leaf: string, limit: number): { entries: ChatEntry[] } {
   const entries: ChatEntry[] = [];
   const callsById = new Map<string, ToolCall>();
   const groupByCall = new Map<string, Extract<ChatEntry, { role: "tools" }>>();
+  const fileCalls = new Map<string, { name: string; args: Obj }>();
+  // Files the running turn changed, by shown path, in first-change order.
+  const turnFiles = new Map<string, ChangedFile>();
+  let cwd = "";
   const asksById = new Map<string, AskEntry>();
   // The file is a tree: a rewind leaves the abandoned path in place and continues from an
   // earlier entry. Only the active path shows, walked back from the leaf: the session's own
@@ -403,6 +456,7 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
   // model switch or a plan-mode toggle, but those still resend the whole prompt.
   let lastUsage: Usage | null = null;
   for (const row of rows) {
+    if (row.type === "session" && str(row.cwd)) cwd = str(row.cwd).replace(/\/+$/, "");
     const advisor = row.type === "custom_message" && row.customType === "advisor";
     const injection = row.type === "ttsr_injection";
     if ((!advisor && !injection && row.type !== "message") || !active.has(str(row.id))) continue;
@@ -437,6 +491,7 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
       const images = imagesOf(msg.content);
       if (text || images.length) entries.push({ role: "user", id: str(row.id), text, images, ts });
       turnStart = ts;
+      turnFiles.clear();
     } else if (msg.role === "assistant") {
       const u = obj(msg.usage);
       const usage = { input: num(u.input), cacheRead: num(u.cacheRead), cacheWrite: num(u.cacheWrite) };
@@ -464,6 +519,7 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
           entries.push({ role: "assistant", text: result, ts });
           continue;
         }
+        if (part.name === "edit" || part.name === "write" || part.name === "ast_edit") fileCalls.set(str(part.id), { name: str(part.name), args });
         const call: ToolCall = { name: str(part.name), intent: callIntent(args) };
         callsById.set(str(part.id), call);
         const last = entries[entries.length - 1];
@@ -473,14 +529,23 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
         groupByCall.set(str(part.id), group);
       }
       if (turnStart !== null && msg.stopReason !== "toolUse") {
-        entries.push({ role: "turn", ms: ts - turnStart, model: str(msg.model), ts });
+        const files = [...turnFiles.values()];
+        entries.push(files.length ? { role: "turn", ms: ts - turnStart, model: str(msg.model), ts, files } : { role: "turn", ms: ts - turnStart, model: str(msg.model), ts });
         turnStart = null;
+        turnFiles.clear();
       }
     } else if (msg.role === "toolResult") {
       const ask = asksById.get(str(msg.toolCallId));
       if (ask) ask.answer = askAnswer(msg) || "answered";
       const call = callsById.get(str(msg.toolCallId));
       if (call && msg.isError === true) call.error = true;
+      const fileCall = fileCalls.get(str(msg.toolCallId));
+      if (fileCall && msg.isError !== true && turnStart !== null)
+        for (const f of changedFiles(fileCall.name, fileCall.args, obj(msg.details), cwd)) {
+          const had = turnFiles.get(f.path);
+          const sum = (a: number | null, b: number | null) => (a === null || b === null ? null : a + b);
+          turnFiles.set(f.path, had ? { path: f.path, added: sum(had.added, f.added), removed: sum(had.removed, f.removed) } : f);
+        }
       const group = groupByCall.get(str(msg.toolCallId));
       group?.images.push(...imagesOf(msg.content));
       // The list as this call left it; a group keeps the newest.

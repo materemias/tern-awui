@@ -221,6 +221,49 @@ describe("parseChat turns", () => {
     expect(only(entries, "assistant").map((e) => e.text)).toEqual(["real"]);
   });
 
+  test("a turn's edit and write calls become its changed files with line counts", () => {
+    const t = new Transcript("sess", "/tmp/proj");
+    t.user("change things", 0);
+    t.assistant(
+      [
+        call("e1", "edit", { input: "[lib/a.ts#AB12]\nPUT 1.=1:\n+x\n[docs/b.md#CD34]\nPUT >2:\n+y" }),
+        call("w1", "write", { path: "notes.txt", content: "one\ntwo\n" }),
+        call("w2", "write", { path: "local://scratch.md", content: "skip" }),
+        call("e2", "edit", { input: "[lib/a.ts#EF56]\nPUT 3.=3:\n+z" }),
+        call("e3", "edit", { input: "[x.ts#0000]\nPUT 1.=1:\n+q" }),
+      ],
+      10,
+      { stop: "toolUse" },
+    );
+    t.result("e1", "edit", 20, {
+      details: {
+        perFileResults: [
+          { path: "/tmp/proj/lib/a.ts", diff: " 1|ctx\n-2|old\n+2|new\n+3|more" },
+          { path: "/tmp/proj/docs/b.md", diff: "+3|y" },
+        ],
+      },
+    });
+    t.result("w1", "write", 21, { details: { resolvedPath: "/tmp/proj/notes.txt" } });
+    t.result("w2", "write", 22, { details: { resolvedPath: "/home/x/.omp/local/scratch.md" } });
+    t.result("e2", "edit", 23, { details: { path: "/tmp/proj/lib/a.ts", diff: "-3|a\n+3|z" } });
+    t.result("e3", "edit", 24, { isError: true, details: { diff: "", errorKind: "unseen_lines" } });
+    t.say("Done.", 30);
+    const turn = only(parseChat(t.lines(), "", 80).entries, "turn")[0];
+    expect(turn.files).toEqual([
+      { path: "lib/a.ts", added: 3, removed: 2 },
+      { path: "docs/b.md", added: 1, removed: 0 },
+      // A write may overwrite a whole file: its content's length says nothing about the lines changed.
+      { path: "notes.txt", added: null, removed: null },
+    ]);
+  });
+
+  test("a turn without file changes carries no files", () => {
+    const t = new Transcript();
+    t.user("q", 0);
+    t.say("a", 10);
+    expect(only(parseChat(t.lines(), "", 80).entries, "turn")[0]).not.toHaveProperty("files");
+  });
+
   test("limit keeps the newest entries", () => {
     const t = new Transcript();
     for (let i = 0; i < 5; i++) {

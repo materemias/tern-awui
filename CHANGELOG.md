@@ -15,6 +15,7 @@
 - The Waiting popup's group names stand out, each with its colour: red for On me, green for Machine watching, violet for Waiting on something, grey for When I have time.
 - The new-omp sheet's first tab is called **New**.
 - With more than one Tern session in the window, chips under the list's header pick which one the list shows, for example `All · Default · pi-durable`. A picked session shows its own tabs plus parked panes that wait on you, and the header still counts everything. The pick is kept on each device, and **+ omp**, a resumed session and a pane unparked from the **Parked** tab open in a new tab of that session. Unparking into a session needs the updated Tern plugin: run `tern plugin reload tern-awui`.
+- A turn that edited files ends with a card listing them, such as `3 changed files +12 −4`, with each file's folder and line counts. It starts folded when there are more than three files.
 
 ### Fixes
 

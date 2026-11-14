@@ -2,6 +2,8 @@ export type { BtwHistoryRecord, BtwHistoryTurn } from "../lib/btw-history";
 export type { ApprovalView, ContextUse, Run, StretchState, Voice } from "../lib/bridge-state";
 export type { Closed } from "../lib/closed";
 export type { Waiting, WaitingRow } from "../lib/waiting-view";
+import type { ChangedFile } from "../lib/transcript";
+export type { ChangedFile };
 import { launchTarget } from "./lib";
 
 // ---------- API shapes (mirror server.ts) ----------
@@ -122,7 +124,7 @@ export type ChatEntry =
   | { role: "assistant"; text: string; block?: string; imageSources?: Record<string, string>; ts: number }
   | { role: "tools"; calls: ToolCall[]; images: Img[]; todo: TodoPhase[] | null; ts: number }
   | Ask
-  | { role: "turn"; ms: number; model: string; ts: number }
+  | { role: "turn"; ms: number; model: string; ts: number; files?: ChangedFile[] }
   | { role: "advisor"; notes: AdvisorNote[]; ts: number }
   /** omp rules injected mid-turn; `text` is the rule body, "" when the transcript has only the name. */
   | { role: "rule"; rules: { name: string; text: string }[]; ts: number }
