@@ -42,11 +42,16 @@ describe.skipIf(!CHROMIUM)("phone session", () => {
   });
   afterAll(closeBrowser);
 
-  test("opening a session renders markdown, expandable tools, the latest todo and an answerable ask", async () => {
+  test("opening a session renders markdown, work folded behind the turn row, the latest todo and an answerable ask", async () => {
     const { page } = app;
     await texts(page.locator(".assistant h2"), ["Build report"]);
     expect(await page.locator(".assistant strong").textContent()).toBe("compiler");
     await texts(page.locator(".assistant li"), ["Keep the API", "Add tests"]);
+    // The finished turn folds its tool runs behind one row; its unfinished todo list stays in sight.
+    expect(await page.locator("button.turn-work .turn-work-sum").textContent()).toMatch(/^Worked .*· 2 tools$/);
+    expect(await page.locator(".tools").count()).toBe(0);
+    expect(await page.locator(".todo[data-newest]").count()).toBe(1);
+    await page.locator("button.turn-work").click();
     expect(await page.locator(".tools-head").textContent()).toContain("2 tools· 1 failedTracking tasks");
     expect(await page.locator(".tools > ul").count()).toBe(0);
     await page.locator(".tools-head").click();

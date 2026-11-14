@@ -164,7 +164,7 @@ export function SubagentChat(props: Screen & { name: string; entries: ChatEntry[
         {!entries ? (
           <div class="empty">Loading…</div>
         ) : entries.length ? (
-          <Chat entries={entries} block={block} rewind={false} readOnly />
+          <Chat entries={entries} block={block} rewind={false} readOnly working={!!job} />
         ) : (
           <div class="empty">{item && !item.agent ? "Subagents show while the session's omp is connected." : job ? "Starting…" : "No transcript for this subagent."}</div>
         )}

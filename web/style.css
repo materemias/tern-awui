@@ -113,7 +113,7 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .raw-note { align-self: center; padding: 4px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--raise); color: var(--muted); font-size: 12px; }
 .keys button.on { color: var(--fg); border-color: var(--accent); }
 
-/* Rhythm: tight inside a turn, air before each prompt (below), a closing footer per turn. */
+/* Rhythm: tight inside a turn, a hairline and air before each prompt (.chat-turn below). */
 .scroll { flex: 1; overflow-y: auto; padding: 14px 14px 18px; display: flex; flex-direction: column; gap: 8px; overscroll-behavior: contain; line-height: 1.5; }
 /* The chat's ↑/↓ prompt jumps float over its bottom right corner. */
 .scroll-wrap { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
@@ -154,6 +154,10 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 @keyframes swipe-in-prev { from { transform: translateX(-30%); opacity: .5; } }
 .empty { color: var(--muted); text-align: center; padding: 40px 0; }
 .msg { max-width: 100%; overflow-wrap: anywhere; }
+/* Chat turns (chat.tsx Turn): a prompt, one work row for everything up to the final reply, then the
+   reply. A hairline above each turn but the first; the meta lines are body font, small and muted. */
+.chat-turn { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding-top: 16px; border-top: 1px solid var(--line); }
+.chat-turn:first-child, .welcome + .chat-turn { margin-top: 0; padding-top: 0; border-top: 0; }
 /* omp's prompt band: full width, flat, led by an accent ›. */
 .msg.user { display: flex; gap: 8px; padding: 8px 12px 8px 10px; background: color-mix(in srgb, var(--accent) 8%, transparent); white-space: pre-wrap; }
 .user-mark { color: var(--accent); font-weight: 700; flex: none; }
@@ -161,6 +165,20 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 /* Long prompts fold to six lines and fade out; the first tap shows the rest (PromptText in parts.tsx). */
 .user-text.clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden; }
 .user-text.fade { cursor: pointer; -webkit-mask-image: linear-gradient(#000 calc(100% - 2.8em), transparent); mask-image: linear-gradient(#000 calc(100% - 2.8em), transparent); }
+/* The prompt scrolled away above while its turn is on screen: one line pinned at the top, no height
+   of its own (the negative margin takes back the turn's gap); a tap goes back to the prompt. It sticks
+   at the scroller's very top edge, over its 14px top padding, on a solid --bg under the band's tint. */
+.turn-pin { position: sticky; top: -14px; z-index: 4; height: 0; margin-bottom: -8px; }
+.turn-pin-bar { position: absolute; top: 0; left: 0; right: 0; display: flex; gap: 8px; align-items: baseline; padding: 6px 12px 6px 10px; border: 0; border-bottom: 1px solid var(--line); background: linear-gradient(color-mix(in srgb, var(--accent) 8%, transparent), color-mix(in srgb, var(--accent) 8%, transparent)) var(--bg); box-shadow: 0 6px 12px -6px rgb(0 0 0 / .5); color: var(--fg); font-size: 14px; text-align: left; white-space: nowrap; }
+.turn-pin-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The work row: "Worked 7m12s · 38 tools · 3 failed ›", the model and end time muted at its right. */
+.turn-work { display: flex; gap: 6px; align-items: baseline; min-width: 0; margin: -2px 0; padding: 2px 0; border: 0; background: none; color: var(--muted); font-size: 12.5px; text-align: left; white-space: nowrap; }
+.turn-work-sum { flex: none; }
+.turn-work.running .turn-work-sum { color: var(--working); }
+.turn-work .chev { flex: none; display: inline-block; transition: transform .15s; }
+.turn-work[aria-expanded="true"] .chev { transform: rotate(90deg); }
+button.turn-work:hover .turn-work-sum, button.turn-work:active .turn-work-sum { color: var(--fg); }
+.turn-work-tail { min-width: 0; margin-left: auto; padding-left: 12px; overflow: hidden; text-overflow: ellipsis; opacity: .7; font-variant-numeric: tabular-nums; }
 /* omp's per-prompt actions, over the prompt's right end: on hover, or after a tap on touch screens. */
 .msg.user { position: relative; }
 .user-acts, .reply-acts { position: absolute; display: none; gap: 2px; align-items: center; padding: 2px 4px 2px 8px; border-radius: 7px; background: var(--raise); border: 1px solid var(--line); font: 12px var(--mono); white-space: nowrap; }
@@ -174,7 +192,6 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .reply-acts { bottom: -6px; right: 0; padding-left: 4px; }
 .reply.acts-open .reply-acts { display: flex; }
 @media (hover: hover) { .reply:hover .reply-acts { display: flex; } }
-.turn { font: 11px var(--mono); color: var(--muted); opacity: .55; text-align: right; padding-bottom: 10px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
 /* omp's idle recap, as the terminal prints it: ※ and italic, under the turn it sums up. */
 .chat-recap { display: flex; gap: 8px; align-items: baseline; margin: -2px 0 12px; color: var(--muted); font-style: italic; font-size: 14px; }
 .chat-recap-mark { flex: none; font-style: normal; color: var(--accent); opacity: .8; }

@@ -75,16 +75,114 @@ const user = (text: string): ChatEntry => ({ role: "user", id: `u-${text}`, text
 const said = (text: string): ChatEntry => ({ role: "assistant", text, ts: TS });
 
 describe("transcript lines", () => {
-  test("prompts, answers and the turn footer with its 24-hour time", async () => {
+  test("prompts and answers; a quick turn's row says how long it took, with the model and its 24-hour end time", async () => {
     await show([
       user("fix it"),
       said("**Done.**"),
       { role: "turn", ms: 65_000, model: "anthropic/claude-opus-5-5", ts: new Date(2026, 0, 1, 21, 7).getTime() },
-      { role: "turn", ms: 4_000, model: "", ts: TS },
     ]);
     expect(texts(".user-text")).toEqual(["fix it"]);
     expect(root.querySelector(".msg.assistant strong")!.textContent).toBe("Done.");
-    expect(texts(".turn")).toEqual(["1m05s · Opus 5.5 · 21:07", "4s · 14:03"]);
+    // Nothing to unfold: a plain line, not a button.
+    expect(root.querySelector("div.turn-work")!.textContent).toBe("Worked 1m05sOpus 5.5 · 21:07");
+    expect(root.querySelector("button.turn-work")).toBeNull();
+    expect(root.querySelector(".turn")).toBeNull();
+  });
+});
+
+describe("turns", () => {
+  const group = (...calls: { name: string; intent: string; error?: boolean }[]): ChatEntry => ({ role: "tools", calls, images: [], todo: null, ts: TS });
+  const ended = (ms: number): Extract<ChatEntry, { role: "turn" }> => ({ role: "turn", ms, model: "anthropic/claude-opus-5-5", ts: TS + ms });
+  const finished: ChatEntry[] = [
+    user("ship it"),
+    { role: "cacheMiss", tokens: 40_000, ts: TS },
+    group({ name: "read", intent: "Reading" }, { name: "bash", intent: "Testing", error: true }),
+    said("Tests fail, fixing."),
+    { role: "rule", rules: [{ name: "no-cast", text: "" }], ts: TS },
+    group({ name: "edit", intent: "Fixing" }),
+    said("Shipped."),
+    ended(432_000),
+  ];
+  const row = () => root.querySelector<HTMLElement>(".turn-work")!;
+  const replies = () => texts(".msg.assistant").map((t) => t?.trim());
+
+  test("a finished turn shows its prompt, one folded work row and the final reply; a tap unfolds the work in place", async () => {
+    await show(finished);
+    expect(root.querySelector(".turn-work-sum")!.textContent).toBe("Worked 7m12s · 3 tools");
+    expect(row().querySelector(".err")!.textContent).toBe("· 1 failed");
+    expect(row().getAttribute("aria-expanded")).toBe("false");
+    expect(replies()).toEqual(["Shipped."]);
+    expect(root.querySelector(".tools, .rule, .cache-miss")).toBeNull();
+    await click(row());
+    expect(replies()).toEqual(["Tests fail, fixing.", "Shipped."]);
+    expect(root.querySelectorAll(".tools")).toHaveLength(2);
+    expect([...root.querySelector(".chat-turn")!.children].map((c) => c.className.split(" ")[0])).toEqual([
+      "turn-pin",
+      "msg",
+      "turn-work",
+      "cache-miss",
+      "tools",
+      "reply",
+      "rule",
+      "tools",
+      "reply",
+    ]);
+    // The unfolded state outlives a live update of the same turn.
+    await show([...finished, { role: "recap", text: "Shipped the fix.", ts: TS }]);
+    expect(replies()).toEqual(["Tests fail, fixing.", "Shipped."]);
+    await click(row());
+    expect(replies()).toEqual(["Shipped."]);
+    expect(root.querySelector(".chat-recap")).not.toBeNull();
+  });
+
+  test("the last turn stays unfolded while it runs, then folds once it ends", async () => {
+    const running = finished.slice(0, 6);
+    await show([user("earlier"), said("ok"), ended(1_000), ...running]);
+    const [, last] = [...root.querySelectorAll<HTMLElement>(".turn-work")];
+    expect(last!.classList.contains("running")).toBe(true);
+    expect(last!.querySelector(".turn-work-sum")!.textContent).toBe("Working · 3 tools");
+    expect(last!.getAttribute("aria-expanded")).toBe("true");
+    expect(replies()).toEqual(["ok", "Tests fail, fixing."]);
+    await show([user("earlier"), said("ok"), ended(1_000), ...finished]);
+    expect(replies()).toEqual(["ok", "Shipped."]);
+  });
+
+  test("a subagent that finished folds its last turn though it never ends one", async () => {
+    const entries = finished.slice(0, 7);
+    await act(() => render(<Chat entries={entries} block="5" rewind={false} readOnly working={false} />, root));
+    expect(root.querySelector(".turn-work-sum")!.textContent).toBe("Worked · 3 tools");
+    expect(replies()).toEqual(["Shipped."]);
+  });
+
+  test("a turn of tool calls only keeps its last group in sight", async () => {
+    await show([user("look"), group({ name: "read", intent: "First" }), said("hmm"), user("again"), group({ name: "read", intent: "One" }), group({ name: "grep", intent: "Two" }), ended(2_000)]);
+    expect(texts(".tools-last")).toEqual(["Two"]);
+  });
+
+  test("an open ask is never folded away", async () => {
+    const fields = parseAskForm(`<label><input type="radio" name="db" value="pg"> Postgres</label>`);
+    const ask: ChatEntry = { role: "ask", id: "a1", html: "", fields, question: "", answer: null, ts: TS };
+    await act(() => render(<Chat entries={[user("pick"), group({ name: "read", intent: "Reading" }), ask, said("x")]} block="5" rewind working={false} />, root));
+    // Said after the ask: it's closed, and folds with the work before the reply.
+    expect(root.querySelector(".ask")).toBeNull();
+    await act(() => render(<Chat entries={[user("pick"), group({ name: "read", intent: "Reading" }), ask, group({ name: "bash", intent: "Waiting" })]} block="5" rewind working={false} />, root));
+    expect(root.querySelector("form.ask")).not.toBeNull();
+    expect(texts(".tools-last")).toEqual(["Waiting"]);
+  });
+
+  test("a folded turn keeps the newest unfinished todo list in sight; a finished one folds away", async () => {
+    const todo = (status: string) => [{ name: "Work", tasks: [{ content: "Step", status }] }];
+    await show([user("go"), { role: "tools", calls: [{ name: "todo", intent: "" }], images: [], todo: todo("in_progress"), ts: TS }, said("paused"), ended(1_000)]);
+    expect(root.querySelector(".tools")).toBeNull();
+    expect(root.querySelector(".todo[data-newest] .todo-task")!.textContent).toBe("▸Step");
+    await show([user("go"), { role: "tools", calls: [{ name: "todo", intent: "" }], images: [], todo: todo("completed"), ts: TS }, said("done"), ended(1_000)]);
+    expect(root.querySelector(".todo")).toBeNull();
+  });
+
+  test("a turn's changed files follow its reply", async () => {
+    await show([user("edit"), said("Edited."), { ...ended(1_000), files: [{ path: "web/a.ts", added: 2, removed: 1 }] }]);
+    const kids = [...root.querySelector(".chat-turn")!.children].map((c) => c.className.split(" ")[0]);
+    expect(kids.slice(-2)).toEqual(["reply", "changed-files"]);
   });
 
   test("a long prompt folds to six lines; the first tap shows it all without opening its actions", async () => {
@@ -208,6 +306,25 @@ describe("tool groups", () => {
     expect(root.querySelector<HTMLButtonElement>("[aria-label='Next image']")!.disabled).toBe(true);
     await act(() => { dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft" })); });
     expect(root.querySelector(".lightbox-count")!.textContent).toBe("2 / 3");
+  });
+
+  test("a prompt's [Image #N] is a chip opening image N, its images follow the text numbered, and a folded turn previews its screenshots", async () => {
+    await show([
+      { role: "user", id: "u1", text: "see [Image #2, 990x943] and [Image #5, 10x10]", images: [{ src: "/img/1.png" }, { src: "/img/2.png" }], ts: TS },
+      tools({ images: [{ src: "/img/a.png" }, { src: "/img/b.png" }] }),
+      said("done"),
+      { role: "turn", ms: 1000, model: "m", ts: TS + 1 },
+    ]);
+    const text = root.querySelector(".msg.user .user-text")!;
+    // No image 5: its name stays as written.
+    expect(text.textContent).toBe("see 2 and [Image #5, 10x10]");
+    expect([...root.querySelectorAll(".msg.user .thumb-tile b")].map((b) => b.textContent)).toEqual(["1", "2"]);
+    await click(root.querySelector(".img-chip"));
+    expect(root.querySelector(".lightbox-count")!.textContent).toBe("2 / 4");
+    expect(root.querySelector(".msg.user")!.classList.contains("acts-open")).toBe(false);
+    await click(root.querySelector(".lightbox"));
+    expect(root.querySelector(".turn-shots")!.textContent).toBe("+1");
+    expect(root.querySelector(".turn-shots img")!.getAttribute("src")).toBe("/img/a.png");
   });
 
   test("a screenshot arriving while the lightbox is open is one arrow key away", async () => {

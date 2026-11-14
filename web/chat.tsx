@@ -1,6 +1,6 @@
 // The chat renderer, shared by sessions and their subagents: markdown (charts, mermaid), advisor
 // notes, tool lines, ask cards and prompts.
-import { createContext, type ComponentChildren } from "preact";
+import { createContext, type ComponentChildren, type VNode } from "preact";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Mermaid } from "mermaid";
 import { drawCharts } from "./charts";
@@ -8,7 +8,8 @@ import { post, type AdvisorNote, type Ask, type AskField, type ChatEntry, type I
 import { clock, duration, langOf, parseAdvisorNote, prettyModel, tokensShort } from "./lib";
 import { askFormHtml, FORM_NAME_PREFIX, renderMarkdown } from "./markdown";
 import { highlightFences } from "./highlight";
-import { buzz, CopyButton, Thumbs, Todo, UserMsg } from "./parts";
+import { buzz, CopyButton, PromptText, Thumbs, Todo, UserMsg } from "./parts";
+import { ChangedFiles } from "./changed-files";
 import {
   DEEPEN,
   isLinkable,
@@ -579,11 +580,125 @@ function AskCard({ ask, block, pending }: { ask: Ask; block: string; pending: bo
   );
 }
 
+/** The prompt a turn starts with: the session's, with actions, or a subagent's brief as Markdown. */
+type Prompt = Extract<ChatEntry, { role: "user" }>;
+
+/** One row of a turn after its prompt: `fold` rows hide while the turn's work is folded, `stand` shows in a folded one's place. */
+type TurnRow = { node: VNode | null; fold: boolean; stand?: VNode };
+
+/** What a turn's work row says: the running state, or how long it took, its tool calls, and the screenshots they took. */
+type WorkSummary = { running: boolean; ms: number | null; tools: number; failed: number; model: string; end: number | null; shots: Img[] };
+
+/**
+ * The first line of a prompt, without Markdown's heading marks, for the pinned band; ends in "…"
+ * when more lines follow, as CSS adds one only when the line itself overflows.
+ */
+function firstLine(text: string): string {
+  const lines = text.split("\n").filter((l) => l.trim());
+  const line = (lines[0] ?? "").replace(/^#+\s*/, "").replace(/\[Image #(\d+)(?:, \d+x\d+)?\]/g, "[image $1]").trim();
+  return lines.length > 1 ? `${line.replace(/[\s…]+$/, "")} …` : line;
+}
+
+function workLabel(w: WorkSummary): string {
+  const head = w.running ? "Working" : w.ms !== null ? `Worked ${duration(w.ms)}` : "Worked";
+  return w.tools ? `${head} · ${w.tools} tool${w.tools > 1 ? "s" : ""}` : head;
+}
+
+/**
+ * A turn: its prompt, one work row standing for everything up to the final reply (tool groups,
+ * interim text, todo lists, notes), then the reply and what follows it. A tap on the row unfolds the
+ * work in place; a running turn starts unfolded. While the prompt is scrolled away above and the
+ * turn still on screen, its first line stays pinned at the top ("…" when more follow; the pointer
+ * shows the whole prompt); a tap scrolls back to it.
+ */
+function Turn({ prompt, text, full, rows, work }: { prompt: VNode; text: string; full: string; rows: TurnRow[]; work: WorkSummary }) {
+  // Follows `running` (a finished turn folds) until the user taps the row.
+  const [toggled, setToggled] = useState<boolean | null>(null);
+  const open = toggled ?? work.running;
+  const folds = rows.some((r) => r.fold);
+  const section = useRef<HTMLElement>(null);
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    const el = section.current?.querySelector<HTMLElement>(".msg.user");
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(
+      ([e]) => setStuck(!!e && !e.isIntersecting && e.boundingClientRect.top < (e.rootBounds?.top ?? 0)),
+      { root: el.closest(".scroll") },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  const tail = work.end !== null ? [work.model && prettyModel(work.model), clock(work.end)].filter(Boolean).join(" · ") : "";
+  const title = work.end !== null ? [work.model, `ended ${clock(work.end)}`].filter(Boolean).join(" · ") : undefined;
+  const summary = (
+    <>
+      <span class="turn-work-sum">{workLabel(work)}</span>
+      {work.failed > 0 && <span class="err">· {work.failed} failed</span>}
+      {/* The folded work's screenshots: the first, small, and how many more. */}
+      {folds && !open && work.shots.length > 0 && (
+        <span class="turn-shots" aria-label={`${work.shots.length} screenshot${work.shots.length > 1 ? "s" : ""}`}>
+          <img src={work.shots[0].src} alt="" loading="lazy" />
+          {work.shots.length > 1 && <span>+{work.shots.length - 1}</span>}
+        </span>
+      )}
+      {folds && <span class="chev">›</span>}
+      {tail && <span class="turn-work-tail">{tail}</span>}
+    </>
+  );
+  const showRow = folds || work.running || work.end !== null;
+  return (
+    <section ref={section} class="chat-turn">
+      <div class="turn-pin">
+        {stuck && (
+          <button
+            type="button"
+            class="turn-pin-bar"
+            title={full.length > 400 ? `${full.slice(0, 400)}…` : full}
+            onClick={() =>
+              section.current
+                ?.querySelector(".msg.user")
+                ?.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" })
+            }
+          >
+            <span class="user-mark">›</span>
+            <span class="turn-pin-text">{text}</span>
+          </button>
+        )}
+      </div>
+      {prompt}
+      {showRow &&
+        (folds ? (
+          <button type="button" class={`turn-work${work.running ? " running" : ""}`} aria-expanded={open} title={title} onClick={() => setToggled(!open)}>
+            {summary}
+          </button>
+        ) : (
+          <div class={`turn-work${work.running ? " running" : ""}`} title={title}>
+            {summary}
+          </div>
+        ))}
+      {rows.map((r) => (open || !r.fold ? r.node : (r.stand ?? null)))}
+    </section>
+  );
+}
+
 /**
  * `rewind`: the session's omp can rewind to a prompt. `readOnly` (a subagent's transcript): no
- * prompt actions and no answerable asks.
+ * prompt actions and no answerable asks. `working`: whether the agent still runs; without it, a
+ * last turn that hasn't ended counts as running.
  */
-export function Chat({ entries, block, rewind, readOnly = false }: { entries: ChatEntry[]; block: string; rewind: boolean; readOnly?: boolean }) {
+export function Chat({
+  entries,
+  block,
+  rewind,
+  readOnly = false,
+  working,
+}: {
+  entries: ChatEntry[];
+  block: string;
+  rewind: boolean;
+  readOnly?: boolean;
+  working?: boolean;
+}) {
   // An ask is open only while nothing was said after it.
   const lastTalk = entries.findLastIndex((e) => e.role === "user" || e.role === "assistant");
   const latestTodo = entries.findLastIndex((e) => e.role === "tools" && e.todo !== null);
@@ -597,54 +712,100 @@ export function Chat({ entries, block, rewind, readOnly = false }: { entries: Ch
       return turn;
     });
   }, [entries]);
+
+  function row(e: ChatEntry, n: number, key: number | string): VNode | null {
+    if (e.role === "turn") return e.files?.length ? <ChangedFiles key={key} files={e.files} block={block} /> : null;
+    if (e.role === "assistant") return <Reply key={key} entry={e} />;
+    if (e.role === "advisor") return <AdvisorCard key={key} notes={e.notes} />;
+    if (e.role === "rule") return <RuleCard key={key} rules={e.rules} />;
+    if (e.role === "recap")
+      return (
+        <div key={key} class="chat-recap" title={`omp's recap · ${clock(e.ts)}`}>
+          <span class="chat-recap-mark">※</span>
+          <Markdown class="md" text={e.text} />
+        </div>
+      );
+    if (e.role === "cacheMiss")
+      return (
+        <div key={key} class="cache-miss" title={`Prompt cache rebuilt · ${clock(e.ts)}`}>
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <ellipse cx="8" cy="3.5" rx="5.5" ry="2" />
+            <path d="M2.5 3.5v9c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2v-9M2.5 8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2" />
+          </svg>
+          Cache miss · {tokensShort(e.tokens)} tokens
+        </div>
+      );
+    if (e.role === "tools") return <Tools key={key} calls={e.calls} images={e.images} gallery={galleries[n]} todo={e.todo} latestTodo={n === latestTodo} />;
+    if (e.role === "user") return null;
+    return <AskCard key={e.id} ask={e} block={block} pending={!readOnly && n > lastTalk} />;
+  }
+
+  function prompt(e: Prompt, n: number): VNode {
+    return readOnly ? (
+      // A subagent's prompts are written by the parent agent (task briefs, session updates):
+      // Markdown with every stretch drawn open, as btw answers.
+      <div class="msg user sub-prompt">
+        <span class="user-mark">›</span>
+        <div class="user-body">
+          <PromptText>
+            <Markdown class="md" text={openText(e.text)} />
+          </PromptText>
+          {e.images.length > 0 && <Thumbs images={e.images} gallery={galleries[n]} strip />}
+        </div>
+      </div>
+    ) : (
+      <UserMsg entry={e} block={block} rewind={rewind} gallery={galleries[n]} />
+    );
+  }
+
+  const starts = entries.flatMap((e, n) => (e.role === "user" ? [n] : []));
+  const head = starts[0] ?? entries.length;
   return (
     <>
-      {entries.map((e, n) => {
-        if (e.role === "user")
-          return readOnly ? (
-            // A subagent's prompts are written by the parent agent (task briefs, session updates):
-            // Markdown with every stretch drawn open, as btw answers.
-            <div key={n} class="msg user sub-prompt">
-              <span class="user-mark">›</span>
-              <div class="user-text">
-                {e.images.length > 0 && <Thumbs images={e.images} gallery={galleries[n]} />}
-                <Markdown class="md" text={openText(e.text)} />
-              </div>
-            </div>
-          ) : (
-            <UserMsg key={n} entry={e} block={block} rewind={rewind} gallery={galleries[n]} />
-          );
-        if (e.role === "turn")
-          return (
-            <div key={n} class="turn">
-              {duration(e.ms)}
-              {e.model && ` · ${prettyModel(e.model)}`}
-              {` · ${clock(e.ts)}`}
-            </div>
-          );
-        if (e.role === "assistant") return <Reply key={n} entry={e} />;
-        if (e.role === "advisor") return <AdvisorCard key={n} notes={e.notes} />;
-        if (e.role === "rule") return <RuleCard key={n} rules={e.rules} />;
-        if (e.role === "recap")
-          return (
-            <div key={n} class="chat-recap" title={`omp's recap · ${clock(e.ts)}`}>
-              <span class="chat-recap-mark">※</span>
-              <Markdown class="md" text={e.text} />
-            </div>
-          );
-        if (e.role === "cacheMiss")
-          return (
-            <div key={n} class="cache-miss" title={`Prompt cache rebuilt · ${clock(e.ts)}`}>
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <ellipse cx="8" cy="3.5" rx="5.5" ry="2" />
-                <path d="M2.5 3.5v9c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2v-9M2.5 8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2" />
-              </svg>
-              Cache miss · {tokensShort(e.tokens)} tokens
-            </div>
-          );
-        if (e.role === "tools")
-          return <Tools key={n} calls={e.calls} images={e.images} gallery={galleries[n]} todo={e.todo} latestTodo={n === latestTodo} />;
-        return <AskCard key={e.id} ask={e} block={block} pending={!readOnly && n > lastTalk} />;
+      {entries.slice(0, head).map((e, n) => row(e, n, n))}
+      {starts.map((start, t) => {
+        const e = entries[start] as Prompt;
+        const end = starts[t + 1] ?? entries.length;
+        const body = entries.slice(start + 1, end);
+        // The final reply: the last thing said, else (a turn of tool calls only) the last tool group.
+        let final = body.findLastIndex((b) => b.role === "assistant");
+        if (final < 0) final = body.findLastIndex((b) => b.role === "tools");
+        // An advisor note right after a reply (and the turn marker omp ends it with) came once the
+        // turn had answered: that reply is the answer and stays in sight, as do the notes after it;
+        // the work they caused folds, and the last reply (to the notes) shows too.
+        const before = (i: number) => body.slice(0, i).findLastIndex((b) => b.role !== "turn");
+        const noted = body.findIndex((b, i) => b.role === "advisor" && before(i) >= 0 && body[before(i)].role === "assistant" && before(i) < final);
+        const answer = noted < 0 ? final : before(noted);
+        // A turn that answered an advisor note ends twice: the last marker is its end, and a turn
+        // whose work went on past its last marker still runs.
+        const doneAt = body.findLastIndex((b) => b.role === "turn");
+        const done = doneAt < 0 ? undefined : (body[doneAt] as Extract<ChatEntry, { role: "turn" }>);
+        const after = body.slice(doneAt + 1).some((b) => b.role === "tools" || b.role === "assistant");
+        const running = t === starts.length - 1 && (!done || after) && working !== false;
+        const tools = body.flatMap((b) => (b.role === "tools" ? b.calls : []));
+        const last = body[body.length - 1];
+        const rows = body.map((b, i): TurnRow => {
+          const n = start + 1 + i;
+          // An open ask never folds: it waits on the reader.
+          const hidden = i < answer || (i > answer && i < final && b.role !== "advisor");
+          const fold = hidden && b.role !== "recap" && b.role !== "turn" && !(b.role === "ask" && b.answer === null && !readOnly && n > lastTalk);
+          // The newest todo list with work left stays in sight in a folded turn: the working row leads to it.
+          const stand =
+            fold && n === latestTodo && b.role === "tools" && b.todo?.some((p) => p.tasks.some((task) => task.status !== "completed")) ? (
+              <Todo key={i + 1} phases={b.todo} full />
+            ) : undefined;
+          return { node: row(b, n, i + 1), fold, stand };
+        });
+        const work: WorkSummary = {
+          running,
+          ms: done ? done.ms : !running && last && last.ts > e.ts ? last.ts - e.ts : null,
+          tools: tools.length,
+          failed: tools.filter((c) => c.error).length,
+          model: done?.model ?? "",
+          end: done?.ts ?? null,
+          shots: body.flatMap((b, i) => (rows[i].fold && b.role === "tools" ? b.images : [])),
+        };
+        return <Turn key={e.id || `t${start}`} prompt={prompt(e, start)} text={firstLine(e.text) || "(image)"} full={e.text.trim()} rows={rows} work={work} />;
       })}
     </>
   );
