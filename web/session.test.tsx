@@ -17,6 +17,9 @@ const { origins, useRoute } = await import("./hooks");
 
 const net = new Net();
 const originalSource = globalThis.EventSource;
+const originalMatch = globalThis.matchMedia;
+/** Whether the screen counts as the wide desktop layout; the phone's unless a test says so. */
+let wide = false;
 let root: HTMLElement;
 let confirmed = true;
 const alerts: string[] = [];
@@ -33,12 +36,15 @@ beforeEach(() => {
   window.confirm = () => confirmed;
   window.alert = (message) => alerts.push(String(message));
   history.replaceState(null, "", "#/b/5");
+  wide = false;
+  globalThis.matchMedia = ((query: string) => ({ ...originalMatch(query), matches: query === "(min-width: 1000px)" ? wide : originalMatch(query).matches, addEventListener() {}, removeEventListener() {} })) as typeof matchMedia;
 });
 afterEach(() => {
   render(null, root);
   root.remove();
   net.restore();
   globalThis.EventSource = originalSource;
+  globalThis.matchMedia = originalMatch;
 });
 
 const click = async (selector: string) => {
@@ -196,10 +202,49 @@ test("Raw switches the stream, and its banner returns to chat", async () => {
   expect(FakeEventSource.last.url).toBe("/api/stream?block=5&view=chat");
 });
 
-test("focus posts the pane action; cancel close does nothing and failed close reports the reason", async () => {
+/** The ⋯ menu's rows, opening it first. */
+async function menuRows() {
+  if (!root.querySelector(".session-menu")) await click('[aria-label="More actions"]');
+  return [...root.querySelectorAll<HTMLElement>('.session-menu [role="menuitem"]')];
+}
+/** Opens the ⋯ menu and picks the row reading `label`. */
+async function pick(label: string) {
+  const row = (await menuRows()).find((r) => r.textContent === label);
+  if (!row) throw new Error(`no menu row ${label}`);
+  await act(async () => {
+    row.click();
+    await settle();
+  });
+}
+
+test("the header holds back, the title, ⋯ and Close; the menu closes on a tap outside or Escape", async () => {
+  await open(item({ status: "working" }));
+  const bar = root.querySelector(".session-bar")!;
+  expect([...bar.children].map((c) => c.className)).toEqual(["back", "session-title", "session-more", "icon-btn danger"]);
+  const more = root.querySelector<HTMLElement>('[aria-label="More actions"]')!;
+  expect(more.getAttribute("aria-expanded")).toBe("false");
+  expect((await menuRows()).map((r) => r.textContent)).toEqual(["Park", "Show on desktop"]);
+  expect(more.getAttribute("aria-expanded")).toBe("true");
+  expect(document.activeElement?.textContent).toBe("Park");
+  await act(() => void document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" })));
+  expect(document.activeElement?.textContent).toBe("Show on desktop");
+  await act(() => void document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown" })));
+  expect(document.activeElement?.textContent).toBe("Park");
+  await act(() => void document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+  expect(root.querySelector(".session-menu")).toBeNull();
+  expect(document.activeElement).toBe(more);
+  await menuRows();
+  await click(".menu-scrim");
+  expect(root.querySelector(".session-menu")).toBeNull();
+  expect(net.to("/api/blocks/5/park")).toEqual([]);
+  expect(net.to("/api/blocks/5/focus")).toEqual([]);
+});
+
+test("Show on desktop posts the pane action; cancel close does nothing and failed close reports the reason", async () => {
   await open(item({ status: "working", tag: "APP" }));
-  await click('[title="Show this pane on the desktop"]');
+  await pick("Show on desktop");
   expect(net.to("/api/blocks/5/focus")).toEqual([{}]);
+  expect(root.querySelector(".session-menu")).toBeNull();
   confirmed = false;
   await click('[aria-label="Close this block"]');
   expect(net.to("/api/blocks/5/close")).toEqual([]);
@@ -223,27 +268,43 @@ test("closing a waiting block warns and returns to the list on success", async (
   expect(location.hash).toBe("#/");
 });
 
-test("Park asks nothing and returns to the list; a parked pane offers Unpark instead of the desktop button and stays", async () => {
+test("Park asks nothing and returns to the list; a parked pane offers Unpark instead of Show on desktop and stays", async () => {
   const prompts: string[] = [];
   window.confirm = (message) => { prompts.push(String(message)); return true; };
   await open(item({ status: "working" }));
-  await click('[aria-label="Park this pane"]');
+  await pick("Park");
   expect(prompts).toEqual([]);
   expect(net.to("/api/blocks/5/park")).toEqual([{}]);
   expect(location.hash).toBe("#/");
   history.replaceState(null, "", "#/b/5");
   await emit("state", state([item({ status: "working", parked: true })]));
-  expect(root.querySelector('[title="Show this pane on the desktop"]')).toBeNull();
   expect(root.querySelector(".row-meta")!.textContent).toContain("parked");
-  await click('[aria-label="Unpark this pane"]');
+  expect((await menuRows()).map((r) => r.textContent)).toEqual(["Unpark"]);
+  await pick("Unpark");
   expect(net.to("/api/blocks/5/unpark")).toEqual([{}]);
+  expect(location.hash).toBe("#/b/5");
+});
+
+test("on the wide desktop layout Park and Show on desktop are buttons beside Close, with no ⋯", async () => {
+  wide = true;
+  await open(item({ status: "idle" }));
+  expect(root.querySelector('[aria-label="More actions"]')).toBeNull();
+  await click('[aria-label="Show on desktop"]');
+  expect(net.to("/api/blocks/5/focus")).toEqual([{}]);
+  expect(root.querySelector('[aria-label="Park"]')).not.toBeNull();
+});
+
+test("a failed Park says why and stays", async () => {
+  await open(item({ status: "idle" }));
+  net.reply = () => Response.json({ error: "no such pane" }, { status: 404 });
+  await pick("Park");
+  expect(alerts).toEqual(["Park failed: no such pane"]);
   expect(location.hash).toBe("#/b/5");
 });
 
 test("an opened file offers no Park: Tern's list would lose it once parked", async () => {
   await open(item({ agent: null, live: null, status: null, doc: "/w/README.md" }));
-  expect(root.querySelector('[aria-label="Park this pane"]')).toBeNull();
-  expect(root.querySelector('[title="Show this pane on the desktop"]')).not.toBeNull();
+  expect((await menuRows()).map((r) => r.textContent)).toEqual(["Show on desktop"]);
 });
 
 test("a delayed close reply does not leave a different session opened in the meantime", async () => {

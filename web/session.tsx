@@ -11,7 +11,7 @@ import { ExtensionNotice } from "./extension";
 import { JobsStrip, SubagentChat, SubagentList } from "./subagents";
 import { storedCollapsed, storedHideOld, Title } from "./home";
 import { Composer } from "./composer";
-import { goBack, origins, swipeTrail, useNow, useStream, type View } from "./hooks";
+import { goBack, origins, swipeTrail, useNow, useStream, useWide, type View } from "./hooks";
 import { SwipeNav, type Siblings } from "./swipe";
 
 export function Session({ block }: { block: string }) {
@@ -143,37 +143,7 @@ export function Session({ block }: { block: string }) {
             {!online && <span class="c-blocked">offline</span>}
           </div>
         </div>
-        {/* Files and notes vanish from `tern ls` once parked, so only programs' panes get Park. */}
-        {item && !item.doc && (
-          <button
-            class={`icon-btn${item.parked ? " on" : ""}`}
-            title={item.parked ? "Unpark: back into a tab of its own in Tern" : "Park: put it away in Tern, still running"}
-            aria-label={item.parked ? "Unpark this pane" : "Park this pane"}
-            onClick={async () => {
-              const action = item.parked ? "unpark" : "park";
-              const err = await post(`/api/blocks/${block}/${action}`, {});
-              if (err) alert(`${item.parked ? "Unpark" : "Park"} failed: ${err}`);
-              // Parked, it leaves the list: back there, as after Close.
-              else if (action === "park" && location.hash === `#/b/${block}`) goBack({ view: "session", block });
-            }}
-          >
-            {/* A parking sign, lit while the pane is parked. */}
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <rect x="3" y="3" width="14" height="14" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
-              <path d="M8.2 14V6h2.6a2.3 2.3 0 0 1 0 4.6H8.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </button>
-        )}
-        {/* A parked pane is in no tab, so the desktop can't show it until it is unparked. */}
-        {!item?.parked && (
-          <button class="icon-btn" title="Show this pane on the desktop" aria-label="Show this pane on the desktop" onClick={() => post(`/api/blocks/${block}/focus`, {})}>
-            {/* A monitor with an arrow out of its corner, like an "open elsewhere" link: show this pane at the desk. */}
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M10.5 3.5H4.3a1.8 1.8 0 0 0-1.8 1.8v6.4a1.8 1.8 0 0 0 1.8 1.8h11.4a1.8 1.8 0 0 0 1.8-1.8V9.5M7 17h6M10 13.5V17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-              <path d="M8 10.5 15.5 3M11.5 3h4v4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </button>
-        )}
+        <SessionMenu block={block} item={item} />
         {item && (
           <button
             class="icon-btn danger"
@@ -485,6 +455,122 @@ function JumpButtons({ unread, onLatest, onPrevious }: { unread: boolean; onLate
   );
 }
 
+/**
+ * The pane actions that ask nothing: Park (or Unpark) and Show on desktop. On the wide desktop
+ * layout, with room to spare, they are icon buttons beside Close; on the phone they sit in a ⋯ menu,
+ * so the title keeps the width. A tap outside or Escape closes the menu; ↑/↓ move between its rows.
+ */
+function SessionMenu({ block, item }: { block: string; item: Item | undefined }) {
+  const wide = useWide();
+  const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    menu.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus();
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        button.current?.focus();
+      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        const rows = [...(menu.current?.querySelectorAll<HTMLElement>("[role=menuitem]") ?? [])];
+        const at = rows.indexOf(document.activeElement as HTMLElement);
+        rows[(at + (e.key === "ArrowDown" ? 1 : rows.length - 1)) % rows.length]?.focus();
+      } else return;
+      e.preventDefault();
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [open]);
+  // Files and notes vanish from `tern ls` once parked, so only programs' panes get Park.
+  const park = item && !item.doc ? item : null;
+  // A parked pane is in no tab, so the desktop can't show it until it is unparked.
+  const show = !item?.parked;
+  if (!park && !show) return null;
+  const actions = [
+    park && {
+      label: park.parked ? "Unpark" : "Park",
+      title: park.parked ? "Back into a tab of its own in Tern" : "Put it away in Tern, still running",
+      run: async () => {
+        const action = park.parked ? "unpark" : "park";
+        const err = await post(`/api/blocks/${block}/${action}`, {});
+        if (err) alert(`${park.parked ? "Unpark" : "Park"} failed: ${err}`);
+        // Parked, it leaves the list: back there, as after Close.
+        else if (action === "park" && location.hash === `#/b/${block}`) goBack({ view: "session", block });
+      },
+      // A parking sign.
+      icon: (
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <rect x="3" y="3" width="14" height="14" rx="3" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <path d="M8.2 14V6h2.6a2.3 2.3 0 0 1 0 4.6H8.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      ),
+    },
+    show && {
+      label: "Show on desktop",
+      title: "Show this pane in Tern on the desktop",
+      run: () => void post(`/api/blocks/${block}/focus`, {}),
+      // A monitor with an arrow out of its corner, like an "open elsewhere" link.
+      icon: (
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M10.5 3.5H4.3a1.8 1.8 0 0 0-1.8 1.8v6.4a1.8 1.8 0 0 0 1.8 1.8h11.4a1.8 1.8 0 0 0 1.8-1.8V9.5M7 17h6M10 13.5V17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M8 10.5 15.5 3M11.5 3h4v4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      ),
+    },
+  ].filter((a) => !!a);
+  if (wide)
+    return (
+      <>
+        {actions.map((a) => (
+          <button key={a.label} type="button" class="icon-btn" aria-label={a.label} title={`${a.label}: ${a.title}`} onClick={() => void a.run()}>
+            {a.icon}
+          </button>
+        ))}
+      </>
+    );
+  return (
+    <span class="session-more">
+      <button
+        ref={button}
+        type="button"
+        class={`icon-btn${open ? " on" : ""}`}
+        aria-label="More actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <circle cx="4.5" cy="10" r="1.6" fill="currentColor" />
+          <circle cx="10" cy="10" r="1.6" fill="currentColor" />
+          <circle cx="15.5" cy="10" r="1.6" fill="currentColor" />
+        </svg>
+      </button>
+      {open && (
+        <>
+          <div class="menu-scrim" onClick={() => setOpen(false)} />
+          <div class="session-menu" role="menu" ref={menu}>
+            {actions.map((a) => (
+              <button
+                key={a.label}
+                type="button"
+                class="sheet-row"
+                role="menuitem"
+                title={a.title}
+                onClick={() => {
+                  setOpen(false);
+                  void a.run();
+                }}
+              >
+                {a.icon}
+                <span>{a.label}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </span>
+  );
 }
 
 /** A plain file, colored by its extension once the highlighter loads; plain until then. */

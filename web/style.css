@@ -109,7 +109,14 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 .session-bar { gap: 8px; }
 .back { font-size: 28px; line-height: 1; padding: 0 8px 4px 0; color: var(--accent); }
 .session-title { flex: 1; min-width: 0; }
-.session-title .title { font-weight: 600; }
+/* The header holds ‹, the title, ⋯ and ×, so the title wraps to a second line before it ellipsizes. */
+.session-title .title { font-weight: 600; min-width: 0; white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; line-height: 1.3; }
+/* ⋯: Park and Show on desktop, in a popover under the button; a tap anywhere else closes it. */
+.session-more { position: relative; flex: none; }
+.session-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 11; display: flex; flex-direction: column; min-width: 200px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); box-shadow: 0 8px 28px rgb(0 0 0 / .45); }
+.session-menu .sheet-row { justify-content: flex-start; align-items: center; gap: 12px; color: var(--fg); font-size: 15px; white-space: nowrap; }
+.session-menu .sheet-row svg { flex: none; width: 20px; height: 20px; color: var(--muted); }
+.session-menu .sheet-row:is(:active, :hover, :focus-visible) { background: var(--raise); outline: none; }
 .raw-note { align-self: center; padding: 4px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--raise); color: var(--muted); font-size: 12px; }
 .keys button.on { color: var(--fg); border-color: var(--accent); }
 
