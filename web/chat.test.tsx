@@ -87,6 +87,30 @@ describe("transcript lines", () => {
     expect(texts(".turn")).toEqual(["1m05s · Opus 5.5 · 21:07", "4s · 14:03"]);
   });
 
+  test("a long prompt folds to six lines; the first tap shows it all without opening its actions", async () => {
+    // happy-dom lays nothing out: a clamped prompt reports overflowing text.
+    const own = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.classList.contains("clamp") ? 300 : 0;
+      },
+    });
+    try {
+      await show([user("a\nb\nc\nd\ne\nf\ng\nh")]);
+      const text = root.querySelector<HTMLElement>(".user-text")!;
+      expect(text.className).toBe("user-text clamp fade");
+      await click(text);
+      expect(text.className).toBe("user-text");
+      expect(root.querySelector(".msg.user.acts-open")).toBeNull();
+      await click(text);
+      expect(root.querySelector(".msg.user.acts-open")).not.toBeNull();
+    } finally {
+      if (own) Object.defineProperty(HTMLElement.prototype, "scrollHeight", own);
+      else Reflect.deleteProperty(HTMLElement.prototype, "scrollHeight");
+    }
+  });
+
   test("a subagent's prompt has no actions and renders as Markdown with its stretches open", async () => {
     await show([user("### Session update\n**agent**: it {{fails|fails on a stale cache}}.")], true);
     expect(root.querySelector(".user-acts")).toBeNull();

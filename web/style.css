@@ -154,12 +154,13 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 @keyframes swipe-in-prev { from { transform: translateX(-30%); opacity: .5; } }
 .empty { color: var(--muted); text-align: center; padding: 40px 0; }
 .msg { max-width: 100%; overflow-wrap: anywhere; }
-/* Tern-style prompt: full width, accent rail and chevron, no bubble. */
-.msg.user { display: flex; gap: 8px; margin-top: 22px; padding: 8px 12px 8px 10px; border-left: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); border-radius: 0 8px 8px 0; white-space: pre-wrap; }
-.msg.user:first-child, .welcome + .msg.user { margin-top: 0; }
-.msg.user + * { margin-top: 4px; }
+/* omp's prompt band: full width, flat, led by an accent ›. */
+.msg.user { display: flex; gap: 8px; padding: 8px 12px 8px 10px; background: color-mix(in srgb, var(--accent) 8%, transparent); white-space: pre-wrap; }
 .user-mark { color: var(--accent); font-weight: 700; flex: none; }
 .user-text { min-width: 0; }
+/* Long prompts fold to six lines and fade out; the first tap shows the rest (PromptText in parts.tsx). */
+.user-text.clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden; }
+.user-text.fade { cursor: pointer; -webkit-mask-image: linear-gradient(#000 calc(100% - 2.8em), transparent); mask-image: linear-gradient(#000 calc(100% - 2.8em), transparent); }
 /* omp's per-prompt actions, over the prompt's right end: on hover, or after a tap on touch screens. */
 .msg.user { position: relative; }
 .user-acts, .reply-acts { position: absolute; display: none; gap: 2px; align-items: center; padding: 2px 4px 2px 8px; border-radius: 7px; background: var(--raise); border: 1px solid var(--line); font: 12px var(--mono); white-space: nowrap; }
@@ -363,7 +364,6 @@ section h2 { display: flex; align-items: center; gap: 8px; margin: 0; padding: 1
 /* Like Tern: the whole image at its own aspect ratio, capped in height, never upscaled or cropped. */
 .thumb { display: block; width: auto; height: auto; max-width: min(100%, 480px); max-height: 180px; object-fit: contain; border-radius: 8px; border: 1px solid var(--line); background: var(--raise); }
 /* In a prompt the images come first, as Tern draws them, then the text. */
-.user-text > .thumbs:first-child { margin: 0 0 8px; }
 /* Opaque, in the app's own colour: a see-through backdrop let the chat show through the photo. */
 .lightbox { position: fixed; inset: 0; z-index: 20; background: var(--bg); }
 /* One image per page; touch swipes snap page by page, desktop pages with ‹ › and the arrow keys. */
@@ -962,3 +962,17 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .cf-name { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cf-dir { flex: 1; min-width: 0; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .cf-row .cf-counts { margin-left: auto; font-size: 12px; }
+
+/* A prompt's images: its text first, then the images as small numbered squares in one row that
+   scrolls sideways; `[Image #N, …]` in the text is a chip opening image N. A folded turn's work
+   row shows its first screenshot, small, and how many more. */
+.user-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.thumbs.strip { flex-wrap: nowrap; gap: 6px; margin: 8px 0 0; overflow-x: auto; scrollbar-width: none; }
+.thumb-tile { position: relative; flex: none; padding: 0; border: 0; background: none; border-radius: 7px; }
+.thumbs.strip .thumb { width: 64px; height: 64px; max-width: none; max-height: none; object-fit: cover; object-position: top left; border-radius: 7px; }
+.thumb-tile b { position: absolute; left: 3px; top: 3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 5px; background: rgb(0 0 0 / .7); color: var(--fg); font-size: 10.5px; line-height: 16px; text-align: center; }
+.thumb-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.img-chip { display: inline-flex; align-items: center; gap: 3px; margin: 0 1px; padding: 0 6px; border: 0; border-radius: 6px; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-size: 12.5px; line-height: 19px; vertical-align: 1px; white-space: nowrap; cursor: zoom-in; }
+.img-chip svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; }
+.turn-shots { align-self: center; display: inline-flex; align-items: center; gap: 4px; margin-left: 2px; }
+.turn-shots img { width: 30px; height: 20px; object-fit: cover; object-position: top left; border-radius: 4px; border: 1px solid var(--line); }

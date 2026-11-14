@@ -1,4 +1,5 @@
 // Chat pieces with their own behavior: image thumbnails, todo lists, and prompts with actions.
+import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { post, type ChatEntry, type Img, type TodoPhase } from "./api";
 import { clock, todoSummary } from "./lib";
@@ -48,8 +49,20 @@ export function PiMark({ plus = false }: { plus?: boolean }) {
  * Image thumbnails. A tap opens the full-screen view on `gallery`, every image of the turn, so
  * the others are a swipe (touch) or ‹ › and the arrow keys (desktop) away. The view is a history
  * entry holding the image's src: back closes it and stays in the session, forward reopens it.
+ * `strip`: a prompt's images, small numbered squares in one row that scrolls sideways, numbered as
+ * the prompt's `[Image #N, …]` names them. `showRef` gets the opener, for those names to call.
  */
-export function Thumbs({ images, gallery = images }: { images: Img[]; gallery?: Img[] }) {
+export function Thumbs({
+  images,
+  gallery = images,
+  strip = false,
+  showRef,
+}: {
+  images: Img[];
+  gallery?: Img[];
+  strip?: boolean;
+  showRef?: { current: ((i: Img) => void) | null };
+}) {
   // The open image by src: the chat is rebuilt on every update, so objects and positions change.
   const [open, setOpen] = useState<string | null>(null);
   const start = open === null ? -1 : gallery.findIndex((g) => g.src === open);
@@ -82,11 +95,19 @@ export function Thumbs({ images, gallery = images }: { images: Img[]; gallery?: 
     history.pushState({ lightbox: i.src }, "");
     setOpen(i.src);
   };
+  if (showRef) showRef.current = show;
   return (
-    <div class="thumbs" onClick={(e) => e.stopPropagation()}>
-      {images.map((i, n) => (
-        <img key={n} class="thumb" src={i.src} loading="lazy" alt="" onClick={() => show(i)} />
-      ))}
+    <div class={`thumbs${strip ? " strip" : ""}`} onClick={(e) => e.stopPropagation()}>
+      {images.map((i, n) =>
+        strip ? (
+          <button key={n} type="button" class="thumb-tile" aria-label={`Image ${n + 1}`} onClick={() => show(i)}>
+            <img class="thumb" src={i.src} loading="lazy" alt="" />
+            {images.length > 1 && <b>{n + 1}</b>}
+          </button>
+        ) : (
+          <img key={n} class="thumb" src={i.src} loading="lazy" alt="" onClick={() => show(i)} />
+        ),
+      )}
       {start >= 0 && <Lightbox images={gallery} start={start} close={close} />}
     </div>
   );
@@ -214,6 +235,70 @@ export function Todo({ phases, full }: { phases: TodoPhase[]; full: boolean }) {
 }
 
 /**
+ * A prompt's text, clamped to six lines (style.css) with a fade when it runs longer. The first tap
+ * on a clamped prompt shows all of it and goes no further, so it doesn't also open the actions.
+ */
+export function PromptText({ children }: { children: ComponentChildren }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [long, setLong] = useState(false);
+  const [all, setAll] = useState(false);
+  // Measured after every render: streamed edits and late thumbnails change the height.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el && !all) setLong(el.scrollHeight > el.clientHeight + 1);
+  });
+  const folded = long && !all;
+  return (
+    <div
+      ref={ref}
+      class={`user-text${all ? "" : " clamp"}${folded ? " fade" : ""}`}
+      onClick={(e) => {
+        if (!folded) return;
+        e.stopPropagation();
+        setAll(true);
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** How omp names a pasted image in the prompt: `[Image #2, 990x943]`. */
+const IMAGE_REF = /\[Image #(\d+)(?:, \d+x\d+)?\]/g;
+
+/** A prompt's text with each `[Image #N, …]` that has an image as a chip opening it; others stay text. */
+export function withImageChips(text: string, images: Img[], show: (i: Img) => void): ComponentChildren[] {
+  const out: ComponentChildren[] = [];
+  let at = 0;
+  for (const m of text.matchAll(IMAGE_REF)) {
+    const img = images[Number(m[1]) - 1];
+    if (!img) continue;
+    out.push(text.slice(at, m.index));
+    out.push(
+      <button
+        key={m.index}
+        type="button"
+        class="img-chip"
+        title={m[0].slice(1, -1)}
+        onClick={(e) => {
+          e.stopPropagation();
+          show(img);
+        }}
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="2" y="3" width="12" height="10" rx="2" />
+          <path d="m4 11 3-3 2 2 3-3" />
+        </svg>
+        {m[1]}
+      </button>,
+    );
+    at = m.index + m[0].length;
+  }
+  out.push(text.slice(at));
+  return out;
+}
+
+/**
  * A prompt, with omp's per-prompt actions: time, Copy, and Rewind (back to before this prompt,
  * its text returning to the composer). They show on hover, or on a tap where there's no hover.
  * `rewind`: the session's omp can rewind (its extension registers the command).
@@ -236,13 +321,14 @@ export function UserMsg({
     const err = await post(`/api/blocks/${block}/rewind`, { entry: entry.id });
     if (err) alert(`Rewind failed: ${err}`);
   }
+  const showRef = useRef<((i: Img) => void) | null>(null);
   return (
     <div class={`msg user${open ? " acts-open" : ""}`} onClick={() => setOpen(!open)}>
       <span class="user-mark">›</span>
-      <span class="user-text">
-        {entry.images.length > 0 && <Thumbs images={entry.images} gallery={gallery} />}
-        {entry.text}
-      </span>
+      <div class="user-body">
+        <PromptText>{withImageChips(entry.text, entry.images, (i) => showRef.current?.(i))}</PromptText>
+        {entry.images.length > 0 && <Thumbs images={entry.images} gallery={gallery} strip showRef={showRef} />}
+      </div>
       <div class="user-acts" onClick={(ev) => ev.stopPropagation()}>
         <span class="muted">{clock(entry.ts)}</span>
         {entry.text && <CopyButton text={entry.text} />}
