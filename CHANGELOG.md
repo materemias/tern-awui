@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.11.0 (2026-11-15)
+
 ### Features
 
 - The demo shows every feature, including approvals, Waiting, Tern session chips, Closed, voice, `/btw`, ✦ and rewind.
