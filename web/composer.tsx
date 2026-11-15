@@ -122,7 +122,12 @@ export function Composer({
   const reconcileTimer = useRef<number | undefined>(undefined);
   const live = draft?.live === true;
   const [hints, setHints] = useState<Hints | null>(null);
+  // The highlighted suggestion: what Enter or Tab picks; arrows move it.
+  const [hintAt, setHintAt] = useState(0);
   const hintSeq = useRef(0);
+  const hintList = useRef<HTMLDivElement>(null);
+  /** A picked suggestion is being applied in omp. */
+  const picking = useRef(false);
   const call = useVoiceCall(block, voice, setError);
   // Only an omp that reports it: an extension from before caps (null) has no voice calls either.
   const voiceable = live && item?.live?.caps?.voice === true;
@@ -135,14 +140,45 @@ export function Composer({
     const timer = window.setTimeout(async () => {
       const r = await postJson(`/api/blocks/${block}/complete`, { text }).catch(() => null);
       const data: Hints | null = r?.ok ? await r.json().catch(() => null) : null;
-      if (seq === hintSeq.current) setHints(data?.items.length ? data : null);
+      if (seq !== hintSeq.current) return;
+      setHints(data?.items.length ? data : null);
+      setHintAt(0);
     }, 120);
     return () => clearTimeout(timer);
   }, [text, live, completable]);
+  useEffect(() => {
+    hintList.current?.querySelector(".hint.on")?.scrollIntoView?.({ block: "nearest" });
+  }, [hintAt, hints]);
+
+  /** Keys while suggestions show: arrows move the highlight, Enter or Tab picks it, Escape closes them. True when handled. */
+  function hintKey(e: KeyboardEvent): boolean {
+    if (!hints || e.altKey || e.metaKey || e.ctrlKey) return false;
+    const n = hints.items.length;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") setHintAt((at) => (Math.min(at, n - 1) + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+    else if ((e.key === "Enter" || e.key === "Tab") && !e.shiftKey) {
+      if (!sending) void pick(hints.items[Math.min(hintAt, n - 1)]);
+    } else if (e.key === "Escape") {
+      hintSeq.current++;
+      setHints(null);
+    } else return false;
+    e.preventDefault();
+    // Escape here closes only the suggestions, not what the page does with it.
+    e.stopPropagation();
+    return true;
+  }
 
   async function pick(item: Hints["items"][number]) {
-    if (!hints || submitting.current) return;
-    const prefix = hints.prefix;
+    if (!hints || submitting.current || picking.current) return;
+    // Until the completion lands, Enter applies nothing and sends nothing (a tap on Send still does).
+    picking.current = true;
+    try {
+      await applyCompletion(item, hints.prefix);
+    } finally {
+      picking.current = false;
+    }
+  }
+
+  async function applyCompletion(item: Hints["items"][number], prefix: string) {
     hintSeq.current++;
     setHints(null);
     // Applying shares the draft queue: omp must hold exactly the text the completion is for.
@@ -514,9 +550,18 @@ export function Composer({
       )}
       <VoiceBar voice={voice} call={call} />
       {hints && (
-        <div class="hints" role="listbox">
-          {hints.items.map((h) => (
-            <button key={`${h.value}\u0000${h.label}`} class="hint" disabled={sending} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(h)}>
+        <div class="hints" role="listbox" ref={hintList}>
+          {hints.items.map((h, i) => (
+            <button
+              key={`${h.value}\u0000${h.label}`}
+              class={`hint${i === Math.min(hintAt, hints.items.length - 1) ? " on" : ""}`}
+              role="option"
+              aria-selected={i === Math.min(hintAt, hints.items.length - 1)}
+              disabled={sending}
+              onMouseDown={(e) => e.preventDefault()}
+              onMouseEnter={() => setHintAt(i)}
+              onClick={() => pick(h)}
+            >
               <span class="hint-label">{h.label}</span>
               {h.description && <span class="hint-desc">{h.description}</span>}
             </button>
@@ -566,6 +611,9 @@ export function Composer({
           }}
           onPaste={terminal || !a ? undefined : onPaste}
           onKeyDown={(e) => {
+            if (hintKey(e)) return;
+            // A repeated Enter while the picked completion applies would send the text it replaces.
+            if (picking.current && e.key === "Enter" && !e.shiftKey) return e.preventDefault();
             const action = composerKey(e, { working, live, terminal, touch: "ontouchstart" in window });
             if (action) void submit(e, action === "followUp");
           }}

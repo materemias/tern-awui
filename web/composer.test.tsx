@@ -784,6 +784,52 @@ describe("completion", () => {
     expect(buzzes).toContain(8);
   });
 
+  test("while suggestions show, arrows move the highlight and Enter picks it instead of sending; Escape closes them", async () => {
+    await show();
+    const two = { prefix: "/s", items: [{ value: "/skill:a", label: "/skill:a", description: "" }, { value: "/skill:b", label: "/skill:b", description: "" }] };
+    net.reply = (c) => Response.json(c.url.endsWith("/complete") ? two : c.url.endsWith("/completion") ? { text: "/skill:b " } : { ok: true });
+    await input("/s");
+    await advance(120);
+    expect(node(".hint.on").textContent).toBe("/skill:a");
+    expect((await press("ArrowDown")).defaultPrevented).toBe(true);
+    expect(node(".hint.on").textContent).toBe("/skill:b");
+    await press("ArrowDown");
+    expect(node(".hint.on").textContent).toBe("/skill:a");
+    await press("ArrowUp");
+    expect((await press("Enter")).defaultPrevented).toBe(true);
+    expect(calls("submit")).toEqual([]);
+    expect(calls("completion")).toEqual([{ text: "/s", value: "/skill:b", label: "/skill:b", prefix: "/s" }]);
+    expect(area().value).toBe("/skill:b ");
+    expect(root.querySelector(".hints")).toBeNull();
+
+    await input("/sk");
+    await advance(120);
+    expect(root.querySelector(".hints")).not.toBeNull();
+    await press("Escape");
+    expect(root.querySelector(".hints")).toBeNull();
+    await press("Enter");
+    expect(calls("submit").length).toBe(1);
+  });
+
+  test("Enter again while the picked completion is applied sends nothing", async () => {
+    await show();
+    const applied = Promise.withResolvers<Response>();
+    net.reply = (c) => (c.url.endsWith("/completion") ? applied.promise : Response.json(c.url.endsWith("/complete") ? suggestions() : { ok: true }));
+    await input("/he");
+    await advance(120);
+    await press("Enter");
+    expect(calls("completion").length).toBe(1);
+    expect((await press("Enter")).defaultPrevented).toBe(true);
+    expect(calls("submit")).toEqual([]);
+    await act(async () => {
+      applied.resolve(Response.json({ text: "/help " }));
+      await settle();
+    });
+    await flush();
+    expect(calls("submit")).toEqual([]);
+    expect(area().value).toBe("/help ");
+  });
+
   test("completion waits until a pending submit has mirrored the next draft", async () => {
     await show();
     await input("first");
