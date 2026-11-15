@@ -4,6 +4,7 @@
 
 ### Features
 
+- The demo shows every feature, including approvals, Waiting, Tern session chips, Closed, voice, `/btw`, ✦ and rewind.
 - Allow or deny omp's tool approvals from the phone, seeing the tool, the reason and what the call would do.
 - With CodexBar AgentView, a **Waiting** strip and popup show set-aside sessions, grouped by who acts next.
 - A session set aside in Waiting shows its wait above the composer, as in Tern; a tap opens its Waiting page.
