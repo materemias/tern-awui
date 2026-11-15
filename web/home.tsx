@@ -8,7 +8,7 @@ import { ExtensionBanner } from "./extension";
 import { goBack, origins, useExitGuard, useNow, useStream } from "./hooks";
 import { PUSH_LABEL, permissionHelp, type PushState } from "./push";
 import { WaitingIcon, WaitingPopup, WaitingStrip } from "./waiting";
-import { Guide, guideDone } from "./guide";
+import { openGuide } from "./guide";
 
 /** The row's icon: the title's Nerd Font glyph, else Tern's π fallback for an omp not yet titled. */
 function iconOf(item: Item): { glyph: string; pi: boolean } | null {
@@ -653,12 +653,6 @@ export function Home({
     () => (state ? listProjects(state.projects, needle, hideOld, now, selected, ternSession) : []),
     [state, needle, hideOld, now, selected, ternSession],
   );
-  // The guide opens by itself once the first list arrives on a device that hasn't seen it.
-  const [guide, setGuide] = useState(false);
-  const loaded = state !== null;
-  useEffect(() => {
-    if (loaded && !rail && !guideDone()) setGuide(true);
-  }, [loaded, rail]);
 
   const [picker, setPicker] = useState(false);
   // Collapsed projects, remembered on this device.
@@ -914,7 +908,7 @@ export function Home({
             )}
             <span class="dock-label">{hideOld ? (oldCount ? `${oldCount} old hidden` : "Old hidden") : "Hide old"}</span>
           </button>
-          <button class="dock-btn guide-btn" onClick={() => setGuide(true)} title="Guide: a short tour of this screen">
+          <button class="dock-btn guide-btn" onClick={openGuide} title="Guide: a short tour of the app">
             <svg viewBox="0 0 20 20" aria-hidden="true">
               <circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="1.4" />
               <path d="M7.9 8a2.2 2.2 0 1 1 3 2c-.6.3-.9.7-.9 1.3v.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
@@ -928,7 +922,6 @@ export function Home({
       {peek && peekItem && <Peek at={peek} item={peekItem} now={now} onClose={closePeek} />}
       {sheet}
       {waitingPopup}
-      {guide && <Guide wide={wide} onClose={() => setGuide(false)} />}
       {(exitHint || toast) && <div class="toast">{exitHint ? "Press back again to exit" : toast}</div>}
     </div>
   );

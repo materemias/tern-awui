@@ -5,6 +5,7 @@ import { useRoute, useWide } from "./hooks";
 import { Home } from "./home";
 import { Session, SubagentScreen } from "./session";
 import { usePush } from "./push";
+import { GuideHost } from "./guide";
 
 /** The desktop sidebar minimized to a rail of session icons, remembered on this device. */
 const RAIL_KEY = "tern-mobile:sidebar-rail";
@@ -46,14 +47,25 @@ function App() {
     shown.view === "list" || shown.view === "waiting" ? null
     : shown.view === "session" ? <Session key={key} block={shown.block} />
     : <SubagentScreen key={key} route={shown} />;
-  if (!wide) return open ?? <Home push={push} waitingOpen={waitingOpen} waitingCard={waitingCard} />;
+  // Here, not in the list: on a phone the tour moves between the list and a session.
+  const guide = <GuideHost route={route} wide={wide} rail={rail} />;
+  if (!wide)
+    return (
+      <>
+        {open ?? <Home push={push} waitingOpen={waitingOpen} waitingCard={waitingCard} />}
+        {guide}
+      </>
+    );
   return (
-    <div class={`desk${rail ? " rail" : ""}`}>
-      <aside class="desk-side">
-        <Home push={push} wide rail={rail} onRail={toggleRail} waitingOpen={waitingOpen} waitingCard={waitingCard} selected={"block" in shown ? shown.block : null} />
-      </aside>
-      <main class="desk-main">{open ?? <div class="empty desk-empty">Pick a session on the left.</div>}</main>
-    </div>
+    <>
+      <div class={`desk${rail ? " rail" : ""}`}>
+        <aside class="desk-side">
+          <Home push={push} wide rail={rail} onRail={toggleRail} waitingOpen={waitingOpen} waitingCard={waitingCard} selected={"block" in shown ? shown.block : null} />
+        </aside>
+        <main class="desk-main">{open ?? <div class="empty desk-empty">Pick a session on the left.</div>}</main>
+      </div>
+      {guide}
+    </>
   );
 }
 

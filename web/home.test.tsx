@@ -10,9 +10,21 @@ const { render } = await import("preact");
 const { act } = await import("preact/test-utils");
 const { Home, railGlyph } = await import("./home");
 const { usePush } = await import("./push");
+const { GuideHost, OPTIONAL_WAIT_MS } = await import("./guide");
+const { useRoute } = await import("./hooks");
 /** Home as the app renders it: the bell runs on the real push hook. */
 function HomeHost(props: Omit<Parameters<typeof Home>[0], "push">) {
   return <Home push={usePush()} {...props} />;
+}
+/** The guide as the app hosts it, over Home; a phone's session screen is a bare composer. */
+function GuideApp({ wide }: { wide: boolean }) {
+  const route = useRoute();
+  return (
+    <>
+      {!wide && route.view === "session" ? <form class="composer" /> : <HomeHost wide={wide} />}
+      <GuideHost route={route} wide={wide} rail={false} />
+    </>
+  );
 }
 
 const net = new Net();
@@ -453,8 +465,16 @@ describe("Home", () => {
     expect(history.state?.guard).toBeUndefined();
   });
 
+  async function mountGuide(items: Item[], wide = true) {
+    await act(() => render(<GuideApp wide={wide} />, root));
+    await act(() => { FakeEventSource.last.open(); FakeEventSource.last.emit("state", state(items)); });
+    await act(() => settle());
+  }
+  const title = () => root.querySelector("#guide-title")?.textContent;
+  const counter = () => root.querySelector(".guide-step")?.textContent?.replace(/\s/g, "");
+
   test("the guide's keys stay its own: Ctrl+\\ and Alt+→ don't reach the app behind it", async () => {
-    await mount([item()]);
+    await mountGuide([item()]);
     expect(root.querySelector(".guide-card")).not.toBeNull();
     const behind: string[] = [];
     const spy = (e: KeyboardEvent) => behind.push(e.key);
@@ -469,6 +489,43 @@ describe("Home", () => {
     }
     expect(behind).toEqual(["a"]);
     expect(root.querySelector(".guide-step")?.textContent).toStartWith("2 /");
+  });
+
+  test("the guide opens once per device; the dock's Guide button opens it again", async () => {
+    await mountGuide([item()]);
+    await click(root.querySelector(".guide-skip"));
+    expect(root.querySelector(".guide")).toBeNull();
+    render(null, root);
+    await mountGuide([item()]);
+    expect(root.querySelector(".guide")).toBeNull();
+    await click(root.querySelector(".dock .guide-btn"));
+    expect(title()).toBe("Your Tern sessions, in your pocket");
+  });
+
+  test("on a phone, a session step opens a session; an optional step with nothing to show is skipped", async () => {
+    await mountGuide([item({ block: "5" }), item({ block: "7", status: "blocked" })], false);
+    const next = () => click(root.querySelector(".guide-card .primary"));
+    await next();
+    await next();
+    expect(title()).toBe("Everything at a glance");
+    expect(counter()).toBe("3/11");
+    // No Waiting strip and no bell here (no AgentView, no push support): both pass on, uncounted.
+    await next();
+    await act(() => sleep(OPTIONAL_WAIT_MS + 100));
+    expect(title()).toBe("Start or resume a session");
+    expect(counter()).toBe("4/10");
+    await next();
+    await act(() => sleep(OPTIONAL_WAIT_MS + 100));
+    expect(title()).toBe("Keep the list short");
+    expect(counter()).toBe("5/9");
+    // The composer is a session's: the guide opens the red row's session.
+    const moved = Promise.withResolvers<void>();
+    addEventListener("hashchange", () => moved.resolve(), { once: true });
+    await next();
+    await act(() => moved.promise);
+    expect(location.hash).toBe("#/b/7");
+    expect(title()).toBe("Reply or steer");
+    expect(root.querySelector(".composer")).not.toBeNull();
   });
 });
 

@@ -634,7 +634,7 @@ export function Composer({
           {voiceable && !terminal && (
             <button
               type="button"
-              class={`icon-btn${call.state !== "idle" ? " on" : ""}`}
+              class={`icon-btn voice-btn${call.state !== "idle" ? " on" : ""}`}
               // Starting, or another device's call runs here (the server takes one call per session).
               disabled={call.state === "starting" || (call.state === "idle" && !!voice && !voice.ended)}
               onClick={() => (call.state === "idle" ? void call.start() : call.hangup())}

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Features
+
+- The guide now also tours a session: composer, question and approval cards, voice call, park and show on desktop.
+- The guide explains Waiting, skips what this device doesn't show, and survives moving between list and session.
+
 ## 0.11.0 (2026-11-15)
 
 ### Features
