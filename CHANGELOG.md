@@ -45,6 +45,7 @@
 - The phone film no longer opens on an "outdated extension" warning.
 - The phone film shows the current app.
 - The README recommends omp-stretch, CodexBar AgentView and omp-compact, with install commands.
+- The README opens with why to pick tern-awui over Tern's mobile app.
 - The handover film shows the current app.
 - A new film shows a tool approval and the Waiting popup handled from a phone.
 

@@ -1,12 +1,18 @@
-# tern-awui (another web UI for Tern)
+# tern-awui
 
-A web app for following and steering the [omp](https://github.com/can1357/oh-my-pi) agents running in [Tern](https://stencil.so/tern), from a phone or another browser.
+Keep your omp sessions moving from your phone. tern-awui is a small, fast web app for the [omp](https://github.com/can1357/oh-my-pi) agents running in [Tern](https://stencil.so/tern) on your desktop: see which one needs you, answer or steer it, and put the phone away.
 
-It is one piece of a small kit for running omp in Tern, next to [omp-stretch](https://github.com/materemias/omp-stretch), [CodexBar AgentView](https://github.com/materemias/codexbar-agentview) and [omp-compact](https://github.com/arksdev/omp-compact). tern-awui supports the first two out of the box and has omp-compact's one-line tool view built in; see [Works best with](#works-best-with).
+**[Try the demo](https://materemias.github.io/tern-awui/)**: the real app in your browser with sample sessions, every feature included, from tool approvals and the Waiting popup to a scripted voice call. It needs no Tern or omp, and nothing leaves the browser. Only push notifications need your own server.
 
-**[Try the demo](https://materemias.github.io/tern-awui/)**: the real app in your browser with sample sessions. It needs no Tern or omp, and nothing leaves the browser.
+## Why not Tern's mobile app?
 
-I built it for how I work. Tern stays open on the desktop with its panes, tern-awui sits next to it in a browser tab, and the same app is installed on my Android phone as a PWA. When I step away, I can still see which agent finished, which one is waiting for an answer, and reply. It's a companion to Tern, not a replacement: a project-based, focused view of the sessions.
+Tern's own mobile app follows Tern's layout, tab by tab. tern-awui does one job, looking after your sessions on the go, and is built around it:
+
+- **Fast.** The whole app is one script of about 240 KB that opens straight onto your sessions. Updates arrive over one event stream, and heavy parts such as Mermaid load only when a reply needs them.
+- **Projects, not tabs.** Sessions are grouped by git repository, newest activity first, and a red row marks each one that waits on you. On a phone that answers "what needs me?" in one glance, wherever the session's tab is.
+- **Deep integration with omp's extensions.** [omp-stretch](https://github.com/materemias/omp-stretch) replies open stretch by stretch, in sync with the Tern pane. [CodexBar AgentView](https://github.com/materemias/codexbar-agentview)'s set-aside sessions show in a Waiting popup with **Done** and **Snooze**. Tool approvals and `ask` forms are answered with a tap, and tool runs fold to one line each, as with [omp-compact](https://github.com/arksdev/omp-compact). See [Works best with](#works-best-with).
+
+I built it for how I work. Tern stays open on the desktop, tern-awui sits next to it in a browser tab, and the same app is installed on my Android phone as a PWA. When I step away, I still see which agent finished and which one waits on me, and I can reply.
 
 ![tern-awui on a phone: a session waiting on an ask is answered with one tap, the running turn is steered, a swipe moves to the next session and the session wheel picks another, a voice call asks that session a question and reads back its answer, the screen goes black with the microphone on and comes back, and the eye hides sessions older than a day](docs/phone.gif)
 
