@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.11.1 (2026-11-15)
+
 ### Features
 
 - The guide now also tours a session: composer, question and approval cards, voice call, park and show on desktop.
