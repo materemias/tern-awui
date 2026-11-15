@@ -100,7 +100,7 @@ export function ModelSheet({
           <span class="mp-title">{prettyModel(model) || "Model"}</span>
           <span class="muted small">{model}</span>
           <span class="spacer" />
-          <button type="button" class="icon-btn" onClick={onClose} aria-label="Close">
+          <button type="button" class="icon-btn" onClick={onClose} aria-label="Close" title="Close">
             ×
           </button>
         </div>

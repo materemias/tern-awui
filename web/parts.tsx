@@ -172,10 +172,10 @@ function Lightbox({ images, start, close }: { images: Img[]; start: number; clos
       </div>
       {images.length > 1 && (
         <>
-          <button type="button" class="lightbox-nav prev" aria-label="Previous image" disabled={at === 0} onClick={step(-1)}>
+          <button type="button" class="lightbox-nav prev" aria-label="Previous image" title="Previous image" disabled={at === 0} onClick={step(-1)}>
             ‹
           </button>
-          <button type="button" class="lightbox-nav next" aria-label="Next image" disabled={at === images.length - 1} onClick={step(1)}>
+          <button type="button" class="lightbox-nav next" aria-label="Next image" title="Next image" disabled={at === images.length - 1} onClick={step(1)}>
             ›
           </button>
           <div class="lightbox-count">

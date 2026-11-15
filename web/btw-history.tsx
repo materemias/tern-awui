@@ -27,10 +27,10 @@ export function BtwHistorySheet({ records, onClose }: { records: BtwHistoryRecor
     <div class="sheet-backdrop" onClick={onClose}>
       <div class="sheet tall btw-history" role="dialog" aria-modal="true" aria-label="Btw history" onClick={(e) => e.stopPropagation()}>
         <div class="sheet-head">
-          {selected && <button type="button" class="icon-btn" aria-label="Back to history" onClick={() => setSelected(null)}>‹</button>}
+          {selected && <button type="button" class="icon-btn" aria-label="Back to history" title="Back to history" onClick={() => setSelected(null)}>‹</button>}
           <span>Btw history</span>
           <span class="spacer" />
-          <button type="button" class="icon-btn" onClick={onClose} aria-label="Close history">×</button>
+          <button type="button" class="icon-btn" onClick={onClose} aria-label="Close history" title="Close history">×</button>
         </div>
         <div class="sheet-list">
           {selected ? (

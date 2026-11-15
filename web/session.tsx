@@ -134,6 +134,8 @@ export function Session({ block }: { block: string }) {
         <a
           class="back"
           href="#/"
+          title="Back"
+          aria-label="Back"
           onClick={(e) => {
             e.preventDefault();
             goBack({ view: "session", block });
@@ -567,6 +569,7 @@ function SessionMenu({ block, item }: { block: string; item: Item | undefined })
         type="button"
         class={`icon-btn${open ? " on" : ""}`}
         aria-label="More actions"
+        title="More actions"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen(!open)}

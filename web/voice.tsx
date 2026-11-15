@@ -293,7 +293,7 @@ export function VoiceBar({ voice, call }: { voice: Voice | null; call: ReturnTyp
           </button>
         )}
         {mine && (
-          <button type="button" class={`icon-btn${call.muted ? " on" : ""}`} onClick={call.toggleMute} aria-label={call.muted ? "Unmute" : "Mute"} aria-pressed={call.muted}>
+          <button type="button" class={`icon-btn${call.muted ? " on" : ""}`} onClick={call.toggleMute} aria-label={call.muted ? "Unmute" : "Mute"} title={call.muted ? "Unmute" : "Mute"} aria-pressed={call.muted}>
             <MicIcon off={call.muted} />
           </button>
         )}
@@ -302,6 +302,7 @@ export function VoiceBar({ voice, call }: { voice: Voice | null; call: ReturnTyp
           class="voice-end"
           onClick={call.hangup}
           aria-label="Hang up"
+          title="Hang up"
         >
           <svg viewBox="0 0 20 20" aria-hidden="true">
             <path d="M3 11.5c3.9-3.3 10.1-3.3 14 0l-1.6 2.2-3-1.1v-2a8.6 8.6 0 0 0-4.8 0v2l-3 1.1Z" fill="currentColor" />

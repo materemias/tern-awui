@@ -13,15 +13,16 @@ import { MicIcon, useVoiceCall, VoiceBar } from "./voice";
 
 type DraftWrite = { text: string; expectedSessionId?: string; expectedText?: string };
 
-const KEY_BAR: [string, string[]][] = [
-  ["Esc", ["Escape"]],
-  ["^C", ["ctrl+c"]],
-  ["↑", ["Up"]],
-  ["↓", ["Down"]],
-  ["⏎", ["Enter"]],
-  ["Tab", ["Tab"]],
-  ["⇧Tab", ["shift+Tab"]],
-  ["Space", ["space"]],
+/** The key bar: label, the keys it sends, and what its hover text names. */
+const KEY_BAR: [string, string[], string][] = [
+  ["Esc", ["Escape"], "Esc"],
+  ["^C", ["ctrl+c"], "Ctrl+C"],
+  ["↑", ["Up"], "Up arrow"],
+  ["↓", ["Down"], "Down arrow"],
+  ["⏎", ["Enter"], "Enter"],
+  ["Tab", ["Tab"], "Tab"],
+  ["⇧Tab", ["shift+Tab"], "Shift+Tab"],
+  ["Space", ["space"], "Space"],
 ];
 
 /** omp's autocomplete for the composer text: suggestions and the token they replace. */
@@ -469,14 +470,15 @@ export function Composer({
       {keysShown && (
         <div class="keys">
           {raw && (
-            <button class={raw.on ? "on" : ""} onClick={raw.toggle}>
+            <button class={raw.on ? "on" : ""} onClick={raw.toggle} title={raw.on ? "Back to the chat" : "Show the raw terminal screen"}>
               {raw.on ? "Chat" : "Raw"}
             </button>
           )}
-          {KEY_BAR.map(([label, keys]) => (
+          {KEY_BAR.map(([label, keys, name]) => (
             <button
               key={label}
               disabled={sending}
+              title={`Press ${name} in the session`}
               onClick={() => {
                 buzz(8);
                 void (terminal ? terminalKeys(keys) : send("keys", { keys }));
@@ -497,7 +499,7 @@ export function Composer({
           <div class="btw-head">
             <span class="btw-tag">btw</span>
             <span class="btw-q">{btw.question}</span>
-            <button class="btw-x" onClick={() => setBtw(null)} aria-label="Dismiss">
+            <button class="btw-x" onClick={() => setBtw(null)} aria-label="Dismiss" title="Dismiss the side answer">
               ×
             </button>
           </div>
@@ -528,7 +530,7 @@ export function Composer({
             {pasted.map((p, i) => (
               <div key={p.url} class="pasted-item">
                 <img src={p.url} alt="" />
-                <button type="button" onClick={() => unpaste(i)} aria-label="Remove image">
+                <button type="button" onClick={() => unpaste(i)} aria-label="Remove image" title="Remove image">
                   ×
                 </button>
               </div>
@@ -570,7 +572,7 @@ export function Composer({
         />
         <div class="composer-foot">
           {a && (
-            <button type="button" class="pick" onClick={() => setSheet(true)}>
+            <button type="button" class="pick" onClick={() => setSheet(true)} title="Model and thinking level">
               <span>{prettyModel(model) || role || "Model"}</span>
               {thinking && <span class="pick-sub">{EFFORT_LABEL[thinking]?.toLowerCase() ?? thinking}</span>}
               {item?.live?.tier && <span class="pick-sub pick-tier">{TIER_LABEL[item.live.tier]?.[0].toLowerCase() ?? item.live.tier}</span>}
@@ -605,6 +607,7 @@ export function Composer({
                   // Desktop pastes with Ctrl+V, so the button goes straight to the picker there.
                   onClick={() => (clipboardImages ? setImageMenu(!imageMenu) : picker.current?.click())}
                   aria-label="Attach image"
+                  title={clipboardImages ? "Attach an image" : "Attach an image (or paste one with Ctrl+V)"}
                   aria-haspopup={clipboardImages ? "menu" : undefined}
                   aria-expanded={clipboardImages ? imageMenu : undefined}
                 >
@@ -651,6 +654,7 @@ export function Composer({
             class={`icon-btn${keysShown ? " on" : ""}`}
             onClick={() => setKeysOpen(!keysShown)}
             aria-label="Keys"
+            title={keysShown ? "Hide the key bar" : "Show the key bar: Esc, Ctrl+C, arrows, Tab"}
           >
             <svg viewBox="0 0 20 20" aria-hidden="true">
               <rect x="2.5" y="5" width="15" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.4" />
@@ -670,13 +674,19 @@ export function Composer({
             </button>
           )}
           {stoppable ? (
-            <button class="send stop" type="button" disabled={sending} onClick={stop} aria-label="Stop">
+            <button class="send stop" type="button" disabled={sending} onClick={stop} aria-label="Stop" title="Stop the running turn">
               <svg viewBox="0 0 20 20" aria-hidden="true">
                 <rect x="5.5" y="5.5" width="9" height="9" rx="1.5" fill="currentColor" />
               </svg>
             </button>
           ) : (
-            <button class={`send${empty && !terminal ? " idle" : ""}`} type="submit" disabled={sending || unready} aria-label="Send">
+            <button
+              class={`send${empty && !terminal ? " idle" : ""}`}
+              type="submit"
+              disabled={sending || unready}
+              aria-label="Send"
+              title={terminal ? "Press Enter in the terminal" : working && live ? "Steer: send into the running turn (Enter)" : "Send (Enter)"}
+            >
               <svg viewBox="0 0 20 20" aria-hidden="true">
                 <path d="M10 15.5v-11M5.5 9 10 4.5 14.5 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
