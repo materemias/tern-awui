@@ -37,7 +37,7 @@ export const ROLES: Role[] = [
 /** The window's Tern sessions; the desktop shows the first. */
 export const TERN_SESSIONS: TernSession[] = [
   { id: "1", name: "Default", shown: true },
-  { id: "2", name: "pi-durable", shown: false },
+  { id: "2", name: "weekend", shown: false },
   { id: "3", name: "ops", shown: false },
 ];
 
@@ -399,7 +399,7 @@ export function demoSessions(now: number): DemoSession[] {
         since: t(3),
         unseen: "blocked",
         cwd: api,
-        ternSession: "pi-durable",
+        ternSession: "weekend",
         agent: demoAgent("demo-23", { lastPrompt: "the API falls over at lunch, give prod more workers", lastActivity: t(3) }),
       }),
       [
@@ -424,7 +424,7 @@ export function demoSessions(now: number): DemoSession[] {
         since: t(25),
         unseen: "done",
         cwd: api,
-        ternSession: "pi-durable",
+        ternSession: "weekend",
         agent: demoAgent("demo-21", { lastPrompt: "the test suite takes four minutes, find out why", recap: SUITE_RECAP, lastActivity: t(25) }),
       }),
       [
@@ -458,7 +458,7 @@ export function demoSessions(now: number): DemoSession[] {
       omp("22", "api-server", "Pick a SQLite driver", {
         since: t(52),
         cwd: api,
-        ternSession: "pi-durable",
+        ternSession: "weekend",
         agent: demoAgent("demo-22", { lastPrompt: "which sqlite driver should the session store use?", lastActivity: t(52) }),
       }),
       [

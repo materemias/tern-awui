@@ -210,12 +210,12 @@ describe("demo backend", () => {
   test("Tern sessions spread the list; launches open in the picked one", async () => {
     const { clock, server } = setup();
     const state = await get<State>(server, "/api/state");
-    expect(state.ternSessions.map((s) => s.name)).toEqual(["Default", "pi-durable", "ops"]);
+    expect(state.ternSessions.map((s) => s.name)).toEqual(["Default", "weekend", "ops"]);
     const items = state.projects.flatMap((p) => p.items);
-    expect(new Set(items.map((i) => i.ternSession))).toEqual(new Set(["Default", "pi-durable", "ops", null]));
-    const r: { block: string } = await (await post(server, "/api/new", { cwd: "/home/you/code/api-server", session: "pi-durable" })).json();
+    expect(new Set(items.map((i) => i.ternSession))).toEqual(new Set(["Default", "weekend", "ops", null]));
+    const r: { block: string } = await (await post(server, "/api/new", { cwd: "/home/you/code/api-server", session: "weekend" })).json();
     clock.advance(5_000);
-    expect(itemOf(await get<State>(server, "/api/state"), r.block)).toMatchObject({ ternSession: "pi-durable", status: "idle" });
+    expect(itemOf(await get<State>(server, "/api/state"), r.block)).toMatchObject({ ternSession: "weekend", status: "idle" });
     expect((await post(server, "/api/new", { cwd: "/home/you/code/api-server", session: "nope" })).status).toBe(400);
     // Unpark lands in the picked session; without one, in the one the desktop shows.
     expect((await post(server, "/api/blocks/25/unpark", { session: "ops" })).ok).toBe(true);
@@ -327,10 +327,6 @@ const CHAT_PATCH = readFileSync(join(import.meta.dir, "..", "lib", "chat-patch.t
 
 /** What the real server serves and can't exist in a browser-only demo, with why. Nothing else may be left out. */
 const ROUTES_OUT: Record<string, string> = {
-  // Web Push needs a push service subscription and the service worker the demo doesn't register.
-  "GET /api/push/key": "push",
-  "POST /api/push/subscribe": "push",
-  "POST /api/push/unsubscribe": "push",
   // Images read from transcripts on disk; the demo's sample images are data: URLs.
   "GET /api/blob/<hash>": "no disk",
   // Opened through demoEventSource, which the event tour below exercises, not through fetch.

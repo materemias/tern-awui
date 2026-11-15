@@ -6,6 +6,8 @@
 
 - The guide now also tours a session: composer, question and approval cards, voice call, park and show on desktop.
 - The guide explains Waiting, skips what this device doesn't show, and survives moving between list and session.
+- The demo opens on a session waiting for an approval, and its notification bell switches on (it sends nothing).
+- The demo's second Tern session is called "weekend".
 
 ## 0.11.0 (2026-11-15)
 

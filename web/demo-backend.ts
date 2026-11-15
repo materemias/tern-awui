@@ -2,8 +2,8 @@
 // from the sample data in demo-fixtures.ts, so the real app runs with no Tern, omp or server.
 // Prompts stream a canned reply as omp's would (`live`, then the `chat` entry); asks, approvals,
 // side questions and ✦ resolve; sessions start, close, park, rewind and resume; Waiting's taps and
-// a scripted voice call behave. Only push notifications need a real server (demo-coverage.test.ts
-// keeps this list honest).
+// a scripted voice call behave. The bell subscribes, but nothing is ever pushed (demo.test.ts keeps
+// this list honest).
 import type { Agent, AskField, ChangedFile, ChatEntry, ContextUse, Img, Item, Run, State, Voice } from "./api";
 import { approvalQuestion, STRETCH_BLOCK } from "../lib/bridge-state";
 import { CLOSED_AGENTS, keepsTool, matchesWords, parseSearch } from "../lib/search";
@@ -73,7 +73,8 @@ const TOOLS_MS = 700;
 const STARTING_MS = 1200;
 const DEEPEN_STEP_MS = 250;
 const COMPACT_AT = 85;
-const PUSH_REFUSED = "Notifications need your own server; push isn't in the demo";
+/** A well-formed VAPID public key for the bell's subscription; no push service ever sees it. */
+const DEMO_PUSH_KEY = "BFmEns47IuBUiOWEoubiwt1a4--qd2PsjRzZSxJxBe2TVN6IRw6N4GQ_gqVGSpVONGEbOCFT__reZOSOeKsC2Xk"; // betterleaks:allow (public demo key)
 const NOT_FOUND = "not found";
 const ENTRY_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const IMAGE_TYPE = /^image\/(png|jpeg|gif|webp)$/;
@@ -187,7 +188,7 @@ export class DemoServer {
       if (path === "/api/projects") return json({ projects: demoProjects(this.sessions), home: HOME });
       if (path === "/api/closed") return json({ sessions: this.closedList(url.searchParams.get("q") ?? ""), home: HOME });
       if (path === "/api/waiting") return json(this.waiting.view(this.clock.now()));
-      if (path === "/api/push/key") return json({ error: PUSH_REFUSED }, 409);
+      if (path === "/api/push/key") return json({ key: DEMO_PUSH_KEY });
       const sub = /^\/api\/blocks\/(\d+)\/(subagents|btw-history)$/.exec(path);
       if (!sub) return json({ error: NOT_FOUND }, 404);
       const s = this.find(sub[1]);
@@ -205,7 +206,8 @@ export class DemoServer {
     }
     if (path === "/api/new") return this.newSession(str(body.cwd), body);
     if (path === "/api/closed/resume" || path === "/api/closed/dismiss") return this.closedAction(path.endsWith("/dismiss"), body);
-    if (path.startsWith("/api/push/")) return json({ error: PUSH_REFUSED }, 409);
+    // Subscribe and unsubscribe: the demo keeps no subscription, it only confirms.
+    if (path.startsWith("/api/push/")) return json({ ok: true });
     const waitingAction = WAITING_ACTIONS.find((a) => path === `/api/waiting/${a}`);
     if (waitingAction) {
       const r = this.waiting.act(waitingAction, body, this.clock.now());
