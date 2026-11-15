@@ -940,7 +940,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     void waiting.check(stateWatchers.size > 0).catch((error) => console.error("waiting check failed", error));
   }, SAFETY_MS);
 
-  /** CodexBar AgentView's waits; off without it. List streams carry them, and it pushes what newly waits on the user. */
+  /** CodexBar AgentView's waits; off without it. Every stream carries them, and it pushes what newly waits on the user. */
   const waiting = new WaitingWatch({
     env,
     home: HOME,
@@ -1425,13 +1425,12 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
               else send("state", s);
               lastRows = list.rows;
             }
-            if (!block) {
-              await waiting.view();
-              if (stop) return;
-              if (waiting.key !== lastWaiting) {
-                lastWaiting = waiting.key;
-                send("waiting", waiting.held);
-              }
+            // Every stream: the list's popup, and a session's status line above its composer.
+            await waiting.view();
+            if (stop) return;
+            if (waiting.key !== lastWaiting) {
+              lastWaiting = waiting.key;
+              send("waiting", waiting.held);
             }
             const item = block ? await findItem(block) : undefined;
             if (stop) return;

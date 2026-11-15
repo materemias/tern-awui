@@ -798,10 +798,10 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
    view while their rows scroll. A row says who, where it stands in one line, and your note. */
 /* Each group name carries its colour: red for what is on you (as the strip), green for what the
    machine watches, violet for what someone else holds, grey for when you have time. */
-.wait-group { --grp: var(--muted); }
-.wait-group.g-on_me { --grp: var(--blocked); }
-.wait-group.g-on_machine { --grp: var(--working); }
-.wait-group.g-on_someone { --grp: var(--gpt); }
+.wait-group, .wait-bar { --grp: var(--muted); }
+.g-on_me { --grp: var(--blocked); }
+.g-on_machine { --grp: var(--working); }
+.g-on_someone { --grp: var(--gpt); }
 .wait-group + .wait-group h3 { margin-top: 6px; }
 .wait-group h3 { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; margin: 0; padding: 14px 12px 8px; background: var(--panel); color: var(--fg); font-size: 15px; font-weight: 700; }
 .wait-group h3::before { content: ""; width: 4px; height: 16px; border-radius: 2px; background: var(--grp); }
@@ -828,6 +828,20 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .wrow-done svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .wrow-done:active, .wrow-done:focus-visible { border-color: var(--working); color: var(--working); }
 @media (hover: hover) { .wrow-main:hover { background: color-mix(in srgb, var(--raise) 60%, transparent); } .wrow-done:hover { border-color: var(--working); color: var(--working); } }
+
+/* A session's waits above its composer, as Tern's status line: one line whose edge has the colour of
+   who holds the next step, as the popup's groups do. The note and close verdict show where there is room. */
+.wait-bar { display: flex; align-items: center; gap: 8px; min-height: 38px; margin: 8px 10px 0; padding: 6px 10px 6px 11px; border: 1px solid var(--line); border-left: 3px solid var(--grp); border-radius: 10px; background: var(--panel); color: var(--muted); font-size: 13.5px; }
+.desk-main .wait-bar { margin-inline: max(16px, calc((100% - var(--chat-width) - 24px) / 2)); }
+.wait-bar-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+.wait-bar.tone-warn .wait-bar-text { color: color-mix(in srgb, var(--warn) 75%, var(--fg)); }
+.wait-bar.tone-done .wait-bar-text { color: color-mix(in srgb, var(--working) 70%, var(--fg)); }
+.wait-bar-note { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: italic; }
+.wait-bar .wclose, .wait-bar .wrow-time { flex: none; }
+.wait-bar-go { flex: none; margin-left: auto; font-size: 18px; line-height: 1; }
+.wait-bar:active { background: var(--raise); }
+@media (hover: hover) { .wait-bar:hover { background: color-mix(in srgb, var(--raise) 60%, var(--panel)); } }
+@media (max-width: 599px) { .wait-bar-note, .wait-bar .wclose:not(.t-warn) { display: none; } }
 
 /* One session in full. Its standing is the one big sentence; the rest reads as plain text under small
    headings, and the actions wait in a bar at the bottom, within thumb reach. */

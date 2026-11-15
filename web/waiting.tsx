@@ -4,7 +4,7 @@
 // server. Its way in is the strip under the list's filter (an hourglass on the rail).
 import { useEffect, useRef, useState } from "preact/hooks";
 import { launchAgent, post, type Item, type Waiting, type WaitingRow } from "./api";
-import { blockOf, closeOf, groupRows, headlineText, rowId, snoozeTarget, type Close, type Health, type Outcome, type Pr } from "../lib/waiting-view";
+import { blockOf, closeOf, GROUPS, groupRows, headlineText, rowId, snoozeTarget, type Close, type Health, type Outcome, type Pr } from "../lib/waiting-view";
 import { splitTitle } from "../lib/title";
 import { age } from "./lib";
 import { goBack, useNow } from "./hooks";
@@ -239,6 +239,46 @@ function Row({ row, health, now }: { row: WaitingRow; health: Health | null | un
         </button>
       )}
     </li>
+  );
+}
+
+/**
+ * The row Waiting holds for `item`: the one whose block, as the popup finds it, is this one. A row
+ * found only by its pane while another session runs there is an old one: that pane moved on.
+ */
+export function rowOf(waiting: Waiting | null, items: Item[], item: Item): WaitingRow | null {
+  if (!waiting?.available) return null;
+  const running = item.agent?.sessionId;
+  return waiting.rows.find((r) => blockOf(items, r)?.block === item.block && (!running || r.session === null || r.session === running)) ?? null;
+}
+
+/**
+ * A session's waits above its composer, as Tern's status line: its edge in the colour of who holds
+ * the next step (the popup's group colours), where it stands and the time. A tap opens it in Waiting.
+ */
+export function WaitBar({ row, health, now }: { row: WaitingRow; health: Health | null | undefined; now: number }) {
+  const s = standing(row);
+  const time = rowTime(row, now);
+  const close = closeOf(row, health, now);
+  const group = GROUPS.find((g) => g.ball === row.ball)?.label ?? "Waiting";
+  const more = s.rest.length;
+  return (
+    <a
+      class={`wait-bar g-${row.ball} tone-${tone(row)}`}
+      href={`#/waiting/${encodeURIComponent(rowId(row))}`}
+      aria-label={`${group}: ${s.text || "set aside"}. Open in Waiting`}
+      title={[`${group}: ${s.text || "set aside"}`, s.detail, close?.text, row.note && `“${row.note}”`, "Open in Waiting"].filter(Boolean).join("\n")}
+    >
+      <Glyph kind={s.kind} />
+      <span class="wait-bar-text">{s.text || group}</span>
+      {more > 0 && <span class="wrow-more">+{more}</span>}
+      {row.note && <span class="wait-bar-note">“{row.note}”</span>}
+      <CloseTag close={close} />
+      {time.text && <span class={`wrow-time ${time.cls}`}>{time.text}</span>}
+      <span class="wait-bar-go" aria-hidden="true">
+        ›
+      </span>
+    </a>
   );
 }
 

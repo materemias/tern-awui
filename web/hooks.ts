@@ -225,7 +225,7 @@ export function useWakeLock(on: boolean) {
 
 /**
  * One SSE connection: always the block list, plus the open block's chat or screen and draft, its
- * subagent list (`view` "subagents"), or one subagent's chat (`sub`). Without a block, the waits too.
+ * subagent list (`view` "subagents"), or one subagent's chat (`sub`); and the waits.
  */
 export function useStream(block: string | null, view: View, sub: string | null = null) {
   const [state, setState] = useState<State | null>(null);

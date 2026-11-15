@@ -13,11 +13,12 @@ import { storedCollapsed, storedHideOld, Title } from "./home";
 import { Composer } from "./composer";
 import { goBack, origins, swipeTrail, useNow, useStream, useWide, type View } from "./hooks";
 import { SwipeNav, type Siblings } from "./swipe";
+import { rowOf, WaitBar } from "./waiting";
 
 export function Session({ block }: { block: string }) {
   const [view, setView] = useState<View>("chat");
   // The server answers a chat request for a non-omp block with its screen.
-  const { state, chat, live, queued, run, context, btw, setBtw, screen, draft, doc, online, stretch, voice, approval } = useStream(block, view);
+  const { state, waiting, chat, live, queued, run, context, btw, setBtw, screen, draft, doc, online, stretch, voice, approval } = useStream(block, view);
   // Open stretches: the omp session's (stretch.ts) when it reports them, else this page's own.
   const [opened, setOpened] = useState<Record<string, string[]>>({});
   // Whether `opened` mirrors the pane: then losing the report (omp restarted without stretch.ts) drops
@@ -48,7 +49,10 @@ export function Session({ block }: { block: string }) {
     }),
     [opened, stretch, block],
   );
-  const item = state?.projects.flatMap((p) => p.items).find((i) => i.block === block);
+  const items = state?.projects.flatMap((p) => p.items) ?? [];
+  const item = items.find((i) => i.block === block);
+  // Its waits in CodexBar AgentView, shown above the composer as Tern's status line shows them.
+  const waitRow = item ? rowOf(waiting, items, item) : null;
   const isOmp = !!item?.agent;
   const scroller = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -256,6 +260,7 @@ export function Session({ block }: { block: string }) {
           />
         )}
       </div>
+      {item && waitRow && waiting?.available && <WaitBar row={waitRow} health={waiting.health} now={now} />}
       {!item?.doc && (
         <Composer
           block={block}

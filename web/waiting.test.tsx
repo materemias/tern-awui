@@ -9,7 +9,7 @@ afterAll(() => GlobalRegistrator.unregister());
 // Preact and the component must bind to the registered browser globals, not Bun's initial globals.
 const { render } = await import("preact");
 const { act } = await import("preact/test-utils");
-const { WaitingIcon, WaitingPopup, WaitingStrip, parseThread, standing } = await import("./waiting");
+const { WaitBar, WaitingIcon, WaitingPopup, WaitingStrip, parseThread, rowOf: rowFor, standing } = await import("./waiting");
 const { Home } = await import("./home");
 const { origins } = await import("./hooks");
 
@@ -121,6 +121,27 @@ describe("the way in", () => {
     expect(root.querySelector(".waiting-count")).toBeNull();
     await act(() => render(<WaitingIcon waiting={view(session("a", { ball: "on_me" }), session("b", { ball: "on_me" }))} />, root));
     expect(root.querySelector(".waiting-count")?.textContent).toBe("2");
+  });
+
+  test("a session's status line: found by its session, else its pane; colours who acts; opens it in Waiting", async () => {
+    const pane8 = item({ block: "8" });
+    const items = [block7, pane8];
+    const job = { pane: 8, label: "bun test", ball: "on_machine", line: "job", waits: [wait("w9", "on_machine", { kind: "job" })] };
+    // Pane 7 also runs block 7's omp, but the session decides: "live" is that omp's.
+    const mine = session("live", { ball: "on_me", pane: 9, note: "check RMS2", waits: [wait("w1", "on_me", { reason: "ran, take a look" })] });
+    const parsed = parseView({ ok: true, counts: {}, sessions: [session("other", { pane: 7 }), mine], panes: [job] })!;
+    const waiting: Waiting = { available: true, ...parsed };
+    expect(rowFor(waiting, items, block7)?.session).toBe("live");
+    expect(rowFor(waiting, items, pane8)?.pane).toBe(8);
+    expect(rowFor({ available: false }, items, block7)).toBeNull();
+    expect(rowFor(view(session("elsewhere")), items, block7)).toBeNull();
+    await act(() => render(<WaitBar row={rowFor(waiting, items, block7)!} health={undefined} now={Date.now()} />, root));
+    const bar = root.querySelector("a.wait-bar")!;
+    expect(bar.getAttribute("href")).toBe("#/waiting/live");
+    expect(bar.className).toContain("g-on_me");
+    expect(bar.querySelector(".wait-bar-text")?.textContent).toBe("ran, take a look");
+    expect(bar.getAttribute("title")).toContain("On me: ran, take a look");
+    expect(bar.getAttribute("title")).toContain("“check RMS2”");
   });
 
   test("the list's header has no hourglass; the strip sits under the header (or beside the Tern session chips), and #/waiting opens the popup over the list", async () => {

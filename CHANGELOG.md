@@ -6,6 +6,9 @@
 
 - Allow or deny omp's tool approvals from the phone, seeing the tool, the reason and what the call would do.
 - With CodexBar AgentView, a **Waiting** strip and popup show set-aside sessions, grouped by who acts next.
+- A session set aside in Waiting shows its wait above the composer, as in Tern; a tap opens its Waiting page.
+- Icon buttons, including the composer's, say what they do on hover.
+- With the command or skill list open, Enter picks the highlighted entry instead of sending; ↑ ↓ move, Esc closes.
 - Chips under the list's header pick which Tern session it shows. Unparking needs `tern plugin reload tern-awui`.
 - Each turn folds its work behind one line such as `Worked 7m12s · 38 tools`, between the prompt and the final reply.
 - A turn that edited files ends with a card listing them with line counts.

@@ -67,19 +67,23 @@ describe("with the CLI", () => {
     expect(w).toMatchObject({ available: true, onMe: 0, rows: [{ session: "closed", title: "Session closed" }, { session: s.session, pane: 1 }] });
   });
 
-  test("a change to the view file reaches open list streams, and only those", async () => {
+  test("a change to the view file reaches every open stream, a session's too", async () => {
     const list = new Events();
     await list.open(s);
     const chat = new Events();
     await chat.open(s, "?block=1&view=chat");
-    await list.take("waiting", (d) => obj(d).available === true);
-    publish(view(session("closed", "on_machine"), session("new", "on_my_time"), session(s.session, "on_machine", { live: true, pane: 1 })));
-    await list.take("waiting", (d) => JSON.stringify(d).includes("Session new"));
-    // A rewritten file is read as it is, without starting Python.
-    expect(argv()).toEqual([]);
-    expect(chat.events.filter((e) => e.event === "waiting")).toEqual([]);
-    list.close();
-    chat.close();
+    try {
+      await list.take("waiting", (d) => obj(d).available === true);
+      publish(view(session("closed", "on_machine"), session("new", "on_my_time"), session(s.session, "on_machine", { live: true, pane: 1 })));
+      await list.take("waiting", (d) => JSON.stringify(d).includes("Session new"));
+      // The session's status line above its composer reads the same view.
+      await chat.take("waiting", (d) => JSON.stringify(d).includes("Session new"));
+      // A rewritten file is read as it is, without starting Python.
+      expect(argv()).toEqual([]);
+    } finally {
+      list.close();
+      chat.close();
+    }
   });
 
   test("POST stop runs the CLI with the checked ids, as argv", async () => {
