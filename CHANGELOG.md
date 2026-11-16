@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features
+
+- Images pasted into an ask's option notes (omp 18.21+) show on the answered card; tap a marker to open one.
+
 ## 0.12.0 (2026-11-16)
 
 ### Features

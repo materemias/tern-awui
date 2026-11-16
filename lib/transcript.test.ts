@@ -576,6 +576,25 @@ describe("parseChat asks and advisor notes", () => {
     expect(only(parseChat(t.lines(), "", 80).entries, "ask")[0].answer).toBe("Which?: B\nShip it?: Yes\n  Note: after review");
   });
 
+  test("images pasted into notes (omp ≥ 18.21) come with the answer, numbered as its `[Image #N]` markers", () => {
+    const t = new Transcript();
+    t.user("decide", 0);
+    t.assistant([ask("q1"), ask("q2")], 10, { stop: "toolUse" });
+    t.result("q1", "ask", 11, {
+      content: [
+        { type: "text", text: "User answers: …" },
+        { type: "image", data: "AAAA", mimeType: "image/png" },
+        { type: "image", data: "BBBB", mimeType: "image/jpeg" },
+      ],
+      details: { answers: [{ name: "pick", question: "Which?", answer: "B" }], notes: [{ name: "pick", question: "Which?", option: "B", value: "b", text: "this [Image #1, 4x4] not [Image #2, 4x4]" }] },
+    });
+    t.result("q2", "ask", 12, { details: { answers: [{ name: "pick", question: "Which?", answer: "A" }] } });
+    const [withImages, plain] = only(parseChat(t.lines(), "", 80).entries, "ask");
+    expect(withImages.answer).toBe('Which?: B\n  Note on "B": this [Image #1, 4x4] not [Image #2, 4x4]');
+    expect(withImages.images).toEqual([{ src: "data:image/png;base64,AAAA" }, { src: "data:image/jpeg;base64,BBBB" }]);
+    expect(plain.images).toBeUndefined();
+  });
+
   test("an ask without an html form (omp before 18.18.3) is an ordinary tool call", () => {
     const t = new Transcript();
     t.user("decide", 0);

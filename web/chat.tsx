@@ -8,7 +8,7 @@ import { post, type AdvisorNote, type Ask, type AskField, type ChatEntry, type I
 import { clock, duration, langOf, parseAdvisorNote, prettyModel, tokensShort } from "./lib";
 import { askFormHtml, FORM_NAME_PREFIX, renderMarkdown } from "./markdown";
 import { highlightFences } from "./highlight";
-import { buzz, CopyButton, IMAGE_REF, PromptText, Thumbs, Todo, UserMsg } from "./parts";
+import { buzz, CopyButton, IMAGE_REF, PromptText, Thumbs, Todo, UserMsg, withImageChips } from "./parts";
 import { ChangedFiles } from "./changed-files";
 import {
   DEEPEN,
@@ -446,6 +446,7 @@ function AskCard({ ask, block, pending }: { ask: Ask; block: string; pending: bo
   const [error, setError] = useState<string | null>(null);
   // Sent, but no result came: omp's own checks (`minlength`, a field the desktop emptied) refused it.
   const [refused, setRefused] = useState(false);
+  const showRef = useRef<((i: Img) => void) | null>(null);
   const open = ask.answer === null && pending;
   const named = ask.fields.filter((f) => f.name);
   const lone = named.length === 1 ? named[0] : undefined;
@@ -500,10 +501,12 @@ function AskCard({ ask, block, pending }: { ask: Ask; block: string; pending: bo
   }, [answered]);
 
   if (!open) {
+    const images = ask.images ?? [];
     return (
       <div class="ask done">
         {ask.answer === null && <div class="ask-q">{ask.question}</div>}
-        <div class="ask-answer">{ask.answer ?? "not answered"}</div>
+        <div class="ask-answer">{ask.answer === null ? "not answered" : withImageChips(ask.answer, images, (i) => showRef.current?.(i))}</div>
+        {images.length > 0 && <Thumbs images={images} strip showRef={showRef} />}
       </div>
     );
   }

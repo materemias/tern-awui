@@ -119,7 +119,7 @@ export type AskField =
   | { kind: "text"; name: string; question: string; multiline: boolean; value: string }
   | { kind: "choice"; name: string; question: string; multi: boolean; select: boolean; other: boolean; options: { value: string; label: string; checked: boolean; disabled: boolean }[] };
 /** An `ask` call: one HTML form; `answer` one `question: answer` line per field once omp has it. */
-export type Ask = { role: "ask"; id: string; html: string; fields: AskField[]; question: string; answer: string | null; ts: number };
+export type Ask = { role: "ask"; id: string; html: string; fields: AskField[]; question: string; answer: string | null; images?: Img[]; ts: number };
 export type ChatEntry =
   | { role: "user"; id: string; text: string; images: Img[]; ts: number }
   /** `block`: the stretchtext id of a reply holding `{{short|long}}` markup (see lib/transcript.ts). */

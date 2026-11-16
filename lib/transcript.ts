@@ -40,9 +40,10 @@ export type ChatEntry =
   | { role: "cacheMiss"; tokens: number; ts: number };
 /**
  * An `ask` call (omp ≥ 18.18.3: one HTML form). `html` as the model wrote it, `fields` as omp's
- * dialog walks them, `question` the first field's; `answer` one `question: answer` line per field.
+ * dialog walks them, `question` the first field's; `answer` one `question: answer` line per field;
+ * `images` the answer's pasted images (omp ≥ 18.21: a note's `[Image #N]`), present when it has any.
  */
-export type AskEntry = { role: "ask"; id: string; html: string; fields: AskField[]; question: string; answer: string | null; ts: number };
+export type AskEntry = { role: "ask"; id: string; html: string; fields: AskField[]; question: string; answer: string | null; images?: Img[]; ts: number };
 /** A note from omp's advisor model: `Key:`/`Evidence:`/`Impact:`/`Fix:` lines. */
 export type AdvisorNote = { advisor: string; severity: string; note: string };
 type InjectedRule = { name: string; text: string };
@@ -611,7 +612,11 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
       }
     } else if (msg.role === "toolResult") {
       const ask = asksById.get(str(msg.toolCallId));
-      if (ask) ask.answer = askAnswer(msg) || "answered";
+      if (ask) {
+        ask.answer = askAnswer(msg) || "answered";
+        const images = imagesOf(msg.content);
+        if (images.length) ask.images = images;
+      }
       const call = callsById.get(str(msg.toolCallId));
       if (call && msg.isError === true) call.error = true;
       const factArgs = factCalls.get(str(msg.toolCallId));

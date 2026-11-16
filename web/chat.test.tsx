@@ -663,6 +663,14 @@ describe("ask cards", () => {
     expect(texts(".ask.done .ask-q")).toEqual(["Which DB?"]);
     expect(root.querySelector("input")).toBeNull();
   });
+
+  test("an answer's note images: each [Image #N] is a chip opening image N, the images follow numbered", async () => {
+    await show([{ ...ask(DB, 'Which DB?: SQLite\n  Note on "SQLite": like [Image #2, 4x4]'), images: [{ src: "/img/1.png" }, { src: "/img/2.png" }] }]);
+    expect(texts(".ask.done .ask-answer")).toEqual(['Which DB?: SQLite\n  Note on "SQLite": like 2']);
+    expect([...root.querySelectorAll(".ask.done .thumb-tile b")].map((b) => b.textContent)).toEqual(["1", "2"]);
+    await click(root.querySelector(".ask.done .img-chip"));
+    expect(root.querySelector(".lightbox-count")!.textContent).toBe("2 / 2");
+  });
 });
 
 describe("stretchtext replies", () => {
