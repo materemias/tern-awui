@@ -110,7 +110,8 @@ export type Install = { status: "ok" | "missing" | "stale" | "foreign"; path: st
 /** A side question's answer as it streams from omp (`done` once complete). */
 export type Btw = { id: string; question: string; text: string; done: boolean; error: string };
 
-export type ToolCall = { name: string; intent: string; error?: boolean };
+/** `facts`: parsed from the call's output ("25 passed · 1 failed"), when the server was sure of it. */
+export type ToolCall = { name: string; intent: string; error?: boolean; facts?: string };
 export type TodoPhase = { name: string; tasks: { content: string; status: string; blocker?: string }[] };
 /** A field of an ask form (lib/ask-form.ts): `other` groups get a free-text Other answer. */
 export type AskField =

@@ -114,9 +114,10 @@ function session(item: Item, chat: ChatEntry[], over: Partial<DemoSession> = {})
 
 const user = (id: string, text: string, ts: number): ChatEntry => ({ role: "user", id, text, images: [], ts });
 const assistant = (text: string, ts: number): ChatEntry => ({ role: "assistant", text, ts });
-const tools = (ts: number, ...calls: [name: string, intent: string][]): ChatEntry => ({
+/** `facts`: what the server would parse from the call's output (lib/tool-facts.ts). */
+const tools = (ts: number, ...calls: [name: string, intent: string, facts?: string][]): ChatEntry => ({
   role: "tools",
-  calls: calls.map(([name, intent]) => ({ name, intent })),
+  calls: calls.map(([name, intent, facts]) => ({ name, intent, ...(facts && { facts }) })),
   images: [],
   todo: null,
   ts,
@@ -303,12 +304,12 @@ export function demoSessions(now: number): DemoSession[] {
         subagentChats: {
           CssAudit: [
             user("s1", "Find every colour in web/style.css that isn't a :root variable and propose a variable for each.", t(1.5)),
-            tools(t(1.3), ["grep", "Finding #hex and rgb() colours"], ["read", "Reading web/style.css"]),
+            tools(t(1.3), ["grep", "Finding #hex and rgb() colours", "14 results in 1 file"], ["read", "Reading web/style.css"]),
             assistant("Found 9 literal colours so far. Most are shadows (`rgb(0 0 0 / .4)`), which can stay; three are text colours that should become `--fg-soft`.", t(0.4)),
           ],
           IconSweep: [
             user("s2", "Check that every inline SVG icon draws with currentColor.", t(3.2)),
-            tools(t(3), ["grep", "Finding fill= and stroke= in web/*.tsx"]),
+            tools(t(3), ["grep", "Finding fill= and stroke= in web/*.tsx", "23 results in 6 files"]),
             assistant("All 23 icons use `currentColor`, so they follow the theme without changes.", t(2)),
           ],
         },
@@ -435,9 +436,9 @@ export function demoSessions(now: number): DemoSession[] {
           role: "tools",
           calls: [
             { name: "edit", intent: "Sharing one database per worker" },
-            { name: "bash", intent: "Running bun test", error: true },
+            { name: "bash", intent: "Running bun test", error: true, facts: "412 passed · 3 failed: orders > refunds a cancelled order" },
             { name: "edit", intent: "Rolling back each test's transaction" },
-            { name: "bash", intent: "Running bun test" },
+            { name: "bash", intent: "Running bun test", facts: "415 passed" },
           ],
           images: [],
           todo: null,
@@ -484,7 +485,7 @@ export function demoSessions(now: number): DemoSession[] {
       }),
       [
         user("u25a", "bump the dependencies, but hold the majors", t(5 * 60 + 20)),
-        tools(t(5 * 60 + 15), ["bash", "Listing outdated packages"], ["edit", "Bumping 14 minor versions"], ["bash", "Running bun test"]),
+        tools(t(5 * 60 + 15), ["bash", "Listing outdated packages"], ["edit", "Bumping 14 minor versions"], ["bash", "Running bun test", "no type errors · 415 passed"]),
         assistant("Fourteen minor and patch bumps are in and the suite is green. Two majors wait: Node 22 and the Postgres 17 driver, both need the infra team's go-ahead.", t(5 * 60)),
         turn(20 * MIN, t(5 * 60), [{ path: "package.json", added: 14, removed: 14 }, { path: "bun.lock", added: 61, removed: 58 }]),
       ],

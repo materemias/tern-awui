@@ -261,6 +261,9 @@ button.turn-work:hover .turn-work-sum, button.turn-work:active .turn-work-sum { 
 .tools-last { overflow: hidden; text-overflow: ellipsis; opacity: .75; margin-left: 4px; }
 .tools ul { list-style: none; margin: 6px 0 0 14px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .tool-name { color: var(--fg); font: 11.5px var(--mono); }
+/* After the intent; a whole line of its own when it doesn't fit beside it, cut with "…" when even that is too narrow. */
+.tool-facts { display: inline-block; max-width: calc(100% - 4px); vertical-align: bottom; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-left: 4px; opacity: .75; }
+.tool-facts::before { content: "· "; }
 .err { color: var(--blocked); }
 .ask { border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); border-radius: 14px; padding: 12px; background: var(--panel); display: flex; flex-direction: column; gap: 12px; }
 .ask.sent { opacity: .7; }

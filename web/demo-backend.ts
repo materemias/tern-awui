@@ -471,7 +471,7 @@ export class DemoServer {
       const ts = this.clock.now();
       const calls = [
         { name: "read", intent: "Reading README.md" },
-        { name: "grep", intent: `Searching for “${prompt.slice(0, 40)}”` },
+        { name: "grep", intent: `Searching for “${prompt.slice(0, 40)}”`, facts: "3 results in 2 files" },
       ];
       s.chat = [...s.chat, { role: "tools", calls, images: [], todo: null, ts }];
       this.emitDetail(s);

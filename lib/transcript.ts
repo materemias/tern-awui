@@ -6,11 +6,13 @@ import { dirname, extname, isAbsolute, resolve } from "node:path";
 import { marked } from "marked";
 import { arr, num, obj, str, type Obj } from "./json";
 import { parseAskForm, type AskField } from "./ask-form";
+import { toolFacts } from "./tool-facts";
 
 /** Only the tail of a transcript is read: older entries never reach the phone. */
 const CHAT_TAIL_BYTES = 4 * 1024 * 1024;
 
-export type ToolCall = { name: string; intent: string; error?: boolean };
+/** `facts`: what the call's own output says, parsed when its shape is certain (lib/tool-facts.ts). */
+export type ToolCall = { name: string; intent: string; error?: boolean; facts?: string };
 /** omp's todo list after a `todo` call: phases of tasks (pending, in_progress, completed, blocked…). */
 export type TodoPhase = { name: string; tasks: { content: string; status: string; blocker?: string }[] };
 /**
@@ -448,6 +450,10 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
   const callsById = new Map<string, ToolCall>();
   const groupByCall = new Map<string, Extract<ChatEntry, { role: "tools" }>>();
   const fileCalls = new Map<string, { name: string; args: Obj }>();
+  // Calls whose output may carry facts: bash and grep, until their result arrives.
+  const factCalls = new Map<string, Obj>();
+  // Their results, parsed once the window is known: only for the calls it shows.
+  const factsOf = new Map<ToolCall, () => string>();
   // Files the running turn changed, by shown path, in first-change order.
   const turnFiles = new Map<string, ChangedFile>();
   let cwd = "";
@@ -542,6 +548,7 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
           continue;
         }
         if (part.name === "edit" || part.name === "write" || part.name === "ast_edit") fileCalls.set(str(part.id), { name: str(part.name), args });
+        if (part.name === "bash" || part.name === "grep") factCalls.set(str(part.id), args);
         const call: ToolCall = { name: str(part.name), intent: callIntent(args) };
         callsById.set(str(part.id), call);
         const last = entries[entries.length - 1];
@@ -561,6 +568,9 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
       if (ask) ask.answer = askAnswer(msg) || "answered";
       const call = callsById.get(str(msg.toolCallId));
       if (call && msg.isError === true) call.error = true;
+      const factArgs = factCalls.get(str(msg.toolCallId));
+      factCalls.delete(str(msg.toolCallId));
+      if (call && factArgs) factsOf.set(call, () => toolFacts(call.name, factArgs, textOf(msg.content), obj(msg.details), msg.isError === true));
       const fileCall = fileCalls.get(str(msg.toolCallId));
       fileCalls.delete(str(msg.toolCallId));
       if (fileCall && msg.isError !== true && turnStart !== null)
@@ -581,7 +591,14 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
         }));
     }
   }
-  return { entries: entries.slice(-limit) };
+  const shown = entries.slice(-limit);
+  for (const entry of shown)
+    if (entry.role === "tools")
+      for (const call of entry.calls) {
+        const facts = factsOf.get(call)?.();
+        if (facts) call.facts = facts;
+      }
+  return { entries: shown };
 }
 
 /** What the list shows of a transcript, scanned from where the previous scan stopped. */

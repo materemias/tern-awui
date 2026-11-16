@@ -375,13 +375,17 @@ function Tools({
           {calls.length} tool{calls.length > 1 ? "s" : ""}
         </span>
         {errors > 0 && <span class="err">· {errors} failed</span>}
-        <span class="tools-last">{last.intent || last.name}</span>
+        <span class="tools-last">
+          {last.intent || last.name}
+          {last.facts && ` · ${last.facts}`}
+        </span>
       </div>
       {open && (
         <ul>
           {calls.map((c, n) => (
             <li key={n} class={c.error ? "err" : ""}>
               <span class="tool-name">{c.name}</span> {c.intent}
+              {c.facts && <span class="tool-facts">{c.facts}</span>}
             </li>
           ))}
         </ul>

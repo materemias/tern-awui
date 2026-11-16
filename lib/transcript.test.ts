@@ -397,6 +397,23 @@ describe("parseChat tool groups", () => {
     expect(calls.map((c) => c.error === true)).toEqual([false, true]);
   });
 
+  test("a result's own output gives its call facts; unrecognised output gives none", () => {
+    const t = new Transcript();
+    t.user("check", 0);
+    const calls = [
+      call("a", "bash", { command: "bun run typecheck 2>&1 | tail -3 && bun test 2>&1 | tail -6" }),
+      call("b", "bash", { command: "ls" }),
+      call("c", "grep", { pattern: "x" }),
+    ];
+    t.assistant(calls, 10, { stop: "toolUse" });
+    const bun = "$ tsc -p .\n(fail) chat > keeps the draft [1.20ms]\n\n 24 pass\n 1 fail\n 61 expect() calls\nRan 25 tests across 3 files. [212.00ms]\n\n\nCommand exited with code 1";
+    t.result("a", "bash", 11, { isError: true, content: bun });
+    t.result("b", "bash", 12, { content: "README.md\nlib\n" });
+    t.result("c", "grep", 13, { content: "# a.ts\n*1: x", details: { matchCount: 4, fileCount: 2, truncated: false } });
+    const facts = only(parseChat(t.lines(), "", 80).entries, "tools")[0].calls.map((c) => c.facts);
+    expect(facts).toEqual(["no type errors · 24 passed · 1 failed: chat > keeps the draft", undefined, "4 results in 2 files"]);
+  });
+
   test("a todo result sets the group's list from details.phases; the newest one wins", () => {
     const t = new Transcript();
     t.user("plan", 0);
