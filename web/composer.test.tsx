@@ -205,7 +205,7 @@ describe("draft mirroring and submission", () => {
     await advance(50);
     expect(net.calls.map((c) => [c.url, c.body])).toEqual([
       ["/api/blocks/5/draft", { text: "first" }],
-      ["/api/blocks/5/submit", { text: "final prompt" }],
+      ["/api/blocks/5/submit", { text: "final prompt", id: anyId }],
     ]);
     expect(area().value).toBe("");
     expect(button("Send").disabled).toBe(false);
@@ -270,7 +270,7 @@ describe("draft mirroring and submission", () => {
     });
     await release(draft);
     await advance(50);
-    expect(calls("submit")).toEqual([{ text: "only once" }]);
+    expect(calls("submit")).toEqual([{ text: "only once", id: anyId }]);
     await act(() => void node("form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
     await release(submit);
     expect(calls("submit")).toHaveLength(1);
@@ -291,7 +291,7 @@ describe("draft mirroring and submission", () => {
     expect(button("Send").disabled).toBe(false);
     await release(draft);
     await click(button("Send"));
-    expect(calls("submit")).toEqual([{ text: "keep this" }]);
+    expect(calls("submit")).toEqual([{ text: "keep this", id: anyId }]);
     expect(root.querySelector(".error")).toBeNull();
   });
 
@@ -303,7 +303,7 @@ describe("draft mirroring and submission", () => {
     await click(node(".error"));
     expect(root.querySelector(".error")).toBeNull();
     await click(button("Send"));
-    expect(calls("submit")).toEqual([{ text: "preserve me" }]);
+    expect(calls("submit")).toEqual([{ text: "preserve me", id: anyId }]);
     expect(area().value).toBe("  preserve me  ");
     expect(button("Send").disabled).toBe(false);
     net.reply = () => Response.json({ ok: true });
@@ -319,7 +319,7 @@ describe("draft mirroring and submission", () => {
     await input("offline editor");
     expect(calls("draft")).toEqual([]);
     await click(button("Send"));
-    expect(calls("submit")).toEqual([{ text: "offline editor" }]);
+    expect(calls("submit")).toEqual([{ text: "offline editor", id: anyId }]);
   });
 });
 
@@ -556,11 +556,11 @@ describe("follow-ups and side questions", () => {
     net.reply = () => Response.json({ ok: true });
     await input("steer now");
     await click(button("Send"));
-    expect(calls("submit")[1]).toEqual({ text: "steer now" });
+    expect(calls("submit")[1]).toEqual({ text: "steer now", id: anyId });
     await input("after the turn");
     await press("Enter", { ctrlKey: true });
     const [failed, steer, retried] = ids();
-    expect(steer).toBeUndefined();
+    expect(steer).not.toBe(failed);
     expect(retried).toBe(failed);
   });
 
@@ -572,7 +572,7 @@ describe("follow-ups and side questions", () => {
     expect(calls("submit")).toEqual([{ text: "later", images: [{ data: btoa("PNG"), mimeType: "image/png" }], followUp: true, id: anyId }]);
     await input("now");
     await click(button("Send"));
-    expect(calls("submit")[1]).toEqual({ text: "now" });
+    expect(calls("submit")[1]).toEqual({ text: "now", id: anyId });
   });
 
   test("Shift+Enter is left to the editor and Ctrl+Q does nothing while idle", async () => {
@@ -632,7 +632,7 @@ describe("follow-ups and side questions", () => {
     await input("/btw ordinary prompt");
     await click(button("Send"));
     expect(calls("btw")).toEqual([]);
-    expect(calls("submit")).toEqual([{ text: "/btw ordinary prompt" }]);
+    expect(calls("submit")).toEqual([{ text: "/btw ordinary prompt", id: anyId }]);
   });
 
   test("an explicit follow-up is not intercepted as a side turn", async () => {
@@ -864,7 +864,7 @@ describe("completion", () => {
     await release(completion, Response.json({ text: "/help " }));
     await advance(50);
     expect(calls("draft")).toEqual([{ text: "/he" }]);
-    expect(calls("submit")).toEqual([{ text: "/he" }]);
+    expect(calls("submit")).toEqual([{ text: "/he", id: anyId }]);
     expect(area().value).toBe(editNext ? "next prompt" : "/he");
     await release(submit);
     expect(area().value).toBe(editNext ? "next prompt" : "");

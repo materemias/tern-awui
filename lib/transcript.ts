@@ -386,6 +386,52 @@ export async function readPendingCall(path: string, id: string): Promise<Pending
   return pendingCall(await tailLines(path, CHAT_TAIL_BYTES), id);
 }
 
+/** A turn that ended on an error: the assistant message's entry id, time, provider, and omp's `errorMessage`. */
+export type ErrorStop = { id: string; ts: number; provider: string; error: string };
+
+/**
+ * The error a session's active path ends on: its newest message is an assistant message that
+ * stopped with `stopReason: "error"`. Null when that message ended otherwise, or a prompt or tool
+ * result came after it; undefined when the lines don't reach the leaf or the message (a tail that
+ * starts later), so nothing is known. `leaf` as for {@link parseChat}. Walks back from the end,
+ * parsing only the rows on the path.
+ */
+export function lastStop(lines: string[], leaf: string): ErrorStop | null | undefined {
+  if (leaf === "-") return null;
+  let want = leaf;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (want && !lines[i].includes(`"id":"${want}"`)) continue;
+    let row: Obj;
+    try {
+      row = obj(JSON.parse(lines[i]));
+    } catch {
+      continue;
+    }
+    const id = str(row.id);
+    if (!id || (want && id !== want)) continue;
+    const msg = obj(row.message);
+    if (row.type === "message" && (msg.role === "assistant" || msg.role === "user" || msg.role === "toolResult")) {
+      const error = str(msg.errorMessage);
+      if (msg.role !== "assistant" || msg.stopReason !== "error" || !error) return null;
+      return { id, ts: Date.parse(str(row.timestamp)) || num(msg.timestamp), provider: str(msg.provider), error };
+    }
+    // Rows that aren't a turn's messages (model changes, custom entries, notes) lead on to their parent.
+    want = str(row.parentId);
+    if (!want) return null;
+  }
+  return want ? undefined : null;
+}
+
+/** A tail that holds an errored message and the rows after it; the whole chat tail when it doesn't reach the leaf. */
+const STOP_TAIL_BYTES = 512 * 1024;
+
+/** {@link lastStop} on a transcript file's tail: a short one first, then the chat's longer one when that doesn't reach the leaf. */
+export async function readLastStop(path: string, leaf: string): Promise<ErrorStop | null | undefined> {
+  const short = lastStop(await tailLines(path, STOP_TAIL_BYTES), leaf);
+  if (short !== undefined || Bun.file(path).size <= STOP_TAIL_BYTES) return short;
+  return lastStop(await tailLines(path, CHAT_TAIL_BYTES), leaf);
+}
+
 /** A file a turn's edit/write/ast_edit calls changed; line counts are null when the transcript doesn't tell. */
 export type ChangedFile = { path: string; added: number | null; removed: number | null };
 

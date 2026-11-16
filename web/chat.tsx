@@ -166,6 +166,14 @@ export type StretchSync = {
 };
 export const StretchContext = createContext<StretchSync | null>(null);
 
+/**
+ * A line above the composer confirming an answer the phone sent, once omp took it. `unsent`: a
+ * Deny's reason that never reached omp, shown until dismissed so it can go as a message.
+ */
+export type AnsweredLine = { text: string; unsent?: string };
+/** Where an answered card reports its confirmation line; without a provider (subagents) it goes nowhere. */
+export const AnsweredContext = createContext<(line: AnsweredLine) => void>(() => {});
+
 /** A growth's pace: about 45 ms per added word, at most 700 ms, as in the Tern pane. */
 const GROW_MS_PER_WORD = 45;
 const GROW_MAX_MS = 700;
@@ -484,6 +492,12 @@ function AskCard({ ask, block, pending }: { ask: Ask; block: string; pending: bo
     }, ANSWER_TAKEN_MS);
     return () => clearTimeout(timer);
   }, [sent, open]);
+  // omp wrote the result of the phone's answer: the card folds and the composer's line confirms it.
+  const noteAnswered = useContext(AnsweredContext);
+  const answered = ask.answer !== null;
+  useEffect(() => {
+    if (answered && submitted.current) noteAnswered({ text: ask.question ? `✓ Answered: ${ask.question}` : "✓ Answered" });
+  }, [answered]);
 
   if (!open) {
     return (

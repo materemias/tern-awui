@@ -2,6 +2,7 @@ export type { BtwHistoryRecord, BtwHistoryTurn } from "../lib/btw-history";
 export type { ApprovalView, ContextUse, Run, StretchState, Voice } from "../lib/bridge-state";
 export type { Closed } from "../lib/closed";
 export type { Waiting, WaitingRow } from "../lib/waiting-view";
+export type { LimitView } from "../lib/usage-limit";
 import type { ChangedFile } from "../lib/transcript";
 export type { ChangedFile };
 import { launchTarget } from "./lib";
@@ -150,16 +151,21 @@ export function postJson(path: string, body: unknown, init: RequestInit = {}): P
   });
 }
 
-/** POSTs an action; null on success, else the server's error (or the network failure). */
-export async function post(path: string, body: unknown): Promise<string | null> {
+/** POSTs an action; `error` null on success, else the server's error (or the network failure); `body`: the parsed reply, {} when it has none. */
+export async function postReply(path: string, body: unknown): Promise<{ error: string | null; body: Record<string, unknown> }> {
   try {
     const r = await postJson(path, body);
-    if (r.ok) return null;
-    const data: { error?: string } = await r.json().catch(() => ({}));
-    return data.error ?? `HTTP ${r.status}`;
+    const raw: unknown = await r.json().catch(() => null);
+    const data = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+    return { error: r.ok ? null : typeof data.error === "string" ? data.error : `HTTP ${r.status}`, body: data };
   } catch (err) {
-    return String(err);
+    return { error: String(err), body: {} };
   }
+}
+
+/** POSTs an action; null on success, else the server's error (or the network failure). */
+export async function post(path: string, body: unknown): Promise<string | null> {
+  return (await postReply(path, body)).error;
 }
 
 /**

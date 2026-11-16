@@ -17,14 +17,14 @@ import { readFile } from "node:fs/promises";
 import type { Server, ServerWebSocket, Subprocess } from "bun";
 import webpush, { type PushSubscription, type RequestOptions } from "web-push";
 import { arr, num, obj, str, type Obj } from "./lib/json";
-import { IMAGE_MIMES, TranscriptImages, readChatFile, readPendingCall, recapStale, scanFacts, type ChatEntry, type Facts } from "./lib/transcript";
+import { IMAGE_MIMES, TranscriptImages, readChatFile, readLastStop, readPendingCall, recapStale, scanFacts, type ChatEntry, type ErrorStop, type Facts } from "./lib/transcript";
 import { countSubagents, listSubagents, regularFile, subagentDir, subagentFile, validSubagentName, type Subagent, type SubagentFacts } from "./lib/subagents";
 import { readBtwHistory } from "./lib/btw-history";
 import { compactAtPercent, type Compaction } from "./lib/compaction";
 import { forgetRepos, repoOf } from "./lib/git";
 import { queryRecaps, querySessionRecaps, recapMark, withRecaps } from "./lib/recaps";
 import { answerSteps, KEYS, promptImages, type Applied, type PromptImage } from "./lib/input";
-import { approvalQuestion, emptyState, foldVoice, listChanged, parseBridgeState, PROTOCOL, STRETCH_BLOCK, type ApprovalView, type BridgeState, type Caps, type ContextUse, type Job, type Voice } from "./lib/bridge-state";
+import { approvalQuestion, denyReason, emptyState, foldVoice, listChanged, parseBridgeState, PROTOCOL, STRETCH_BLOCK, type ApprovalView, type BridgeState, type Caps, type ContextUse, type Job, type Voice } from "./lib/bridge-state";
 import { extensionCheck, offersCommand, sessionMismatch, type InstallStatus, type Mismatch } from "./lib/extension-check";
 import { claudeDir, codexDir, configDir, docIcon, installedExtension, ompDataDir, ternNotesDir } from "./lib/paths";
 import { ensureToken, sameToken } from "./lib/auth";
@@ -39,6 +39,7 @@ import { vapidSubject } from "./lib/push";
 import { WaitingWatch } from "./lib/waiting";
 import { blockOf, rowId, WAITING_ACTIONS, type OnMe } from "./lib/waiting-view";
 import { writePrivateFile } from "./lib/private-file";
+import { CONTINUE_AFTER_MS, CONTINUE_TEXT, limitKind, resetFromMessage, resetFromUsage, type LimitView } from "./lib/usage-limit";
 
 const DOC_MAX_BYTES = 512 * 1024;
 /** This checkout. The phone shows it in the command that (re)installs the extension. */
@@ -76,6 +77,22 @@ const WAITING_TIMEOUT_MS = 10_000;
 const MAX_TEXT = 1_000_000;
 /** A phone's id for one prompt it sends (a UUID): a resend after a failed send carries the same one. */
 const SEND_ID = /^[A-Za-z0-9-]{1,64}$/;
+/** A send that succeeded is remembered this long by its id, so a resend does nothing; the newest this many. */
+const SENT_TTL_MS = 10 * 60_000;
+const SENT_MAX = 500;
+/** Scheduled continues kept at most; the oldest set goes first. */
+const CONTINUES_MAX = 100;
+/** A continue not sent this long after its time (omp gone, or every try failed) is dropped. */
+const CONTINUE_LATE_MS = 60 * 60_000;
+/** A due continue that couldn't go (omp didn't take it, its transcript unreadable) tries again after this. */
+const CONTINUE_RETRY_MS = 30_000;
+/** setTimeout's longest delay (about 24.8 days); a later continue is timed in steps. */
+const TIMER_MAX_MS = 2 ** 31 - 1;
+/** What the server says when a pane's extension predates `keepDraft` sends (protocol 6). */
+const OLD_EXTENSION = "this omp runs an older tern-mobile extension: restart omp to load the new one";
+/** `omp usage` asks every provider's API: a provider's answer serves a minute, and gets this long. */
+const USAGE_TTL_MS = 60_000;
+const USAGE_TIMEOUT_MS = 10_000;
 /** Only this origin's scripts, styles and images (plus data:/blob:): agent markdown can't make the app fetch a URL that leaks data. */
 export const CSP = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
 
@@ -87,6 +104,8 @@ export type ServerOptions = {
   dist?: string;
   /** Delivers one Web Push message; web-push's by default. */
   sendNotification?: (subscription: PushSubscription, payload: string, options: RequestOptions) => Promise<unknown>;
+  /** How long after a usage limit resets a scheduled continue goes, so it doesn't race the provider's clock; a minute by default. */
+  continueAfterMs?: number;
 };
 
 export type ServerHandle = {
@@ -1236,35 +1255,281 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     return error;
   }
 
-  /** Image and follow-up sends still waiting for omp, by block and the phone's id. */
+  /** Sends still running, by block and the phone's id. */
   const sending = new Map<string, Promise<string | null>>();
+  /** Sends that succeeded, by block and the phone's id, and when: a resend within SENT_TTL_MS is a no-op. Oldest first. */
+  const sent = new Map<string, number>();
+  /** Whether a send with this key is running, or succeeded within SENT_TTL_MS. */
+  function sentRecently(key: string): boolean {
+    const at = sent.get(key);
+    return sending.has(key) || (at !== undefined && Date.now() - at < SENT_TTL_MS);
+  }
 
   /**
-   * Submits a prompt: through the bridge's draft when connected, else typed into the pane.
-   * Images need the bridge (a terminal can't take them); they go to omp as one user message.
-   * `id`: the phone's id for an image or follow-up send. A resend with the id of a send still
-   * running waits for that one, and omp skips an id it already took, so the prompt runs once.
+   * Runs a phone's send once per `id`: a resend with the id of a send still running waits for that
+   * one, and a resend of one that succeeded in the last 10 minutes does nothing, so a retry after a
+   * lost reply doesn't prompt omp twice. A failed send is forgotten, so its retry runs again.
+   * Without an id, every call runs.
    */
-  async function submit(block: string, text: string, images: PromptImage[], followUp: boolean, id = ""): Promise<string | null> {
+  async function sendOnce(block: string, id: string, run: () => Promise<string | null>): Promise<string | null> {
+    if (!id) return run();
+    const key = `${block} ${id}`;
+    const now = Date.now();
+    for (const [k, at] of sent) {
+      if (now - at < SENT_TTL_MS) break;
+      sent.delete(k);
+    }
+    if (sent.has(key)) return null;
+    const running = sending.get(key);
+    if (running) return running;
+    const result = run();
+    sending.set(key, result);
+    try {
+      const error = await result;
+      if (!error) {
+        sent.set(key, Date.now());
+        if (sent.size > SENT_MAX) sent.delete(sent.keys().next().value!);
+      }
+      return error;
+    } finally {
+      sending.delete(key);
+    }
+  }
+
+  /**
+   * Submits a prompt: through the bridge's draft when connected, else typed into the pane; once per
+   * `id` (see `sendOnce`; omp also skips an image or follow-up id it already took). A prompt that
+   * went drops the pane's scheduled continue: the session has its next instruction.
+   */
+  function submit(block: string, text: string, images: PromptImage[], followUp: boolean, id = ""): Promise<string | null> {
+    return sendOnce(block, id, async () => {
+      const error = await submitOnce(block, text, images, followUp, id);
+      if (!error) cancelContinue(block);
+      return error;
+    });
+  }
+
+  /**
+   * Sends the server's own message to the pane's omp (a deny's reason, a usage-limit continue): a
+   * turn when idle, a steer while it works. It never goes through the editor, so a draft typed there
+   * stays and no key lands in a dialog that opened meanwhile. Needs the bridge at protocol 6.
+   * `id`: omp skips a resend of one it already took.
+   */
+  async function steer(block: string, text: string, id = ""): Promise<string | null> {
+    const b = bridges.get(block);
+    if (!b) return "omp is not connected to tern-mobile";
+    if (b.state.protocol < 6) return OLD_EXTENSION;
+    return bridgeError(await bridgeRequest(b, { t: "send", text, images: [], keepDraft: true, ...(id && { id }) }), "omp did not take the message");
+  }
+
+  /** Images need the bridge (a terminal can't take them); they go to omp as one user message. */
+  async function submitOnce(block: string, text: string, images: PromptImage[], followUp: boolean, id: string): Promise<string | null> {
     const b = bridges.get(block);
     if (images.length || followUp) {
       if (!b) return `${followUp ? "follow-ups" : "images"} need an omp session connected to tern-mobile (restart it)`;
-      const key = `${block} ${id}`;
-      const running = id ? sending.get(key) : undefined;
-      if (running) return running;
       // `expected`: omp clears its editor only if it still holds the phone's draft, so desktop typing survives.
-      const result = bridgeRequest(b, { t: "send", text, images, followUp, expected: b.state.text, ...(id && { id }) }).then((reply) =>
-        bridgeError(reply, "omp did not take the message"),
-      );
-      if (!id) return result;
-      sending.set(key, result);
-      return result.finally(() => sending.delete(key));
+      const reply = await bridgeRequest(b, { t: "send", text, images, followUp, expected: b.state.text, ...(id && { id }) });
+      return bridgeError(reply, "omp did not take the message");
     }
     if (!b) return (text && (await sendText(block, text))) || sendKeys(block, ["Enter"]);
     // Always set: the reported draft may be stale, and Enter must submit exactly the phone's text.
     const error = bridgeError(await bridgeRequest(b, { t: "set", text }), "omp did not take the draft");
     if (error) return error;
     return sendKeys(block, ["Enter"]);
+  }
+
+  // ---------- usage limits ----------
+
+  const continueAfterMs = options.continueAfterMs ?? CONTINUE_AFTER_MS;
+  const CONTINUES_FILE = join(CONFIG_DIR, "continues.json");
+  /**
+   * A continue a phone set for a pane: sent at `at` if its session still rests, idle, on error entry
+   * `entry`. `id`: omp skips a resend of one it already took (a retry after a lost reply).
+   */
+  type Appointment = { id: string; sessionId: string; entry: string; at: number };
+  /** By pane, oldest set first; saved so a restarted server keeps them. */
+  const appointments = new Map<string, Appointment>();
+  const appointmentTimers = new Map<string, Timer>();
+  if (existsSync(CONTINUES_FILE))
+    try {
+      for (const a of arr(JSON.parse(readFileSync(CONTINUES_FILE, "utf8"))).map(obj))
+        if (/^\d+$/.test(str(a.block)) && str(a.sessionId) && str(a.entry) && typeof a.at === "number")
+          appointments.set(str(a.block), { id: SEND_ID.test(str(a.id)) ? str(a.id) : crypto.randomUUID(), sessionId: str(a.sessionId), entry: str(a.entry), at: a.at });
+    } catch {
+      console.error(`${CONTINUES_FILE} is unreadable: scheduled continues are dropped`);
+    }
+  for (const block of appointments.keys()) armContinue(block);
+
+  function saveContinues() {
+    writePrivateFile(CONTINUES_FILE, JSON.stringify([...appointments].map(([block, a]) => ({ block, ...a }))));
+  }
+
+  /** Times a look at the pane's continue for `at`, its own time by default; one further off than setTimeout reaches is timed in steps. */
+  function armContinue(block: string, at?: number) {
+    clearTimeout(appointmentTimers.get(block));
+    appointmentTimers.delete(block);
+    const a = appointments.get(block);
+    if (!a || stopped) return;
+    const timer = setTimeout(() => {
+      appointmentTimers.delete(block);
+      void dueContinue(block);
+    }, Math.min(Math.max((at ?? a.at) - Date.now(), 0), TIMER_MAX_MS));
+    appointmentTimers.set(block, timer);
+  }
+
+  /** Drops the pane's continue: a prompt went to it, its session or omp changed, or a phone cancelled it. */
+  function cancelContinue(block: string) {
+    clearTimeout(appointmentTimers.get(block));
+    appointmentTimers.delete(block);
+    if (!appointments.delete(block)) return;
+    saveContinues();
+    publishLimit(block);
+  }
+
+  /** Sets the pane's continue for `at`, replacing any it had. */
+  function setContinue(block: string, a: Appointment) {
+    appointments.delete(block);
+    appointments.set(block, a);
+    for (const old of appointments.keys()) {
+      if (appointments.size <= CONTINUES_MAX) break;
+      cancelContinue(old);
+    }
+    saveContinues();
+    armContinue(block);
+    publishLimit(block);
+  }
+
+  /**
+   * The error a session's active path ends on, null when it ends on none; undefined when its
+   * transcript can't be read or the tail read doesn't reach the leaf. One read serves every look
+   * while the file and the leaf stay the same.
+   */
+  function stopOf(sessionId: string, leaf: string): Promise<ErrorStop | null | undefined> {
+    const path = transcriptPath(sessionId);
+    const st = path ? statSync(path, { throwIfNoEntry: false }) : undefined;
+    if (!path || !st) return Promise.resolve(undefined);
+    const tag = `${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}:${leaf}`;
+    return sharedRead(`stop:${path}`, tag, () => readLastStop(path, leaf)).catch(() => undefined);
+  }
+
+  /** Whether the pane's session still rests, idle, on the errored turn its continue was set for; undefined when its transcript doesn't tell. */
+  async function restsOn(b: Bridge, a: Appointment): Promise<boolean | undefined> {
+    if (b.state.sessionId !== a.sessionId || b.state.status !== "idle") return false;
+    const stop = await stopOf(a.sessionId, b.state.leaf);
+    return stop === undefined ? undefined : stop?.id === a.entry;
+  }
+
+  /** Panes whose continue is being looked at; `again`: a report came meanwhile, so it is looked at once more after. */
+  const firing = new Set<string>();
+  const again = new Set<string>();
+  /** The continue's time came (or its pane reported since): one look at a time per pane. */
+  async function dueContinue(block: string) {
+    if (firing.has(block)) return void again.add(block);
+    firing.add(block);
+    try {
+      await fireContinue(block);
+    } finally {
+      firing.delete(block);
+    }
+    if (again.delete(block)) void reviewContinue(block);
+  }
+
+  /**
+   * A due continue goes, as a message of the server's own (`steer`), if the session still rests on
+   * that turn; it is dropped once the session moved on, or CONTINUE_LATE_MS after its time. Nothing
+   * is ever typed into the pane: without its omp connected, it waits for omp's next report. A send
+   * that failed, or a transcript that doesn't tell, tries again after CONTINUE_RETRY_MS, so the
+   * banner keeps showing it until then.
+   */
+  async function fireContinue(block: string) {
+    const a = appointments.get(block);
+    if (!a || stopped) return;
+    const now = Date.now();
+    if (a.at > now) return armContinue(block);
+    if (now - a.at > CONTINUE_LATE_MS) return cancelContinue(block);
+    const b = bridges.get(block);
+    // Its omp isn't connected, or hasn't reported since this server started: its first report looks again.
+    if (!b?.state.status) return armContinue(block, a.at + CONTINUE_LATE_MS + 1);
+    const leaf = b.state.leaf;
+    const rests = await restsOn(b, a);
+    // Cancelled or replaced meanwhile; or the pane moved, and the report that moved it looks again.
+    if (appointments.get(block) !== a || stopped) return;
+    if (bridges.get(block) !== b || b.state.leaf !== leaf || b.state.sessionId !== a.sessionId || b.state.status !== "idle") return void again.add(block);
+    if (rests === false) return cancelContinue(block);
+    if (rests === undefined) return armContinue(block, Date.now() + CONTINUE_RETRY_MS);
+    const error = await steer(block, CONTINUE_TEXT, a.id);
+    if (appointments.get(block) !== a) return;
+    if (!error) return cancelContinue(block);
+    console.error(`continue in pane ${block} failed: ${error}`);
+    armContinue(block, Date.now() + CONTINUE_RETRY_MS);
+  }
+
+  /** A pane with a continue reported a change: a due one goes now; one whose session moved on (a turn started on the desktop) is dropped. */
+  async function reviewContinue(block: string) {
+    const a = appointments.get(block);
+    const b = bridges.get(block);
+    if (!a || !b) return;
+    if (a.at <= Date.now()) return dueContinue(block);
+    const rests = await restsOn(b, a);
+    // Only a session known to have moved on drops it: a transcript that doesn't tell keeps it.
+    if (rests === false && appointments.get(block) === a && bridges.get(block) === b) cancelContinue(block);
+  }
+
+  const usageCache = new Map<string, { at: number; value: Promise<unknown> }>();
+  /** `omp usage --json` for one provider, run at most once a minute per provider; null when omp fails. */
+  function ompUsage(provider: string): Promise<unknown> {
+    const hit = usageCache.get(provider);
+    if (hit && Date.now() - hit.at < USAGE_TTL_MS) return hit.value;
+    const value = commandOutput(["omp", "usage", "--json", "--provider", provider], USAGE_TIMEOUT_MS).then((out) => {
+      try {
+        return JSON.parse(out ?? "") as unknown;
+      } catch {
+        return null;
+      }
+    });
+    usageCache.set(provider, { at: Date.now(), value });
+    return value;
+  }
+
+  /**
+   * When a usage limit lifts: a `retry-after-ms` (or a reset date with its zone) in the message, else
+   * omp's usage report, else the message's zone-less reset date read as local time (the provider's
+   * zone is unknown); null when none of them tells a future time.
+   */
+  async function resetOf(stop: ErrorStop): Promise<number | null> {
+    const said = resetFromMessage(stop.error, stop.ts);
+    if (said?.exact && said.at > Date.now()) return said.at;
+    const usage = stop.provider ? resetFromUsage(await ompUsage(stop.provider), stop.provider, Date.now()) : null;
+    if (usage !== null) return usage;
+    return said && said.at > Date.now() ? said.at : null;
+  }
+
+  /** The usage limit a pane's idle session stopped on, as its banner shows it; null when it stopped on none. */
+  async function limitOf(pane: string): Promise<{ view: LimitView; stop: ErrorStop; sessionId: string } | null> {
+    const s = bridges.get(pane)?.state;
+    if (s?.status !== "idle" || !s.sessionId) return null;
+    const stop = await stopOf(s.sessionId, s.leaf);
+    const kind = stop && limitKind(stop.error);
+    if (!stop || !kind) return null;
+    const resetAt = kind === "wait" ? await resetOf(stop) : null;
+    const a = appointments.get(pane);
+    const continueAt = a?.sessionId === s.sessionId && a.entry === stop.id ? a.at : null;
+    return { view: { kind, error: stop.error.slice(0, 500), resetAt, continueAt }, stop, sessionId: s.sessionId };
+  }
+
+  /** Per pane, the newest banner look: an older one finishing later (a slow `omp usage`) is not sent. */
+  const limitLooks = new Map<string, number>();
+  /** Starts a new banner look for the pane, so any older one still running is not sent. */
+  function nextLimitLook(pane: string): number {
+    const look = (limitLooks.get(pane) ?? 0) + 1;
+    limitLooks.set(pane, look);
+    return look;
+  }
+  /** Sends a pane's banner to the phones watching it (a phone opening the session included). */
+  function publishLimit(pane: string) {
+    if (!paneListeners.has(pane)) return;
+    const look = nextLimitLook(pane);
+    void limitOf(pane).then((limit) => limitLooks.get(pane) === look && emit(pane, "limit", limit?.view ?? null));
   }
 
   /** Per block, what the last send typed into its open ask: a resend after omp refused the form starts from there. */
@@ -1369,6 +1634,9 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
             onPane("stretch", b?.state.stretch ?? null);
             // Always, null included: an approval answered while the phone was away must not linger.
             void approvalView(block).then((view) => (bridges.get(block) ?? null) === b && onPane("approval", view));
+            // Always, null included: a limit left behind while the phone was away must not linger.
+            // Through publishLimit's look: a slow first look can't overwrite a newer banner.
+            publishLimit(block);
             // Always, null included: a call that ended while the phone was away must not linger.
             onPane("voice", b?.voice ?? null);
             // Opening a session on the phone is seeing its update.
@@ -1702,7 +1970,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
 
     // Cross-site forms cannot set custom headers; this keeps the POSTs same-origin.
     if (req.headers.get("x-tern-mobile") !== "1") return json({ error: "missing header" }, 403);
-    const m = /^\/api\/blocks\/(\d+)\/(keys|type|submit|draft|answer|approve|model|models|thinking|tier|focus|abort|btw|close|park|unpark|complete|completion|rewind|stretch|voice|hangup)$/.exec(path);
+    const m = /^\/api\/blocks\/(\d+)\/(keys|type|submit|draft|answer|approve|model|models|thinking|tier|focus|abort|btw|close|park|unpark|complete|completion|rewind|stretch|voice|hangup|continue)$/.exec(path);
     // Commands with no arguments may omit the body; payload-bearing actions must send JSON.
     const bodyless = req.body === null && /^(models|focus|abort|close|park|unpark|hangup)$/.test(m?.[2] ?? "");
     const raw: unknown = bodyless ? {} : await req.json().catch(() => null);
@@ -1826,6 +2094,38 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           if (body.id !== undefined && (typeof body.id !== "string" || !SEND_ID.test(body.id))) return json({ error: "bad id" }, 400);
           return done(await submit(block, str(body.text), images, body.followUp === true, str(body.id)));
         }
+        case "continue": {
+          // A session stopped on a usage limit: go on now, once the limit resets, or no longer then.
+          // Every phone sees the change as the session's `limit` event.
+          if (body.cancel === true) {
+            cancelContinue(block);
+            return json({ ok: true });
+          }
+          if (body.when !== "reset" && body.when !== "now") return json({ error: "when must be reset or now" }, 400);
+          if (body.id !== undefined && (typeof body.id !== "string" || !SEND_ID.test(body.id))) return json({ error: "bad id" }, 400);
+          const id = str(body.id);
+          // A resend of a Continue now that went (a lost reply) gets its success: the limit is gone by then.
+          const resend = body.when === "now" && id !== "" && sentRecently(`${block} ${id}`);
+          if (!resend) {
+            // The continue goes as a message of the server's own, never through omp's editor.
+            if (bridge && bridge.state.protocol < 6) return json({ error: OLD_EXTENSION }, 409);
+            const limit = await limitOf(block);
+            if (!limit) return json({ error: "this session isn't stopped on a usage limit" }, 409);
+            if (body.when === "reset") {
+              if (limit.view.resetAt === null) return json({ error: "the reset time isn't known: continue now instead" }, 409);
+              const at = limit.view.resetAt + continueAfterMs;
+              setContinue(block, { id: crypto.randomUUID(), sessionId: limit.sessionId, entry: limit.stop.id, at });
+              return json({ ok: true, at });
+            }
+          }
+          return done(
+            await sendOnce(block, id, async () => {
+              const error = await steer(block, CONTINUE_TEXT, id);
+              if (!error) cancelContinue(block);
+              return error;
+            }),
+          );
+        }
         case "stretch": {
           // Opens or closes a stretch of a reply in the pane too (omp's stretch.ts), so the desktop
           // shows what the phone opened and the next prompt's read note counts it.
@@ -1847,6 +2147,13 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           // wherever the dialog's cursor sits and whatever the editor holds; Escape denies it. Typed
           // only while the pane still asks about this call, so a key never lands in the editor.
           if (typeof body.allow !== "boolean") return json({ error: "allow must be true or false" }, 400);
+          // A Deny's reason: omp's dialog has none, so it goes to the agent as a message of its own once the deny lands.
+          const parsed = denyReason(body.allow, body.reason);
+          if ("error" in parsed) return json({ error: parsed.error }, 400);
+          const { reason } = parsed;
+          // Refused before Escape when this omp can't take the reason that way.
+          if (reason && (!bridge || bridge.state.protocol < 6))
+            return json({ error: bridge ? OLD_EXTENSION : "a deny's reason needs an omp session connected to tern-mobile" }, 409);
           // The last report can trail omp (the dialog closed on the desktop a moment ago): a fresh
           // snapshot settles it. An extension before protocol 5 reports no approvals to settle.
           if (bridge && bridge.state.protocol >= 5 && !(await bridgeRequest(bridge, { t: "sync" }))) return done("omp did not answer");
@@ -1861,7 +2168,12 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           const error = await pressKeys(block, [body.allow ? "ctrl+q" : "Escape"]);
           // Not typed: the call still waits, and a retry may answer it.
           if (error && answeredApprovals.get(block) === mark) answeredApprovals.delete(block);
-          return done(error);
+          if (error || !reason) return done(error);
+          // The deny landed and the turn goes on: the reason steers it, past the editor and any dialog
+          // that opened next (omp also denies a call that waits when a steer arrives).
+          const unsent = await steer(block, reason);
+          // Not resent by a retry (the call is answered): the phone says so, and the reason can go as a message.
+          return unsent ? json({ error: `Denied, but the reason didn't reach omp (${unsent}): send it as a message.`, denied: true }, 502) : json({ ok: true });
         }
         case "draft":
           if (!bridge) return json({ error: "no bridge" }, 409);
@@ -1975,16 +2287,23 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     if (b.voice) setVoice(pane, b, { ...b.voice, ended: true, error: reason });
   }
 
-  /** A different session must not inherit the previous one's transient output or finish timer. */
+  /**
+   * A different session must not inherit the previous one's transient output or finish timer, nor
+   * the continue set for the old one (kept while the server itself stops, so a restart keeps it).
+   */
   function resetPane(pane: string) {
     clearTimeout(doneTimers.get(pane));
     doneTimers.delete(pane);
+    if (!stopped) cancelContinue(pane);
     emit(pane, "live", { text: "", done: false });
     emit(pane, "queued", []);
     emit(pane, "run", null);
     emit(pane, "stretch", null);
     emit(pane, "context", null);
     emit(pane, "approval", null);
+    // A banner look still running for the old session is not sent after this.
+    nextLimitLook(pane);
+    emit(pane, "limit", null);
     forgetAsk(pane);
   }
 
@@ -2055,6 +2374,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     for (const timer of doneTimers.values()) clearTimeout(timer);
     ternEvents?.kill();
     for (const timer of voiceOrphans.values()) clearTimeout(timer);
+    for (const timer of appointmentTimers.values()) clearTimeout(timer);
     historyWatcher?.close();
     waiting.stop();
     distWatcher?.close();
@@ -2207,6 +2527,11 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           // A new session's reset cleared it, so it goes again even when the numbers match.
           if (changedSession || JSON.stringify(before.context) !== JSON.stringify(b.state.context)) publishContext(pane, b);
           if (listChanged(before, b.state)) invalidateState();
+          // Idle on a usage limit, or past one: the banner follows; a continue set for it goes, or is dropped once the session moved on.
+          if (changedSession || before.status !== status || before.leaf !== b.state.leaf) {
+            publishLimit(pane);
+            if (appointments.has(pane)) void reviewContinue(pane);
+          }
           // `before.status` is empty on a fresh connection: a restarted omp is not a finished turn.
           if (!changedSession && before.status && before.status !== status) onStatusChange(pane, before.status, status, b.state.sessionId);
           // A fresh connection (or session) that is already blocked: its question, without announcing it again.

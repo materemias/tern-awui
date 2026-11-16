@@ -6,8 +6,9 @@ import { arr, num, obj, str, type Obj } from "./json";
  * The bridge protocol this server speaks; omp-extension/tern-mobile.ts declares the same (a test
  * keeps them equal). 2: the extension reports its `build`. 3: it forwards ✦ presses (`deepen`).
  * 4: it runs voice calls (`voice`, `hangup`). 5: it reports pending tool approvals (`approval`).
+ * 6: a `send` with `keepDraft` leaves omp's editor as it is (a deny's reason, a usage-limit continue).
  */
-export const PROTOCOL = 5;
+export const PROTOCOL = 6;
 
 /** `status`: blocked while an ask dialog or tool approval waits on the user; `since` when it last changed. */
 export type BridgeState = {
@@ -59,6 +60,16 @@ export type Context = { tokens: number; window: number; percent: number };
 export type Approval = { id: string; tool: string; reason: string };
 /** An approval as phones get it (`approval` stream event): the call's arguments whole from the transcript, `i` left out, each value as text; null when the transcript doesn't show the call. */
 export type ApprovalView = Approval & { args: { key: string; value: string }[] | null };
+/** The longest reason a phone's Deny sends on to the agent. */
+export const MAX_DENY_REASON = 4000;
+/** A phone's approve request's `reason`, trimmed ("" for none), or why it is refused. */
+export function denyReason(allow: boolean, raw: unknown): { reason: string } | { error: string } {
+  if (raw !== undefined && typeof raw !== "string") return { error: "bad reason" };
+  const reason = (raw ?? "").trim();
+  if (reason && allow) return { error: "only a deny takes a reason" };
+  if (reason.length > MAX_DENY_REASON) return { error: "reason too long" };
+  return { reason };
+}
 /** A pending approval as one line, the way a blocked row or a notification asks it. */
 export function approvalQuestion(a: Approval): string {
   return `Allow ${a.tool}?${a.reason ? ` ${a.reason}` : ""}`;

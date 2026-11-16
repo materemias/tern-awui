@@ -316,6 +316,23 @@ button.turn-work:hover .turn-work-sum, button.turn-work:active .turn-work-sum { 
 .approval-actions button:disabled { opacity: .45; }
 .approval-actions button:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
 .approval-hint { margin: 0; color: var(--muted); font-size: 12px; text-align: center; }
+.approval-why { padding: 6px 2px; border: 0; background: none; color: var(--accent); font-size: 12.5px; }
+.approval-why:disabled { opacity: .45; }
+.approval-why-text { resize: vertical; min-height: 56px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); font: 14px/1.4 var(--sans); }
+.approval-why-text:focus { outline: none; border-color: color-mix(in srgb, var(--blocked) 60%, var(--line)); }
+/* The phone's answer to an approval or ask, taken by omp: one quiet line above the composer that
+   fades out on its own. A Deny whose reason didn't reach omp stays, with the reason, until dismissed. */
+.answered { display: flex; gap: 8px; align-items: baseline; margin: 8px 14px 0; color: var(--muted); font-size: 13px; min-width: 0; }
+.answered-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.answered.err { flex-wrap: wrap; color: var(--blocked); }
+.answered.err .answered-text { flex: 1 1 0; white-space: normal; overflow-wrap: anywhere; }
+.answered-reason { flex-basis: 100%; order: 1; color: var(--fg); overflow-wrap: anywhere; user-select: text; }
+.answered-close { flex: none; margin: -6px -6px -6px 0; padding: 4px 10px; border: 0; background: none; color: var(--muted); font-size: 18px; line-height: 1; }
+.desk-main .answered { margin-inline: max(16px, calc((100% - var(--chat-width) - 24px) / 2)); }
+@media (prefers-reduced-motion: no-preference) {
+  .answered:not(.err) { animation: answered-fade 4s ease-in forwards; }
+}
+@keyframes answered-fade { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
 .working { color: var(--working); font-size: 12px; animation: blink 1.6s ease-in-out infinite; }
 @keyframes blink { 50% { opacity: .4; } }
 /* omp's working row: spinner, running time, and the current tool's intent swept by a highlight.
@@ -846,6 +863,17 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .wait-bar:active { background: var(--raise); }
 @media (hover: hover) { .wait-bar:hover { background: color-mix(in srgb, var(--raise) 60%, var(--panel)); } }
 @media (max-width: 599px) { .wait-bar-note, .wait-bar .wclose:not(.t-warn) { display: none; } }
+/* A turn stopped on a usage limit, above the composer: when it resets, then one tap to continue then or now. */
+.limit-bar { display: flex; flex-direction: column; gap: 8px; margin: 8px 10px 0; padding: 8px 10px 10px 11px; border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: 10px; background: var(--panel); font-size: 13.5px; }
+.desk-main .limit-bar { margin-inline: max(16px, calc((100% - var(--chat-width) - 24px) / 2)); }
+.limit-what { color: var(--fg); font-weight: 600; }
+.limit-when { color: var(--muted); font-variant-numeric: tabular-nums; }
+.limit-bar .err { margin: 0; }
+.limit-actions { display: flex; gap: 8px; }
+.limit-actions button { flex: 1; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; background: none; color: var(--fg); font-weight: 600; }
+.limit-actions .limit-primary { border: 0; background: var(--accent); color: #0b0d10; }
+.limit-actions button:disabled { opacity: .45; }
+.limit-actions button:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
 
 /* One session in full. Its standing is the one big sentence; the rest reads as plain text under small
    headings, and the actions wait in a bar at the bottom, within thumb reach. */

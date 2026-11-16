@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ApprovalView, ChatEntry, Closed, Item, Run, State, StretchState, Voice, Waiting } from "./api";
+import type { ApprovalView, ChatEntry, Closed, Item, LimitView, Run, State, StretchState, Voice, Waiting } from "./api";
 import { DemoServer, demoEventSource, type Clock, type Sink } from "./demo-backend";
 import { isOld } from "./lib";
 import { ASK_FORM, demoLive, VOICE } from "./demo-fixtures";
@@ -46,12 +46,13 @@ type Events = {
   run: Run | null;
   draft: { live: boolean; text: string };
   approval: ApprovalView | null;
+  limit: LimitView | null;
   waiting: Waiting;
   voice: Voice | null;
   stretch: StretchState | null;
   btw: { id: string; question: string; text: string; done: boolean };
 };
-const TYPES = ["state", "chat", "live", "run", "draft", "approval", "waiting", "voice", "stretch", "btw"] as const;
+const TYPES = ["state", "chat", "live", "run", "draft", "approval", "limit", "waiting", "voice", "stretch", "btw"] as const;
 
 /** Opens the app's stream for `block` (null: the list) through the demo's EventSource and records what it delivers. */
 function open(server: DemoServer, clock: ManualClock, block: string | null) {
@@ -80,9 +81,9 @@ describe("demo backend", () => {
     const items = state.projects.flatMap((p) => p.items);
     // Each row opens its own session: a shared block id would show another row's content.
     expect(new Set(items.map((i) => i.block)).size).toBe(items.length);
-    expect(items.map((i) => i.status)).toEqual(["working", "blocked", "idle", null, null, "idle", "blocked", "idle", "idle", "idle", "idle", null]);
+    expect(items.map((i) => i.status)).toEqual(["working", "blocked", "idle", null, null, "idle", "blocked", "idle", "idle", "idle", "idle", "idle", null]);
     // The parked one is off the list, so it doesn't count.
-    expect(state.counts).toEqual({ working: 1, blocked: 2, idle: 5 });
+    expect(state.counts).toEqual({ working: 1, blocked: 2, idle: 6 });
     // The list's eye has something to hide: two sessions are older than a day.
     expect(items.filter((i) => !i.parked && isOld(i, clock.now(), null)).map((i) => i.title)).toEqual(["Fix the swipe wheel", "Tidy the zsh config"]);
     // Busy rows say what they do or ask, as the server's do.
@@ -125,6 +126,37 @@ describe("demo backend", () => {
     expect(last("chat").entries.findLast((e) => e.role === "assistant")).toMatchObject({ text: expect.stringContaining("Hand-rolled") });
     // A second answer finds no open question.
     expect((await post(server, "/api/blocks/12/answer", { id: "ask-12", values: { push: "skip" }, other: {} })).status).toBe(409);
+  });
+
+  test("a session stopped on a usage limit continues a minute after the reset, unless cancelled", async () => {
+    const { clock, server } = setup();
+    const { last } = open(server, clock, "24");
+    const limit = last("limit")!;
+    expect(limit).toMatchObject({ kind: "wait", continueAt: null });
+    expect(limit.resetAt! - clock.now()).toBe(133 * 60_000);
+    // Set, cancelled, and set again: only the last one stands.
+    expect(await (await post(server, "/api/blocks/24/continue", { when: "reset" })).json()).toEqual({ ok: true, at: limit.resetAt! + 60_000 });
+    expect(last("limit")?.continueAt).toBe(limit.resetAt! + 60_000);
+    expect((await post(server, "/api/blocks/24/continue", { cancel: true })).ok).toBe(true);
+    expect(last("limit")?.continueAt).toBeNull();
+    expect((await post(server, "/api/blocks/24/continue", { when: "reset" })).ok).toBe(true);
+    clock.advance(133 * 60_000);
+    // Reset, but the minute after it hasn't passed.
+    expect(itemOf(last("state"), "24").status).toBe("idle");
+    clock.advance(60_000);
+    expect(last("chat").entries.findLast((e) => e.role === "user")).toMatchObject({ text: "Continue from where you stopped." });
+    expect(itemOf(last("state"), "24").status).toBe("working");
+    expect(last("limit")).toBeNull();
+    expect((await post(server, "/api/blocks/24/continue", { when: "reset" })).status).toBe(409);
+  });
+
+  test("Continue now sends the continue at once", async () => {
+    const { clock, server } = setup();
+    const { last } = open(server, clock, "24");
+    expect((await post(server, "/api/blocks/24/continue", { when: "now" })).ok).toBe(true);
+    expect(last("chat").entries.at(-1)).toMatchObject({ role: "user", text: "Continue from where you stopped." });
+    expect(itemOf(last("state"), "24").status).toBe("working");
+    expect(last("limit")).toBeNull();
   });
 
   test("the demo's ask fields are what the server parses from its form", () => {
@@ -176,6 +208,19 @@ describe("demo backend", () => {
     expect((await post(again.server, "/api/blocks/23/submit", { text: "scale on load instead" })).ok).toBe(true);
     expect(steered.last("approval")).toBeNull();
     expect(steered.last("chat").entries.at(-1)).toMatchObject({ role: "user", text: "scale on load instead" });
+  });
+
+  test("Deny with a reason steers: the reason is the next prompt, and the agent takes it up", async () => {
+    const { clock, server } = setup();
+    const { last } = open(server, clock, "23");
+    const id = last("approval")!.id;
+    expect((await post(server, "/api/blocks/23/approve", { id, allow: true, reason: "not on prod" })).status).toBe(400);
+    expect((await post(server, "/api/blocks/23/approve", { id, allow: false, reason: "  try staging first  " })).ok).toBe(true);
+    expect(last("approval")).toBeNull();
+    expect(last("chat").entries.findLast((e) => e.role === "user")).toMatchObject({ text: "try staging first" });
+    clock.advance(60_000);
+    expect(last("chat").entries.findLast((e) => e.role === "assistant")).toMatchObject({ text: expect.stringContaining("try staging first") });
+    expect((await post(server, "/api/blocks/23/approve", { id, allow: false, reason: "again" })).status).toBe(409);
   });
 
   test("Waiting holds one session per group; Done, Snooze 1d and notes update it", async () => {

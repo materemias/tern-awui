@@ -4,8 +4,9 @@
 // side questions and ✦ resolve; sessions start, close, park, rewind and resume; Waiting's taps and
 // a scripted voice call behave. The bell subscribes, but nothing is ever pushed (demo.test.ts keeps
 // this list honest).
-import type { Agent, AskField, ChangedFile, ChatEntry, ContextUse, Img, Item, Run, State, Voice } from "./api";
-import { approvalQuestion, STRETCH_BLOCK } from "../lib/bridge-state";
+import type { Agent, AskField, ChangedFile, ChatEntry, ContextUse, Img, Item, LimitView, Run, State, Voice } from "./api";
+import { approvalQuestion, denyReason, STRETCH_BLOCK } from "../lib/bridge-state";
+import { CONTINUE_AFTER_MS, CONTINUE_TEXT } from "../lib/usage-limit";
 import { CLOSED_AGENTS, keepsTool, matchesWords, parseSearch } from "../lib/search";
 import { WAITING_ACTIONS } from "../lib/waiting-view";
 import { onList } from "./lib";
@@ -18,6 +19,7 @@ import {
   COMPLETIONS,
   CONTEXT_WINDOW,
   DEEPEN,
+  DENY_REASON_REPLY,
   HOME,
   OPEN_TURN_REPLY,
   REPLIES,
@@ -64,6 +66,8 @@ type Session = DemoSession & {
   callTimers: Set<() => void>;
   /** `<agent>:<id>` of the closed session this one resumed. */
   resumed: string | null;
+  /** Cancels the continue set for the usage limit's reset; null when none is set. */
+  limitTimer: (() => void) | null;
 };
 
 /** Words per streamed update, and the pause between updates. */
@@ -101,7 +105,7 @@ function formAnswers(fields: AskField[], body: Record<string, unknown>): { quest
 
 /** A fixture as the server keeps it, with nothing running. */
 function fresh(s: DemoSession): Session {
-  return { ...s, draft: "", live: null, run: null, queued: [], openTurn: false, line: "", timers: new Set(), voice: null, callTimers: new Set(), resumed: null };
+  return { ...s, draft: "", live: null, run: null, queued: [], openTurn: false, line: "", timers: new Set(), voice: null, callTimers: new Set(), resumed: null, limitTimer: null };
 }
 
 export class DemoServer {
@@ -170,6 +174,7 @@ export class DemoServer {
       sink.send("context", this.context(s));
       sink.send("stretch", s.stretch);
       sink.send("approval", s.approval);
+      sink.send("limit", s.limit);
       sink.send("voice", s.voice);
     }
     if (seen) this.emitState();
@@ -254,6 +259,8 @@ export class DemoServer {
       case "abort":
         this.abort(s);
         return ok;
+      case "continue":
+        return this.continueAfterLimit(s, body);
       case "draft":
         if (!live) return json({ error: "no bridge" }, 409);
         if (body.expectedSessionId !== undefined && body.expectedSessionId !== s.item.agent?.sessionId) return json({ error: "session changed" }, 409);
@@ -444,6 +451,8 @@ export class DemoServer {
       s.draft = "";
       this.toPane(s, "draft", { live: true, text: "" });
     }
+    // The prompt takes the session past its usage limit, and replaces a continue set for the reset.
+    this.setLimit(s, null);
     if (text.trim() === "/restart" && s.item.live?.mismatch) {
       this.restart(s);
       return json({ ok: true });
@@ -550,6 +559,49 @@ export class DemoServer {
     this.idle(s);
   }
 
+  /** The session's usage-limit banner, to its phones; a continue set for the old one stops. */
+  private setLimit(s: Session, limit: LimitView | null) {
+    s.limitTimer?.();
+    s.limitTimer = null;
+    if (!s.limit && !limit) return;
+    s.limit = limit;
+    this.toPane(s, "limit", limit);
+  }
+
+  /**
+   * As the server: continue now, set a continue for a minute after the reset, or cancel it. The
+   * continue goes as the server's own message (`continueNow`), so the draft stays as it is.
+   */
+  private continueAfterLimit(s: Session, body: Record<string, unknown>): Response {
+    const limit = s.limit;
+    if (body.cancel === true) {
+      if (limit?.continueAt != null) this.setLimit(s, { ...limit, continueAt: null });
+      return json({ ok: true });
+    }
+    if (body.when !== "reset" && body.when !== "now") return json({ error: "when must be reset or now" }, 400);
+    if (body.id !== undefined && (typeof body.id !== "string" || !/^[A-Za-z0-9-]{1,64}$/.test(body.id))) return json({ error: "bad id" }, 400);
+    if (!limit || s.item.status !== "idle") return json({ error: "this session isn't stopped on a usage limit" }, 409);
+    if (body.when === "now") {
+      this.continueNow(s);
+      return json({ ok: true });
+    }
+    // As the server's: a reset already past is no time to wait for.
+    if (limit.resetAt === null || limit.resetAt <= this.clock.now()) return json({ error: "the reset time isn't known: continue now instead" }, 409);
+    const at = limit.resetAt + CONTINUE_AFTER_MS;
+    this.setLimit(s, { ...limit, continueAt: at });
+    s.limitTimer = this.clock.after(at - this.clock.now(), () => {
+      s.limitTimer = null;
+      this.continueNow(s);
+    });
+    return json({ ok: true, at });
+  }
+
+  /** The continue starts a turn; unlike a phone prompt, it leaves the draft in omp's editor. */
+  private continueNow(s: Session) {
+    this.setLimit(s, null);
+    this.startTurn(s, CONTINUE_TEXT);
+  }
+
   private answer(s: Session, body: Record<string, unknown>): Response {
     const ask = s.chat.findLast((e) => e.role === "ask");
     if (!ask || ask.role !== "ask" || ask.answer !== null || ask.id !== body.id) return json({ error: "no open question" }, 409);
@@ -569,12 +621,22 @@ export class DemoServer {
     this.toPane(s, "approval", approval);
   }
 
-  /** omp's approval dialog answered: Approve once runs the call and the turn ends with what it changed; Deny ends the turn. */
+  /**
+   * omp's approval dialog answered: Approve once runs the call and the turn ends with what it
+   * changed; Deny ends the turn. A Deny's reason steers it: the next prompt, which the agent takes up.
+   */
   private approve(s: Session, body: Record<string, unknown>): Response {
     if (typeof body.allow !== "boolean") return json({ error: "allow must be true or false" }, 400);
+    const parsed = denyReason(body.allow, body.reason);
+    if ("error" in parsed) return json({ error: parsed.error }, 400);
+    const { reason } = parsed;
     if (!s.approval || s.approval.id !== body.id) return json({ error: "omp no longer asks about this call" }, 409);
     const plan = s.approve!;
     this.setApproval(s, null);
+    if (reason) {
+      this.startTurn(s, reason, [], DENY_REASON_REPLY.replaceAll("{reason}", reason.slice(0, 160)));
+      return json({ ok: true });
+    }
     const started = this.clock.now();
     this.work(s, body.allow ? "Applying the edit" : "Writing the reply");
     this.after(s, TOOLS_MS, () => (body.allow ? this.stream(s, plan.allow, started, plan.files) : this.stream(s, plan.deny, started)));
@@ -596,6 +658,7 @@ export class DemoServer {
     s.item.agent = { ...s.item.agent, lastPrompt: before?.role === "user" ? before.text : "" };
     s.draft = prompt.text;
     this.toPane(s, "draft", { live: true, text: s.draft });
+    this.setLimit(s, null);
     this.toPane(s, "context", this.context(s));
     this.emitState();
     this.emitDetail(s);
@@ -717,6 +780,7 @@ export class DemoServer {
   /** Closes the pane; an omp's session goes to Closed, from where it can be resumed. */
   private close(s: Session) {
     this.cancel(s);
+    this.setLimit(s, null);
     this.endCall(s);
     this.sessions = this.sessions.filter((x) => x !== s);
     const agent = s.item.agent;
@@ -790,7 +854,7 @@ export class DemoServer {
     const block = String(this.nextBlock++);
     const project = this.sessions.find((s) => s.item.cwd === cwd)?.item.project ?? cwd.split("/").filter(Boolean).at(-1) ?? "home";
     const item: Item = { block, icon: null, tag: null, title, cwd, project, branch: "main", agent: null, live: null, status: null, starting: true, since: this.clock.now(), doc: null, unseen: null, parked: false, ternSession, activity: null, stranded: false };
-    const s: Session = { ...fresh({ item, chat: [], screen: "", subagents: [], subagentChats: {}, tokens: 9_000, doc: null, approval: null, approve: null, stretch: null, btw: [] }), resumed };
+    const s: Session = { ...fresh({ item, chat: [], screen: "", subagents: [], subagentChats: {}, tokens: 9_000, doc: null, approval: null, approve: null, stretch: null, btw: [], limit: null }), resumed };
     this.sessions.push(s);
     return s;
   }

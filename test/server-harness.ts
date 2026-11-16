@@ -3,7 +3,7 @@ import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync
 import { tmpdir } from "node:os";
 import { Transcript, call, HASH } from "./fixtures";
 
-import { arr, obj, type Obj as Message } from "../lib/json";
+import { arr, obj, str, type Obj as Message } from "../lib/json";
 import { startServer, type ServerHandle, type ServerOptions } from "../server";
 import { applyStatePatch } from "../lib/state-patch";
 import { applyChatPatch } from "../lib/chat-patch";
@@ -116,6 +116,8 @@ EOF
   dist?: string;
   /** Delivers Web Push for an in-process server; web-push (the network) when unset. */
   sendNotification?: ServerOptions["sendNotification"];
+  /** How long after a usage limit's reset an in-process server sends a scheduled continue; its own default when unset. */
+  continueAfterMs?: number;
   /** The in-process server, while it runs. */
   handle?: ServerHandle;
 
@@ -127,7 +129,7 @@ EOF
 
   async start(extraEnv: Record<string, string> = {}) {
     if (this.subprocess || this.server !== DEFAULT_SERVER) return this.spawn(extraEnv);
-    this.handle = startServer({ env: this.env({ TERN_AWUI_PORT: "0", ...extraEnv }), home: this.home, dist: this.dist, sendNotification: this.sendNotification });
+    this.handle = startServer({ env: this.env({ TERN_AWUI_PORT: "0", ...extraEnv }), home: this.home, dist: this.dist, sendNotification: this.sendNotification, continueAfterMs: this.continueAfterMs });
     this.base = `http://127.0.0.1:${this.handle.port}`;
   }
 
@@ -185,6 +187,8 @@ export class Extension {
   restart = false;
   /** Answers a `voice` offer in place of the default SDP answer (a pending promise holds omp mid-signaling). */
   answerVoice?: (msg: Message) => Message | Promise<Message>;
+  /** Requests this fake omp refuses, by type, with the error it replies. */
+  refuse: Record<string, string> = {};
   snapshot: Message;
   constructor(private sandbox: Sandbox, pane = "1", model = "test/initial") {
     this.snapshot = { t: "state", pane, sessionId: sandbox.session, text: "", model, thinking: "medium", status: "working",
@@ -200,6 +204,7 @@ export class Extension {
       this.inbox.push(msg);
       if (this.silent || msg.t === "watch") return;
       const reply = (data: Message) => this.send({ t: "reply", seq: msg.seq, ...data });
+      if (this.refuse[str(msg.t)]) return reply({ error: this.refuse[str(msg.t)] });
       if (msg.t === "models") return reply({ models: [{ p: "test", id: "fast", name: "Fast", ctx: 200000, r: false, in: 0, out: 0, img: false }] });
       if (msg.t === "model") {
         if (msg.spec === "bad/model") return reply({ error: "no credentials for this model" });

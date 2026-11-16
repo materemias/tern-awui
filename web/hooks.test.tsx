@@ -408,7 +408,7 @@ describe("useStream", () => {
     property(navigator, "setAppBadge", badge);
     property(navigator, "clearAppBadge", clear);
     await act(() => render(<StreamHost block="5" />, root));
-    expect(snapshot()).toEqual({ state: null, waiting: null, chat: null, subagents: null, live: null, queued: [], run: null, context: null, btw: null, screen: null, draft: null, doc: null, online: false, stretch: null, voice: null, approval: null });
+    expect(snapshot()).toEqual({ state: null, waiting: null, chat: null, subagents: null, live: null, queued: [], run: null, context: null, btw: null, screen: null, draft: null, doc: null, online: false, stretch: null, voice: null, approval: null, limit: null });
     await act(() => FakeEventSource.last.open());
     expect(snapshot()).toMatchObject({ online: true });
     const current = state([item()], { badge: 2 });

@@ -414,6 +414,68 @@ test("an approval omp doesn't take within 10 s says so and unlocks the card", as
   }
 });
 
+test("Deny with a reason sends it trimmed; once omp's dialog closes, a line above the composer confirms it", async () => {
+  await open(item({ status: "blocked" }));
+  await emit("chat", { entries: [] });
+  await emit("approval", { id: "c2", tool: "edit", reason: "", args: [{ key: "path", value: "a.ts" }] });
+  expect(root.querySelector(".approval-why-text")).toBeNull();
+  await click(".approval-why");
+  const box = root.querySelector<HTMLTextAreaElement>(".approval-why-text")!;
+  await act(() => {
+    box.value = "  use staging  ";
+    box.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(root.querySelector(".approval-deny")!.textContent).toBe("Deny, send reason");
+  await click(".approval-deny");
+  expect(net.to("/api/blocks/5/approve")).toEqual([{ id: "c2", allow: false, reason: "use staging" }]);
+  // Not confirmed until omp closes its dialog.
+  expect(root.querySelector(".answered")).toBeNull();
+  await emit("approval", null);
+  expect(root.querySelector(".answered")!.textContent).toBe("✕ Denied: edit · reason sent");
+});
+
+test("the confirmation shows when omp closes its dialog before the reply comes, and never for the next call", async () => {
+  await open(item({ status: "blocked" }));
+  await emit("chat", { entries: [] });
+  await emit("approval", { id: "c5", tool: "edit", reason: "", args: [{ key: "path", value: "a.ts" }] });
+  const reply = Promise.withResolvers<Response>();
+  net.reply = () => reply.promise;
+  await click(".approval-deny");
+  // The deny landed and omp moved on to the next call before the server replied.
+  await emit("approval", null);
+  expect(root.querySelector(".answered")).toBeNull();
+  await act(async () => {
+    reply.resolve(Response.json({ ok: true }));
+    await settle();
+  });
+  expect(root.querySelector(".answered")!.textContent).toBe("✕ Denied: edit");
+  // A failed answer confirms nothing, though its call's dialog closes later.
+  await emit("approval", { id: "c6", tool: "bash", reason: "", args: [{ key: "command", value: "ls" }] });
+  net.reply = () => Response.json({ error: "omp did not answer" }, { status: 502 });
+  await click(".approval-allow");
+  await emit("approval", { id: "c7", tool: "write", reason: "", args: [{ key: "path", value: "b.ts" }] });
+  expect(root.querySelector(".answered")!.textContent).toBe("✕ Denied: edit");
+});
+
+test("a deny whose reason didn't reach omp keeps the reason above the composer until dismissed", async () => {
+  await open(item({ status: "blocked" }));
+  await emit("chat", { entries: [] });
+  await emit("approval", { id: "c3", tool: "bash", reason: "", args: [{ key: "command", value: "ls" }] });
+  net.reply = () => Response.json({ error: "Denied, but the reason didn't reach omp (editor busy): send it as a message.", denied: true }, { status: 502 });
+  await click(".approval-why");
+  const box = root.querySelector<HTMLTextAreaElement>(".approval-why-text")!;
+  await act(() => {
+    box.value = "not on prod";
+    box.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click(".approval-deny");
+  expect(root.querySelector(".answered.err .answered-reason")!.textContent).toBe("not on prod");
+  await emit("approval", null);
+  expect(root.querySelector(".answered.err")).not.toBeNull();
+  await click(".answered-close");
+  expect(root.querySelector(".answered")).toBeNull();
+});
+
 test("Jump to latest stays off the raw screen", async () => {
   await open(item({ status: "idle" }));
   await emit("chat", { entries: [] });

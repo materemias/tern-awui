@@ -9,8 +9,8 @@ import { fileURLToPath } from "node:url";
 
 const POLL_MS = 100;
 const RETRY_MS = 5000;
-/** The bridge protocol this extension speaks; the server flags whichever side is older. 2: `build`. 3: ✦ presses. 4: voice calls. 5: tool approvals. */
-export const PROTOCOL = 5;
+/** The bridge protocol this extension speaks; the server flags whichever side is older. 2: `build`. 3: ✦ presses. 4: voice calls. 5: tool approvals. 6: `send` with `keepDraft`. */
+export const PROTOCOL = 6;
 /**
  * This file's identity, read once when omp loads it, so a later `git pull` doesn't change what a
  * running session reports: the first 16 hex digits of its sha256, as the server computes for its
@@ -180,8 +180,9 @@ type ServerMessage =
 	| { t: "btw"; id: string; text: string; seq: number }
 	/** `followUp`: hold it until the running turn ends (omp's Ctrl+Q), instead of steering. */
 	/** `expected`: clear the editor afterwards only if it still holds this draft. */
+	/** `keepDraft`: a message of the server's own (a deny's reason, a usage-limit continue): the editor isn't touched. */
 	/** `id`: the phone's id for this prompt; a resend after a lost reply carries the same one. */
-	| { t: "send"; text: string; images: { data: string; mimeType: string }[]; followUp?: boolean; expected?: string; id?: string; seq: number }
+	| { t: "send"; text: string; images: { data: string; mimeType: string }[]; followUp?: boolean; expected?: string; keepDraft?: boolean; id?: string; seq: number }
 	| { t: "watch"; on: boolean }
 	/** Open or close a reply's stretch (omp's stretch.ts): `block` is `<message timestamp>.<content index>`. */
 	| { t: "stretch"; block: string; key: string; open: boolean; seq: number }
@@ -568,8 +569,8 @@ export default function ternMobile(pi: Pi): void {
 			return flush(true, msg.seq);
 		}
 		if (msg.t === "send") {
-			// A phone prompt sent directly: images (the editor can't take pasted ones from here) or a
-			// follow-up. Refused without a model so the phone keeps its text.
+			// A phone prompt sent directly: images (the editor can't take pasted ones from here), a
+			// follow-up, or the server's own message. Refused without a model so the phone keeps its text.
 			const id = typeof msg.id === "string" ? msg.id : "";
 			const at = id ? taken.get(id) : undefined;
 			if (at !== undefined && Date.now() - at < TAKEN_MS) return flush(true, msg.seq);
@@ -585,7 +586,7 @@ export default function ternMobile(pi: Pi): void {
 			);
 			if (id) take(id);
 			// The draft it replaces is cleared, unless the desktop typed something newer meanwhile.
-			if (msg.expected === undefined || ctx.ui.getEditorText() === msg.expected) ctx.ui.setEditorText("");
+			if (!msg.keepDraft && (msg.expected === undefined || ctx.ui.getEditorText() === msg.expected)) ctx.ui.setEditorText("");
 			return flush(true, msg.seq);
 		}
 		if (msg.t === "abort") {

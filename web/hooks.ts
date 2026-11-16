@@ -1,6 +1,6 @@
 // The app's hooks: the clock, the route and back navigation, the layout, and the server stream.
 import { useEffect, useState } from "preact/hooks";
-import type { ApprovalView, Btw, ChatEntry, ContextUse, Doc, Item, Run, State, StretchState, Subagent, Voice, Waiting } from "./api";
+import type { ApprovalView, Btw, ChatEntry, ContextUse, Doc, Item, LimitView, Run, State, StretchState, Subagent, Voice, Waiting } from "./api";
 import { backStep, inheritOrigin, parseRoute, trackOrigin, type Route } from "./lib";
 import { applyStatePatch } from "../lib/state-patch";
 import { applyChatPatch } from "../lib/chat-patch";
@@ -250,6 +250,8 @@ export function useStream(block: string | null, view: View, sub: string | null =
   const [voice, setVoice] = useState<Voice | null>(null);
   /** The tool approval omp's pane shows now; null when none is pending. */
   const [approval, setApproval] = useState<ApprovalView | null>(null);
+  /** The usage limit the session's idle turn stopped on, and any continue set for it; null when none. */
+  const [limit, setLimit] = useState<LimitView | null>(null);
   const [online, setOnline] = useState(false);
   // The gauge belongs to the block: switching chat and Raw on one block keeps it until the new stream resends it.
   useEffect(() => setContext(null), [block]);
@@ -263,6 +265,7 @@ export function useStream(block: string | null, view: View, sub: string | null =
     setVoice(null);
     setRun(null);
     setApproval(null);
+    setLimit(null);
     const qs = block ? `?block=${block}&view=${view}${sub ? `&sub=${encodeURIComponent(sub)}` : ""}` : "";
     let es: EventSource | null = null;
     let liveEnded = false;
@@ -393,6 +396,7 @@ export function useStream(block: string | null, view: View, sub: string | null =
       src.addEventListener("context", (e) => setContext(JSON.parse(e.data)));
       src.addEventListener("stretch", (e) => setStretch(JSON.parse(e.data)));
       src.addEventListener("approval", (e) => setApproval(JSON.parse(e.data)));
+      src.addEventListener("limit", (e) => setLimit(JSON.parse(e.data)));
       src.addEventListener("voice", (e) => setVoice(JSON.parse(e.data)));
       src.addEventListener("doc", (e) => setDoc(JSON.parse(e.data)));
       src.addEventListener("subagents", (e) => setSubagents(JSON.parse(e.data)));
@@ -445,5 +449,5 @@ export function useStream(block: string | null, view: View, sub: string | null =
       if ("serviceWorker" in navigator) navigator.serviceWorker.removeEventListener("message", onWorkerMessage);
     };
   }, [block, view, sub]);
-  return { state, waiting, chat, subagents, live, queued, run, context, btw, setBtw, screen, draft, doc, online, stretch, voice, approval };
+  return { state, waiting, chat, subagents, live, queued, run, context, btw, setBtw, screen, draft, doc, online, stretch, voice, approval, limit };
 }

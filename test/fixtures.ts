@@ -34,8 +34,11 @@ export class Transcript {
     return this.entry({ type: "message", message: { role: "user", content: parts, timestamp: T0 + at } }, at, parent);
   }
 
-  assistant(parts: Part[], at: number, opts: { stop?: string; model?: string; parent?: string; usage?: Row } = {}): string {
-    const message = { role: "assistant", content: parts, model: opts.model ?? "claude-test", stopReason: opts.stop ?? "stop", timestamp: T0 + at, ...(opts.usage && { usage: opts.usage }) };
+  assistant(parts: Part[], at: number, opts: { stop?: string; model?: string; parent?: string; usage?: Row; error?: string; provider?: string } = {}): string {
+    const message = {
+      role: "assistant", content: parts, model: opts.model ?? "claude-test", stopReason: opts.stop ?? "stop", timestamp: T0 + at,
+      ...(opts.usage && { usage: opts.usage }), ...(opts.provider && { provider: opts.provider }), ...(opts.error && { errorMessage: opts.error }),
+    };
     return this.entry({ type: "message", message }, at, opts.parent);
   }
 

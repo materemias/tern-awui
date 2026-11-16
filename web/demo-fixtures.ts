@@ -2,7 +2,7 @@
 // shell, a file and parked panes, spread over three Tern sessions; closed sessions of omp, Claude
 // Code and Codex; and CodexBar AgentView's waits. Times are relative to `now`, so the list reads
 // "2m ago" whenever it is opened.
-import type { Agent, ApprovalView, Ask, BtwHistoryRecord, CatalogModel, ChangedFile, ChatEntry, Closed, Item, Job, Live, Role, StretchState, Subagent, TernSession, WaitingRow } from "./api";
+import type { Agent, ApprovalView, Ask, BtwHistoryRecord, CatalogModel, ChangedFile, ChatEntry, Closed, Item, Job, LimitView, Live, Role, StretchState, Subagent, TernSession, WaitingRow } from "./api";
 import type { Wait } from "../lib/waiting-view";
 
 export type DemoSession = {
@@ -22,6 +22,8 @@ export type DemoSession = {
   /** omp-stretch's state for the session's replies; null where it isn't loaded. */
   stretch: StretchState | null;
   btw: BtwHistoryRecord[];
+  /** The usage limit its last turn stopped on, as the server's `limit` event shows it; null for none. */
+  limit: LimitView | null;
 };
 
 export const CONTEXT_WINDOW = 200_000;
@@ -109,7 +111,7 @@ function shell(block: string, project: string, title: string, over: Partial<Item
 
 /** A session with nothing beyond its item and chat; `over` adds the rest. */
 function session(item: Item, chat: ChatEntry[], over: Partial<DemoSession> = {}): DemoSession {
-  return { item, chat, screen: "", subagents: [], subagentChats: {}, tokens: 20_000, doc: null, approval: null, approve: null, stretch: null, btw: [], ...over };
+  return { item, chat, screen: "", subagents: [], subagentChats: {}, tokens: 20_000, doc: null, approval: null, approve: null, stretch: null, btw: [], limit: null, ...over };
 }
 
 const user = (id: string, text: string, ts: number): ChatEntry => ({ role: "user", id, text, images: [], ts });
@@ -470,6 +472,26 @@ export function demoSessions(now: number): DemoSession[] {
       ],
       { tokens: 24_000 },
     ),
+    // Stopped on Codex's usage limit: the banner offers to continue once it resets.
+    session(
+      omp("24", "api-server", "Move sessions to SQLite", {
+        since: t(18),
+        cwd: api,
+        ternSession: "weekend",
+        live: demoLive({ model: "openai/gpt-5", tiers: tiersOf("openai/gpt-5") }),
+        agent: demoAgent("demo-24", { lastPrompt: "move the session store to bun:sqlite", lastActivity: t(18) }),
+      }),
+      [
+        user("u24a", "move the session store to bun:sqlite", t(31)),
+        tools(t(30), ["read", "Reading src/sessions.ts"], ["edit", "Writing the SQLite store"], ["bash", "Running bun test test/sessions.test.ts"]),
+        assistant("The SQLite store is in and its tests pass. Next: moving the existing JSON sessions over on first start.", t(19)),
+        { role: "turn", ms: 13 * MIN, model: "openai/gpt-5", ts: t(18), files: [{ path: "src/sessions.ts", added: 74, removed: 41 }] },
+      ],
+      {
+        tokens: 58_000,
+        limit: { kind: "wait", error: "Codex error event: The usage limit has been reached (code=usage_limit_reached)", resetAt: now + 133 * MIN, continueAt: null },
+      },
+    ),
     // Parked in Tern: off the list, in the new-omp sheet's Parked tab; Waiting holds it on someone.
     session(
       omp("25", "api-server", "Bump dependencies", {
@@ -762,6 +784,10 @@ export const REPLIES = [
 ];
 
 export const ANSWER_REPLY = "Going with **{answer}**. I'll wire it up and send a test notification once the server restarts.\n\n_In the demo the answer only lands here; with Tern it would be typed into omp's dialog on your desktop._";
+
+/** The turn after a Deny with a reason, which reached the agent as a steer; `{reason}` is the reason. */
+export const DENY_REASON_REPLY =
+  "Understood, I left `deploy/prod.yml` as it was. Going by your note, **“{reason}”**, I'll take that route instead and ask before touching anything under `deploy/` again.\n\n_In the demo the reason only lands here; with Tern, Deny is pressed in omp's dialog and the reason steers the turn as your next message._";
 
 export const OPEN_TURN_REPLY =
   "The light theme is in: the palette lives under `prefers-color-scheme: light`, and CssAudit moved the last three literal colours into variables. Contrast of the status dots passes AA on both themes.";

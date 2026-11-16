@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { HASH, PNG, T0, Transcript, call, image, text } from "../test/fixtures";
-import { INLINE_IMAGE_CHARS, TranscriptImages, parseChat, pendingCall, readChatFile, recapStale, scanFacts, type ChatEntry } from "./transcript";
+import { INLINE_IMAGE_CHARS, TranscriptImages, lastStop, parseChat, pendingCall, readChatFile, recapStale, scanFacts, type ChatEntry } from "./transcript";
 
 const dir = mkdtempSync(`${tmpdir()}/tern-awui-transcript-`);
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -878,5 +878,41 @@ describe("pendingCall", () => {
     const both = [row({ role: "assistant", content: [call("b1", "bash", { command: "ls" }), call("b2", "edit", { input: "x" })] })];
     expect(pendingCall(both, "")).toEqual({ id: "b2", name: "edit", args: null });
     expect(pendingCall(both, "b1")).toEqual({ id: "b1", name: "bash", args: { command: "ls" } });
+  });
+});
+
+describe("lastStop", () => {
+  const LIMIT = "Codex error event: The usage limit has been reached (code=usage_limit_reached)";
+  test("the errored assistant message the active path ends on, past rows that aren't messages", () => {
+    const t = new Transcript();
+    t.user("go", 1000);
+    const stop = t.assistant([], 2000, { stop: "error", error: LIMIT, provider: "openai-codex" });
+    t.custom(3000);
+    expect(lastStop(t.lines(), "")).toEqual({ id: stop, ts: T0 + 2000, provider: "openai-codex", error: LIMIT });
+    expect(lastStop(t.lines(), t.last)).toMatchObject({ id: stop });
+  });
+
+  test("none once a prompt follows, for a turn that ended otherwise, or rewound before it", () => {
+    const t = new Transcript();
+    const prompt = t.user("go", 1000);
+    const stop = t.assistant([], 2000, { stop: "error", error: LIMIT });
+    t.user("continue", 3000);
+    expect(lastStop(t.lines(), "")).toBeNull();
+    // The leaf back on the errored message (a rewind to it) finds it again; one before it doesn't.
+    expect(lastStop(t.lines(), stop)).toMatchObject({ id: stop });
+    expect(lastStop(t.lines(), prompt)).toBeNull();
+    expect(lastStop(t.lines(), "-")).toBeNull();
+    t.say("done", 4000);
+    expect(lastStop(t.lines(), "")).toBeNull();
+  });
+
+  test("unknown when the lines don't reach the leaf or the row it leads to: a tail that starts later", () => {
+    const t = new Transcript();
+    t.user("go", 1000);
+    const stop = t.assistant([], 2000, { stop: "error", error: LIMIT });
+    const note = t.custom(3000);
+    expect(lastStop(t.lines(), "missing")).toBeUndefined();
+    // The tail kept the note but not the errored message it leads back to.
+    expect(lastStop(t.lines().filter((l) => !l.includes(`"id":"${stop}"`)), note)).toBeUndefined();
   });
 });

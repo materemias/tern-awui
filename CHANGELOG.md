@@ -4,8 +4,14 @@
 
 ### Features
 
+- Deny a tool call with a reason the agent reads next; a short line confirms each answered approval or ask.
 - Share screenshots, text or links from Android to the app and pick the session; long-press the icon for Waiting.
 - Tool runs show their result after the intent, like "412 passed · 3 failed", "no type errors" or "4 results in 2 files".
+- A stopped-on-limit session shows when it resets, with Continue now or when it resets. Reason and Continue need /restart in omp.
+
+### Fixes
+
+- A prompt resent after a lost reply no longer runs twice.
 
 ## 0.11.1 (2026-11-15)
 

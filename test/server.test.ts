@@ -398,6 +398,28 @@ test("an image or follow-up send carries the phone's id; a resend while it runs 
   expect(await agent.take("send")).toMatchObject({ id });
 }, 4000);
 
+test("a plain send with the phone's id runs once: a resend waits for it, and after success does nothing; a failure is retried", async () => {
+  agent.inbox = [];
+  s.clearCalls();
+  const id = crypto.randomUUID();
+  agent.silent = true;
+  const replies = await Promise.all([1, 2].map(() => s.action(1, "submit", { text: "only once", id })));
+  agent.silent = false;
+  for (const r of replies) expect(await r.json()).toEqual({ error: "omp did not take the draft" });
+  expect(agent.inbox.filter((m) => m.t === "set")).toHaveLength(1);
+  expect(s.calls()).toEqual([]);
+  // The failure isn't remembered: the retry types it.
+  agent.inbox = [];
+  expect((await s.action(1, "submit", { text: "only once", id })).status).toBe(200);
+  expect((await agent.take("set")).text).toBe("only once");
+  expect(s.calls()).toEqual([["send", "1", "keys", "Enter"]]);
+  // Its reply was lost and the phone sends again: nothing is typed twice.
+  agent.inbox = [];
+  expect(await (await s.action(1, "submit", { text: "only once", id })).json()).toEqual({ ok: true });
+  expect(agent.inbox).toEqual([]);
+  expect(s.calls()).toEqual([["send", "1", "keys", "Enter"]]);
+}, 4000);
+
 test("model catalog and model/thinking/tier commands correlate sequenced bridge replies", async () => {
   const models = await s.action(1, "models");
   expect(await models.json()).toEqual({ models: [{ p: "test", id: "fast", name: "Fast", ctx: 200000, r: false, in: 0, out: 0, img: false }] });

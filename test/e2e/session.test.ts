@@ -83,7 +83,7 @@ describe.skipIf(!CHROMIUM)("phone session", () => {
     expect((await response).status()).toBe(200);
     await until(async () => (await page.locator("textarea").inputValue()) === "", "cleared composer");
     expect(s.calls()).toEqual([["send", "1", "keys", "Enter"]]);
-    expect(bodies(app, "/api/blocks/1/submit")).toEqual([{ text: "Please fix this" }]);
+    expect(bodies(app, "/api/blocks/1/submit")).toEqual([{ text: "Please fix this", id: expect.any(String) }]);
     agent.report({ text: "Desktop correction" });
     await until(async () => (await page.locator("textarea").inputValue()) === "Desktop correction", "desktop draft adopted");
   });
@@ -102,7 +102,7 @@ describe.skipIf(!CHROMIUM)("phone session", () => {
     });
     expect((await response).status()).toBe(200);
     await until(async () => (await page.locator("textarea").inputValue()) === "", "send completed");
-    expect(bodies(app, "/api/blocks/1/submit")).toEqual([{ text: "Only once" }]);
+    expect(bodies(app, "/api/blocks/1/submit")).toEqual([{ text: "Only once", id: expect.any(String) }]);
     expect(s.calls()).toEqual([["send", "1", "keys", "Enter"]]);
   });
 

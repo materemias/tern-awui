@@ -1,9 +1,10 @@
 // An open session (chat, raw screen or note, with the composer) and its subagent screens.
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { highlightFile } from "./highlight";
-import { post, type ApprovalView, type ChatEntry, type Item, type Run, type TodoPhase } from "./api";
-import { age, backStep, can, elapsed, isNote, pickedTernSession, readPatch, routeHash, storedTernSession, swipeOrder, todoSummary, type Route } from "./lib";
-import { ANSWER_TAKEN_MS, Chat, Markdown, StretchContext, type StretchSync } from "./chat";
+import { post, postReply, type ApprovalView, type ChatEntry, type Item, type LimitView, type Run, type TodoPhase } from "./api";
+import { MAX_DENY_REASON } from "../lib/bridge-state";
+import { age, backStep, can, clock, elapsed, isNote, pickedTernSession, readPatch, routeHash, storedTernSession, swipeOrder, timeLeft, todoSummary, type Route } from "./lib";
+import { ANSWER_TAKEN_MS, AnsweredContext, Chat, Markdown, StretchContext, type AnsweredLine, type StretchSync } from "./chat";
 import { liveText, withOpen } from "./stretch";
 import { screenHtml } from "./markdown";
 import { buzz, Dot, PiMark } from "./parts";
@@ -18,7 +19,7 @@ import { rowOf, WaitBar } from "./waiting";
 export function Session({ block }: { block: string }) {
   const [view, setView] = useState<View>("chat");
   // The server answers a chat request for a non-omp block with its screen.
-  const { state, waiting, chat, live, queued, run, context, btw, setBtw, screen, draft, doc, online, stretch, voice, approval } = useStream(block, view);
+  const { state, waiting, chat, live, queued, run, context, btw, setBtw, screen, draft, doc, online, stretch, voice, approval, limit } = useStream(block, view);
   // Open stretches: the omp session's (stretch.ts) when it reports them, else this page's own.
   const [opened, setOpened] = useState<Record<string, string[]>>({});
   // Whether `opened` mirrors the pane: then losing the report (omp restarted without stretch.ts) drops
@@ -64,6 +65,33 @@ export function Session({ block }: { block: string }) {
   const now = useNow(5000);
   // Only the working row reads it, while the session works.
   const todo = useMemo(() => newestTodo(chat), [chat]);
+  // The confirmation line above the composer: this omp session's only, gone after ANSWERED_MS
+  // (one whose reason didn't reach omp stays until dismissed).
+  const sessionId = item?.agent?.sessionId ?? null;
+  const [answered, setAnswered] = useState<(AnsweredLine & { session: string | null; at: number }) | null>(null);
+  const noteAnswered = useCallback((line: AnsweredLine) => setAnswered({ ...line, session: sessionId, at: Date.now() }), [sessionId]);
+  useEffect(() => {
+    if (!answered || answered.unsent) return;
+    const timer = setTimeout(() => setAnswered(null), ANSWERED_MS);
+    return () => clearTimeout(timer);
+  }, [answered]);
+  // The approval the phone answered, confirmed once omp took it (the POST succeeded) and closed its
+  // dialog (the `approval` event dropped that call), in either order: a deny with a reason closes
+  // the dialog before its reply comes. Only the call it answered: another call's dialog closing
+  // doesn't confirm it.
+  const approving = useRef<{ id: string; text: string; session: string | null; posted: boolean; closed: boolean } | null>(null);
+  const settleApproving = () => {
+    const a = approving.current;
+    if (!a?.posted || !a.closed) return;
+    approving.current = null;
+    setAnswered({ text: a.text, session: a.session, at: Date.now() });
+  };
+  useEffect(() => {
+    const a = approving.current;
+    if (!a || approval?.id === a.id) return;
+    a.closed = true;
+    settleApproving();
+  }, [approval]);
 
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -227,7 +255,9 @@ export function Session({ block }: { block: string }) {
                   </span>
                   <span class="welcome-name">omp</span>
                 </div>
-                <Chat entries={chat} block={block} rewind={can(item?.live, "rewind")} working={shownState === "working" || shownState === "blocked" ? true : shownState === "idle" ? false : undefined} />
+                <AnsweredContext.Provider value={noteAnswered}>
+                  <Chat entries={chat} block={block} rewind={can(item?.live, "rewind")} working={shownState === "working" || shownState === "blocked" ? true : shownState === "idle" ? false : undefined} />
+                </AnsweredContext.Provider>
               </StretchContext.Provider>
               {live && <Markdown class="msg assistant md live" mermaid={false} text={liveText(live)} />}
               {queued.map((q, i) => (
@@ -236,7 +266,23 @@ export function Session({ block }: { block: string }) {
                   <span class="queued-text">{q.text}</span>
                 </div>
               ))}
-              {approval && <ApprovalCard key={approval.id} block={block} approval={approval} />}
+              {approval && (
+                <ApprovalCard
+                  key={approval.id}
+                  block={block}
+                  approval={approval}
+                  onAnswering={(text) => (approving.current = { id: approval.id, text, session: sessionId, posted: false, closed: false })}
+                  onTaken={() => {
+                    if (approving.current?.id !== approval.id) return;
+                    approving.current.posted = true;
+                    settleApproving();
+                  }}
+                  onDropped={() => {
+                    if (approving.current?.id === approval.id) approving.current = null;
+                  }}
+                  onUnsent={noteAnswered}
+                />
+              )}
             </>
           ) : screen != null ? (
             screen.html ? (
@@ -261,6 +307,18 @@ export function Session({ block }: { block: string }) {
         )}
       </div>
       {item && waitRow && waiting?.available && <WaitBar row={waitRow} health={waiting.health} now={now} />}
+      {answered && answered.session === sessionId && (
+        <div key={answered.at} class={`answered${answered.unsent ? " err" : ""}`} role={answered.unsent ? "alert" : "status"}>
+          <span class="answered-text">{answered.text}</span>
+          {answered.unsent && <q class="answered-reason">{answered.unsent}</q>}
+          {answered.unsent && (
+            <button type="button" class="answered-close" aria-label="Dismiss" onClick={() => setAnswered(null)}>
+              ×
+            </button>
+          )}
+        </div>
+      )}
+      {isOmp && limit && !working && <LimitBar block={block} limit={limit} now={now} />}
       {!item?.doc && (
         <Composer
           block={block}
@@ -343,24 +401,119 @@ function WorkingRow({ run, since, todo, onTodo }: { run: Run | null; since: numb
   );
 }
 
+/**
+ * A turn that stopped on a provider's usage limit: when the limit resets, and a continue then
+ * (the server sends it, with every phone closed) or now. Once set, its time and Cancel; every phone
+ * shows the same, as the server's `limit` event. A spending cap doesn't lift by waiting: Continue
+ * now only. Shown only while the session rests on it, not once a turn runs.
+ */
+function LimitBar({ block, limit, now }: { block: string; limit: LimitView; now: number }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Continue now's id until one goes: a retry after a lost reply doesn't send it twice.
+  const nowId = useRef(crypto.randomUUID());
+  async function act(body: object) {
+    setBusy(true);
+    setError(null);
+    const err = await post(`/api/blocks/${block}/continue`, body);
+    setBusy(false);
+    if (err) return setError(err);
+    buzz();
+    nowId.current = crypto.randomUUID();
+  }
+  const what = limit.kind === "spend" ? "Stopped on a spending limit" : "Stopped on a usage limit";
+  // The banner stays up past the reset when nobody continued: then only Continue now is left.
+  const resetAt = limit.resetAt !== null && limit.resetAt > now ? limit.resetAt : null;
+  const when =
+    limit.continueAt !== null
+      ? limit.continueAt > now
+        ? `continues at ${dayClock(limit.continueAt, now)}`
+        : "continuing: waiting for omp"
+      : resetAt !== null
+        ? `resets in ${timeLeft(resetAt - now)}`
+        : limit.resetAt !== null
+          ? "the limit has reset"
+          : limit.kind === "wait"
+            ? "reset time not known"
+            : "";
+  return (
+    <section class="limit-bar" aria-label={what} title={limit.error}>
+      <div class="limit-text">
+        <span class="limit-what">{what}</span>
+        {when && <span class="limit-when"> · {when}</span>}
+      </div>
+      {error && <p class="err small">{error}</p>}
+      <div class="limit-actions">
+        {limit.continueAt !== null ? (
+          <button type="button" disabled={busy} onClick={() => void act({ cancel: true })}>
+            Cancel
+          </button>
+        ) : (
+          <>
+            {resetAt !== null && (
+              <button type="button" class="limit-primary" disabled={busy} onClick={() => void act({ when: "reset" })}>
+                Continue when it resets
+              </button>
+            )}
+            <button type="button" disabled={busy} onClick={() => void act({ when: "now", id: nowId.current })}>
+              Continue now
+            </button>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** "17:37" today, else "Nov 12, 17:37". */
+function dayClock(ts: number, now: number): string {
+  const d = new Date(ts);
+  return d.toDateString() === new Date(now).toDateString() ? clock(ts) : `${d.toLocaleDateString([], { month: "short", day: "numeric" })}, ${clock(ts)}`;
+}
+
 /** Arguments that are the substance of a call: always shown whole, as a block. */
 const BODY_ARGS: Record<string, true> = { command: true, code: true, content: true, input: true, html: true };
+
+/** How long the line confirming an answer stays above the composer. */
+const ANSWERED_MS = 4000;
 
 /**
  * omp's tool approval dialog: which tool, why omp asks, and exactly what the call does, then Deny
  * and Approve (once). An `edit` patch reads as its file and steps in words, with the lines it
- * writes. An answer stays pending until omp closes its dialog, which drops the card.
+ * writes. An answer stays pending until omp closes its dialog, which drops the card. Deny can carry
+ * a reason, folded away until asked for: it reaches the agent as a steer once the deny lands.
+ * `onAnswering`: the confirmation line of the answer being sent; then `onTaken` once omp took it,
+ * or `onDropped` when it didn't (or the dialog stayed open); `onUnsent`: the deny landed but its
+ * reason didn't.
  */
-function ApprovalCard({ block, approval }: { block: string; approval: ApprovalView }) {
+function ApprovalCard({
+  block,
+  approval,
+  onAnswering,
+  onTaken,
+  onDropped,
+  onUnsent,
+}: {
+  block: string;
+  approval: ApprovalView;
+  onAnswering: (line: string) => void;
+  onTaken: () => void;
+  onDropped: () => void;
+  onUnsent: (line: AnsweredLine) => void;
+}) {
   const [sending, setSending] = useState<"allow" | "deny" | null>(null);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Deny's reason: null while folded away.
+  const [why, setWhy] = useState<string | null>(null);
+  const reason = why?.trim() ?? "";
   // Sent, but omp's dialog stayed open: the keys didn't reach it.
   useEffect(() => {
     if (!sent) return;
     const timer = setTimeout(() => {
       setSent(false);
       setSending(null);
+      onDropped();
       setError("omp hasn't taken the answer: check the Tern pane.");
     }, ANSWER_TAKEN_MS);
     return () => clearTimeout(timer);
@@ -368,12 +521,23 @@ function ApprovalCard({ block, approval }: { block: string; approval: ApprovalVi
   async function answer(allow: boolean) {
     setSending(allow ? "allow" : "deny");
     setError(null);
-    const err = await post(`/api/blocks/${block}/approve`, { id: approval.id, allow });
-    if (err) {
+    const withReason = !allow && reason !== "";
+    // Recorded first: omp may close its dialog before the reply comes.
+    onAnswering(allow ? `✓ Approved: ${approval.tool}` : `✕ Denied: ${approval.tool}${withReason ? " · reason sent" : ""}`);
+    const reply = await postReply(`/api/blocks/${block}/approve`, { id: approval.id, allow, ...(withReason && { reason }) });
+    if (reply.body.denied === true) {
+      // The deny landed, so the card goes; the reason stays above the composer to send as a message.
+      onDropped();
+      buzz();
+      onUnsent({ text: reply.error ?? "", unsent: reason });
+      setSent(true);
+    } else if (reply.error) {
+      onDropped();
       setSending(null);
-      setError(err);
+      setError(reply.error);
     } else {
       buzz();
+      onTaken();
       setSent(true);
     }
   }
@@ -406,15 +570,37 @@ function ApprovalCard({ block, approval }: { block: string; approval: ApprovalVi
         ),
       )}
       {error && <div class="err small">{error}</div>}
+      {why !== null && (
+        <textarea
+          class="approval-why-text"
+          rows={2}
+          maxLength={MAX_DENY_REASON}
+          autoFocus
+          aria-label="Why deny it"
+          placeholder="Why not? omp gets it as your next message."
+          value={why}
+          disabled={sending !== null}
+          onInput={(e) => setWhy(e.currentTarget.value)}
+        />
+      )}
       <div class="approval-actions">
         <button class="approval-deny" type="button" disabled={sending !== null} onClick={() => void answer(false)}>
-          {sending === "deny" ? "Denying…" : "Deny"}
+          {sending === "deny" ? "Denying…" : reason ? "Deny, send reason" : "Deny"}
         </button>
         <button class="approval-allow" type="button" disabled={sending !== null || !approval.args} onClick={() => void answer(true)}>
           {sending === "allow" ? "Approving…" : "Approve once"}
         </button>
       </div>
-      <p class="approval-hint">A reply below also denies it, and steers omp.</p>
+      {why === null ? (
+        <p class="approval-hint">
+          <button class="approval-why" type="button" disabled={sending !== null} onClick={() => setWhy("")}>
+            Deny with a reason…
+          </button>
+          {" "}or reply below: that denies it too, and steers omp.
+        </p>
+      ) : (
+        <p class="approval-hint">A reply below also denies it, and steers omp.</p>
+      )}
     </section>
   );
 }

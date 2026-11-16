@@ -35,7 +35,7 @@ mock.module("mermaid", () => ({
 // Dynamic on purpose: preact binds to the DOM globals present when it loads.
 const { render } = await import("preact");
 const { act } = await import("preact/test-utils");
-const { Chat, Markdown, StretchContext } = await import("./chat");
+const { AnsweredContext, Chat, Markdown, StretchContext } = await import("./chat");
 type StretchSync = import("./chat").StretchSync;
 
 const net = new Net();
@@ -556,6 +556,17 @@ describe("ask cards", () => {
     expect(root.textContent).toContain("Sent, waiting for omp…");
     expect(root.querySelector<HTMLFieldSetElement>(".ask-form")!.disabled).toBe(true);
     expect(buzzes).toEqual([12]);
+  });
+
+  test("an answer the phone sent reports its confirmation once omp writes the result, not before", async () => {
+    const lines: unknown[] = [];
+    const showNoting = (entries: ChatEntry[]) =>
+      act(() => render(<AnsweredContext.Provider value={(l) => lines.push(l)}><Chat entries={entries} block="5" rewind /></AnsweredContext.Provider>, root));
+    await showNoting([user("go"), ask(DB)]);
+    await click(radio("sqlite"));
+    expect(lines).toEqual([]);
+    await showNoting([user("go"), ask(DB, "Which DB?: SQLite")]);
+    expect(lines).toEqual([{ text: "✓ Answered: Which DB?" }]);
   });
 
   test("tapping the option the model preselected sends it too", async () => {

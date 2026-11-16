@@ -112,10 +112,11 @@ export function Composer({
   const submitting = useRef(false);
   // Edits for the next prompt must reach omp after the current submission clears its editor.
   const deferredDraft = useRef<DraftWrite | null>(null);
-  // The last image or follow-up send, until one succeeds: a resend of the same prompt to the same
-  // omp session reuses its id. Another block or session gets a fresh one, so the extension never
-  // takes a new session's prompt for a retry of the old one's.
-  const lastSend = useRef<{ id: string; block: string; sessionId: string | null; text: string; images: PastedImage[]; followUp: boolean } | null>(null);
+  // The last steer and the last follow-up, each until one succeeds: a resend of the same prompt to
+  // the same omp session reuses its id (a steer sent in between leaves a failed follow-up's id for
+  // its retry). Another block or session gets a fresh one, so the extension never takes a new
+  // session's prompt for a retry of the old one's.
+  const lastSend = useRef(new Map<boolean, { id: string; block: string; sessionId: string | null; text: string; images: PastedImage[] }>());
   // Terminals: what the phone has typed onto the shell's line, and one queue for every write.
   const typed = useRef("");
   const chain = useRef<Promise<unknown>>(Promise.resolve());
@@ -372,24 +373,23 @@ export function Composer({
   }
 
   /**
-   * The id an image or follow-up send carries. A resend of a failed send's prompt, unchanged, gets
-   * that send's id: omp skips an id it already took, so a send whose reply was lost doesn't run
-   * twice. Any other prompt gets a new one.
+   * The id a prompt send carries. A resend of a failed send's prompt, unchanged, gets that send's
+   * id: the server (and omp, for images and follow-ups) skips an id it already took, so a send
+   * whose reply was lost doesn't run twice. Any other prompt gets a new one.
    */
   function sendId(text: string, images: PastedImage[], followUp: boolean): string {
-    const last = lastSend.current;
+    const last = lastSend.current.get(followUp);
     if (
       last &&
       last.block === block &&
       last.sessionId === sessionId &&
       last.text === text &&
-      last.followUp === followUp &&
       last.images.length === images.length &&
       last.images.every((p, i) => p === images[i])
     )
       return last.id;
     const id = crypto.randomUUID();
-    lastSend.current = { id, block, sessionId, text, images, followUp };
+    lastSend.current.set(followUp, { id, block, sessionId, text, images });
     return id;
   }
 
@@ -444,7 +444,7 @@ export function Composer({
       const sent = pasted;
       const images = sent.map(({ data, mimeType }) => ({ data, mimeType }));
       if (await send("submit", { text: text.trim(), images, followUp, id: sendId(text.trim(), sent, followUp) })) return;
-      lastSend.current = null;
+      lastSend.current.delete(followUp);
       buzz();
       for (const p of sent) URL.revokeObjectURL(p.url);
       // Images pasted while this one was uploading stay for the next send.
@@ -458,10 +458,9 @@ export function Composer({
       }
       return;
     }
-    const body = followUp ? { text: text.trim(), followUp, id: sendId(text.trim(), [], true) } : { text: text.trim() };
+    const body = { text: text.trim(), ...(followUp && { followUp }), id: sendId(text.trim(), [], followUp) };
     if (!(await send("submit", body))) {
-      // A plain steer carries no id, so it leaves a failed follow-up's id for that follow-up's retry.
-      if (followUp) lastSend.current = null;
+      lastSend.current.delete(followUp);
       buzz();
       lastEdit.current = Date.now();
       // An echo of the draft from before the send must not come back once it settles.
