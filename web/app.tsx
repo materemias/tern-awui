@@ -6,6 +6,7 @@ import { Home } from "./home";
 import { Session, SubagentScreen } from "./session";
 import { usePush } from "./push";
 import { GuideHost } from "./guide";
+import { loadShare } from "./share";
 
 /** The desktop sidebar minimized to a rail of session icons, remembered on this device. */
 const RAIL_KEY = "tern-mobile:sidebar-rail";
@@ -78,4 +79,6 @@ if ("serviceWorker" in navigator) {
   });
 }
 
+// Before the first render: it moves a shared page's address to the list, where the picker shows.
+void loadShare();
 render(<App />, document.getElementById("app") as HTMLElement);

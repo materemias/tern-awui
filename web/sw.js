@@ -1,6 +1,29 @@
-// Shows tern-mobile's push notifications and opens the session they are about.
+// Shows tern-mobile's push notifications and opens the session they are about; takes what another
+// app shares to the installed app.
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
+
+// The manifest's share target: Android posts the shared text and images to /share. They wait in a
+// cache entry the page reads once (web/share.ts), and the app opens with `?share=<id>` to pick the
+// session they go to. Only the newest share waits: an older one nobody picked is dropped.
+self.addEventListener("fetch", (e) => {
+  const url = new URL(e.request.url);
+  if (e.request.method !== "POST" || url.origin !== self.location.origin || url.pathname !== "/share") return;
+  e.respondWith(
+    (async () => {
+      try {
+        const form = await e.request.formData();
+        const cache = await self.caches.open("tern-share");
+        for (const key of await cache.keys()) await cache.delete(key);
+        const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        await cache.put(`/share/${id}`, new Response(form));
+        return Response.redirect(new URL(`/?share=${id}`, self.location.href).href, 303);
+      } catch {
+        return Response.redirect(new URL("/", self.location.href).href, 303);
+      }
+    })(),
+  );
+});
 
 self.addEventListener("push", (e) => {
   const d = e.data ? e.data.json() : {};

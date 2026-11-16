@@ -2,6 +2,7 @@
 // in-page DemoServer for /api/*, and a stand-in service worker and notification permission let
 // the bell switch on without registering a worker under the site's origin or asking the browser.
 import { DemoServer, demoEventSource } from "./demo-backend";
+import { setShareLoader, shareText } from "./share";
 
 const server = new DemoServer();
 const realFetch = window.fetch.bind(window);
@@ -18,6 +19,14 @@ window.EventSource = demoEventSource(server) as unknown as typeof EventSource;
 // when the link has no hash; `#/` (the list, a reload there) stays. Before the app reads its
 // route, and with no history entry.
 if (location.hash.length <= 1) history.replaceState(null, "", "#/b/23");
+
+// No service worker takes shares here: `?share=demo` opens the share picker with a sample
+// screenshot and link, as Android's share sheet would hand them over.
+setShareLoader(async (id) => {
+  if (id !== "demo") return null;
+  const image = await (await realFetch("icon-v2-180.png")).blob();
+  return { text: shareText("Build failing on main", "CI log: https://example.com/ci/1234", "https://example.com/ci/1234"), images: [image] };
+});
 
 /**
  * Notifications: the app's real push code runs against a service worker that registers nothing,

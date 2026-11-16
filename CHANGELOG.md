@@ -4,6 +4,7 @@
 
 ### Features
 
+- Share screenshots, text or links from Android to the app and pick the session; long-press the icon for Waiting.
 - Tool runs show their result after the intent, like "412 passed · 3 failed", "no type errors" or "4 results in 2 files".
 
 ## 0.11.1 (2026-11-15)

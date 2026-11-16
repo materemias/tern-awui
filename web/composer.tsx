@@ -6,6 +6,7 @@ import { btwCommand, can, composerKey, currentRole, fitEdge, lineEdit, needsReen
 import { Markdown } from "./chat";
 import { openText } from "./stretch";
 import { buzz } from "./parts";
+import { takeShare, useShareChanges } from "./share";
 import type { Draft } from "./hooks";
 import { EFFORT_LABEL, ModelSheet, TIER_LABEL } from "./models";
 import { BtwHistorySheet } from "./btw-history";
@@ -219,8 +220,15 @@ export function Composer({
   // A prompt typed before omp's editor connected (still loading or starting) becomes its draft,
   // rather than giving way to the editor's empty one.
   const typedOffline = useRef(false);
+  // A share's text waiting for the session's first draft report, so it joins the desktop's draft.
+  const heldShare = useRef<string | null>(null);
   useEffect(() => {
-    if (!draft?.live) return;
+    if (!draft) return;
+    if (heldShare.current !== null) {
+      if (draft.live) remote.current = draft.text;
+      return addShared();
+    }
+    if (!draft.live) return;
     if (typedOffline.current) {
       typedOffline.current = false;
       if (textRef.current !== "") {
@@ -233,6 +241,33 @@ export function Composer({
     reconcile();
   }, [draft]);
   useEffect(() => () => clearTimeout(reconcileTimer.current), []);
+  // A share picked for this session (web/share.ts) joins its draft, images attached; nothing is sent.
+  const shareChanges = useShareChanges();
+  useEffect(() => {
+    const share = takeShare(block);
+    if (!share) return;
+    if (share.text) {
+      heldShare.current = heldShare.current ? `${heldShare.current}\n\n${share.text}` : share.text;
+      // Before the session's draft arrived, it waits for it (the effect above).
+      if (draft) addShared();
+    }
+    if (share.images.length) void addImages(share.images);
+  }, [block, shareChanges]);
+
+  /** The held share's text after the draft: the desktop's newest one (not adopted yet, or adopted), then a blank line. */
+  function addShared() {
+    const shared = heldShare.current;
+    if (shared === null || !draft) return;
+    heldShare.current = null;
+    const base = draft.live ? (remote.current ?? textRef.current) : textRef.current;
+    const value = base ? `${base}\n\n${shared}` : shared;
+    lastEdit.current = Date.now();
+    remote.current = null;
+    textRef.current = value;
+    setText(value);
+    if (draft.live) void pushDraft(value);
+    else typedOffline.current = true;
+  }
 
   useLayoutEffect(() => {
     const el = area.current;

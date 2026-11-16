@@ -386,6 +386,7 @@ button.turn-work:hover .turn-work-sum, button.turn-work:active .turn-work-sum { 
 .sheet { width: 100%; background: var(--panel); border-radius: 16px 16px 0 0; padding: 8px 8px calc(12px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; }
 .sheet-head { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 10px 10px; font-weight: 600; }
 .sheet-note { padding: 0 10px 8px; }
+.share-preview { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .sheet-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 12px 10px; border: 0; border-radius: 10px; background: none; text-align: left; }
 .sheet-row.on { background: var(--raise); }
 .sheet-row.on .role { color: var(--accent); }

@@ -35,8 +35,18 @@ function worker(opts: { badgeApi?: boolean; windows?: number; badgeFails?: boole
       calls.badge.push("clear");
     };
   }
+  /** The share cache sw.js writes to. */
+  const stash = new Map<string, Response>();
   const self = {
     navigator,
+    location: { href: "https://tern.example/sw.js", origin: "https://tern.example" },
+    caches: {
+      open: async () => ({
+        keys: async () => [...stash.keys()],
+        delete: async (key: string) => stash.delete(key),
+        put: async (key: string, res: Response) => void stash.set(key, res),
+      }),
+    },
     addEventListener: (type: string, fn: Listener) => (listeners[type] = fn),
     skipWaiting: () => calls.skipWaiting++,
     registration: {
@@ -68,7 +78,14 @@ function worker(opts: { badgeApi?: boolean; windows?: number; badgeFails?: boole
     const notification = { closed: false, data, close: () => (notification.closed = true) };
     return { notification, done: fire("notificationclick", { notification }) };
   };
-  return { calls, windows, fire, push, click };
+  /** Posts a share as Android does; resolves to the worker's answer, or null when it let it pass. */
+  async function share(form: FormData, path = "/share", method = "POST"): Promise<Response | null> {
+    let answer: Promise<Response> | null = null;
+    const request = new Request(`https://tern.example${path}`, { method, ...(method === "POST" && { body: form }) });
+    listeners.fetch({ request, respondWith: (p: Promise<Response>) => (answer = p) });
+    return answer;
+  }
+  return { calls, windows, fire, push, click, share, stash };
 }
 
 describe("push", () => {
@@ -181,4 +198,33 @@ test("a new worker takes over at once", async () => {
   await w.fire("activate", {});
   expect(w.calls.skipWaiting).toBe(1);
   expect(w.calls.claimed).toBe(1);
+});
+
+describe("share target", () => {
+  test("a share waits in the cache for the page and opens the app on it; only the newest waits", async () => {
+    const w = worker();
+    const first = new FormData();
+    first.set("text", "older");
+    await w.share(first);
+    const form = new FormData();
+    form.set("title", "Bug");
+    form.set("text", "look at this");
+    form.append("images", new File([new Uint8Array([1, 2, 3])], "shot.png", { type: "image/png" }));
+    const r = (await w.share(form))!;
+    expect(r.status).toBe(303);
+    const id = new URL(r.headers.get("location")!).searchParams.get("share");
+    expect(r.headers.get("location")).toBe(`https://tern.example/?share=${id}`);
+    expect([...w.stash.keys()]).toEqual([`/share/${id}`]);
+    const stored = await w.stash.get(`/share/${id}`)!.formData();
+    expect(stored.get("text")).toBe("look at this");
+    const image = stored.get("images") as File;
+    expect(image.type).toBe("image/png");
+    expect([...new Uint8Array(await image.arrayBuffer())]).toEqual([1, 2, 3]);
+  });
+
+  test("other requests pass through to the network", async () => {
+    const w = worker();
+    expect(await w.share(new FormData(), "/share", "GET")).toBeNull();
+    expect(await w.share(new FormData(), "/api/push/subscribe")).toBeNull();
+  });
 });

@@ -10,6 +10,7 @@ const restoreDom = specDom();
 const { render } = await import("preact");
 const { act } = await import("preact/test-utils");
 const { Composer } = await import("./composer");
+const { loadShare, pickShare, setShareLoader } = await import("./share");
 
 type Props = ComponentProps<typeof Composer>;
 const net = new Net();
@@ -1156,5 +1157,21 @@ describe("stop, context and model controls", () => {
     expect(calls("keys")).toEqual([{ keys: ["ctrl+p"] }]);
     expect(calls("models")).toEqual([]);
     expect(root.querySelector(".sheet")).toBeNull();
+  });
+});
+
+describe("a share from another app", () => {
+  test("waits for the session's draft and joins it, rather than replacing it", async () => {
+    setShareLoader(async () => ({ text: "shared link", images: [] }));
+    history.replaceState(null, "", "/?share=abc#/");
+    await loadShare();
+    pickShare("5");
+    // The composer opens before the stream's first draft report.
+    await show({ draft: null });
+    expect(area().value).toBe("");
+    expect(net.to("/api/blocks/5/draft")).toEqual([]);
+    await show({ draft: { live: true, text: "desktop draft" } });
+    expect(area().value).toBe("desktop draft\n\nshared link");
+    expect(net.to("/api/blocks/5/draft")).toEqual([{ text: "desktop draft\n\nshared link" }]);
   });
 });

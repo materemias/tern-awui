@@ -9,6 +9,7 @@ import { goBack, origins, useExitGuard, useNow, useStream } from "./hooks";
 import { PUSH_LABEL, permissionHelp, type PushState } from "./push";
 import { WaitingIcon, WaitingPopup, WaitingStrip } from "./waiting";
 import { openGuide } from "./guide";
+import { pickShare, usePendingShare, type Share } from "./share";
 
 /** The row's icon: the title's Nerd Font glyph, else Tern's π fallback for an omp not yet titled. */
 function iconOf(item: Item): { glyph: string; pi: boolean } | null {
@@ -535,6 +536,42 @@ export const storedHideOld = () => localStorage.getItem(HIDE_OLD_KEY) === "on";
 /** The projects this device's list keeps folded. */
 export const storedCollapsed = () => new Set(parseStoredList(localStorage.getItem(COLLAPSED_KEY)));
 
+/** Where a share from another app goes: one tap on an omp session opens it with the share as its draft. */
+function ShareSheet({ share, items }: { share: Share; items: Item[] }) {
+  const what = [share.text && "text", share.images.length && `${share.images.length} image${share.images.length > 1 ? "s" : ""}`].filter(Boolean).join(" and ");
+  return (
+    <div class="sheet-backdrop" onClick={() => pickShare(null)}>
+      <div class="sheet tall share-sheet" onClick={(e) => e.stopPropagation()}>
+        <div class="sheet-head">
+          <span>Add the shared {what} to</span>
+          <button class="ghost small" onClick={() => pickShare(null)}>
+            Cancel
+          </button>
+        </div>
+        {share.text && <div class="sheet-note muted small share-preview">{share.text}</div>}
+        <div class="sheet-list">
+          {items.length ? (
+            items.map((i) => (
+              <button
+                key={i.block}
+                class="sheet-row"
+                onClick={() => {
+                  pickShare(i.block);
+                  location.hash = `#/b/${i.block}`;
+                }}
+              >
+                <SheetName project={i.project} icon={iconOf(i)} tag={i.tag} title={i.title || i.agent?.lastPrompt || ""} />
+              </button>
+            ))
+          ) : (
+            <div class="sheet-note muted">{share.images.length ? "No omp session that can take images (connected to tern-mobile) is open." : "No omp session is open."}</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * The session list. `wide`: shown beside the open session, which `selected` marks. `rail`: minimized
  * to a column of session icons; `onRail` toggles that (desktop only). `waitingOpen`: the Waiting
@@ -634,6 +671,10 @@ export function Home({
   const items = state ? state.projects.flatMap((p) => p.items) : [];
   // Counted as the list shows them: in the picked Tern session.
   const listed = items.filter((i) => onList(i) && inTernSession(i, ternSession));
+  const share = usePendingShare();
+  // Every open omp session, whatever the list filters: a share can go to any of them.
+  // Images go to omp through its bridge only; text can join any omp session's composer.
+  const shareSheet = share && <ShareSheet share={share} items={items.filter((i) => i.agent && !i.doc && !i.parked && (!share.images.length || i.live))} />;
   const oldCount = listed.filter((i) => isOld(i, now, selected)).length;
   const peekItem = peek && items.find((i) => i.block === peek.block);
   // Sessions whose omp runs another extension build than the server's (rows marked with !).
@@ -741,6 +782,7 @@ export function Home({
           +
         </button>
         {sheet}
+        {shareSheet}
         {waitingPopup}
       </div>
     );
@@ -921,6 +963,7 @@ export function Home({
       {/* The row's live session, not the one at the press: its recap or prompt may have moved on since. */}
       {peek && peekItem && <Peek at={peek} item={peekItem} now={now} onClose={closePeek} />}
       {sheet}
+      {shareSheet}
       {waitingPopup}
       {(exitHint || toast) && <div class="toast">{exitHint ? "Press back again to exit" : toast}</div>}
     </div>

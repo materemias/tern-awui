@@ -93,6 +93,14 @@ omp loads extensions at startup: sessions started before the extension was insta
 
 Tern's CLI can't read a pane's editor (`tern capture` returns only the main surface region), and the plugin API's `surface()` returns nothing for hidden panes, so the draft is read from omp.
 
+## Sharing to the app
+
+The manifest declares a share target: Android's share sheet lists the installed app and posts the title, text, link and images (`images`, any `image/*`) as `multipart/form-data` to `/share`. `sw.js` answers that post itself: it stores the form as a response in the `tern-share` cache under `/share/<id>` (dropping any older share nobody picked) and redirects to `/?share=<id>`. On load, `web/share.ts` reads and deletes that entry, sets the address back to `#/` and holds the share. The list then shows a sheet of every open omp session (only those bridged to tern-mobile when the share has images, which need the bridge); one tap opens the session, and its composer adds the text (title, text and link, each once) after its draft, with a blank line between. The composer waits for the session's first draft report for that, so a desktop draft is kept. The images go through the same path as a pasted image, with the same 8-image limit and resizing. Nothing is sent. Cancel or a tap outside drops it; a picked share whose composer never opened is dropped after 2 minutes or when another share is picked. A share posted before the service worker controls the page reaches the server, which redirects it to `/`; the share is lost. Starting a new omp with the share isn't offered.
+
+The manifest's one shortcut, **Waiting** (long-press the app icon), opens `/#/waiting`.
+
+The demo has no manifest or service worker; `?share=demo` opens the picker with a sample text and image.
+
 ## Notifications
 
 **Notifications** in the dock (the bell in the rail's header) turns on Web Push for that device (service worker `sw.js`, VAPID keys in `~/.config/tern-mobile/vapid.json`, subscriptions in `push.json`, both mode 600). It has four looks: slashed (off, or blocked in site settings), slashed in red (stopped: Android took notifications away from the installed app, see below), dimmed and pulsing (pending: asking for permission, subscribing, or waiting for the server to store the subscription; taps are ignored), and a green dot (on: the server confirmed it). The choice is kept per device in `localStorage` (`tern-mobile:push`); on every load a device that chose *on* checks its subscription, silently makes a new one if the browser dropped it or it belongs to another VAPID key, and re-sends it to the server, so updates and reloads don't turn notifications off. Bridged omp sessions trigger them:

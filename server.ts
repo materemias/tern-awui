@@ -2083,6 +2083,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
         const login = req.headers.get("tailscale-user-login");
         if (ALLOW.length && !(login && ALLOW.includes(login))) return new Response("forbidden", { status: 403 });
         if (url.pathname.startsWith("/api/")) return handleApi(req, url);
+        // A share posted before the service worker took the page (sw.js normally answers it): the share is lost, the app opens.
+        if (url.pathname === "/share") return new Response(null, { status: 303, headers: { location: "/" } });
         const rel = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
         if (rel.includes("..")) return new Response("bad path", { status: 400 });
         const index = Bun.file(join(DIST, "index.html"));
