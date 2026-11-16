@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.12.0 (2026-11-16)
+
 ### Features
 
 - Deny a tool call with a reason the agent reads next; a short line confirms each answered approval or ask.
