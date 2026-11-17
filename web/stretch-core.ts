@@ -61,7 +61,7 @@ The reader's screen draws each stretch \`{{short|long}}\` in your reply as its s
 - The long form keeps every word of the short form, in the same order, and grows around them: words added before, between and after the ones the reader already saw. On screen those words stay where they are while the new ones open up around them, so the reader never loses their place. Example: "{{The build fails on a stale cache.|The CI build fails, about one run in five, on a stale dependency cache keyed only by \`package.json\`.}}"
 - The long form must read correctly in the short form's place: a phrase stretches into a clause, a sentence into a paragraph, a paragraph into several. A long form may hold blank lines, list items and code blocks wherever the full text needs them.
 - Stretches nest: a long form may hold further stretches, each a further level of depth.
-- The short form is plain inline text on one line. Never put a stretch inside a code span, a code block, a table or a heading.
+- The short form is plain inline text on one line, and every stretch writes both forms, \`{{short|long}}\`; never \`{{long}}\` alone. Never put a stretch inside a code span, a code block, a table or a heading.
 - If other instructions require a closing block, such as a status block, make it the reply's last stretch, its short form a one-line gist of the block.
 - A reply that is already short needs no stretches.
 - A side question wrapped in \`<btw>\` is answered in plain text, without stretches: its view shows markup as written and cannot open it.
@@ -84,10 +84,12 @@ export type Stretch = {
   isClosed: boolean;
   /** Offset of the closing `}}` in the parsed text, when closed: where a deepen answer goes in. */
   end?: number;
+  /** Offset just past the `{{` of a sentence written without its `|` (`isBareLong`), where the `|` belongs. */
+  bare?: number;
 };
 
 /** `lead`: the words before a wordless short form that it took on, and the short form as written. */
-type Frame = { stretch: Stretch; siblings: Set<string>; lead?: { text: string; short: string } };
+type Frame = { stretch: Stretch; siblings: Set<string>; start: number; lead?: { text: string; short: string } };
 
 export const KEY_SEPARATOR = " › ";
 
@@ -103,6 +105,15 @@ export function isLinkable(stretch: Stretch): stretch is Stretch & { long: Segme
 /** A short form of sentence punctuation or nothing (`.`, ``) is too small to press: it takes on the words before it. */
 function isWordless(short: string): boolean {
   return /^[ \t.!?,;:…]*$/.test(short);
+}
+
+/**
+ * A no-pipe stretch holding a sentence (`Done. {{It took a minute.}}`) is a long form whose short form was
+ * left out, not a placeholder: three or more words, starting on a word, an opening bracket or quote, and
+ * ending a sentence. `{{name}}`, `{{ user.name }}` and `{{#if done}}` stay placeholders.
+ */
+function isBareLong(text: string): boolean {
+  return /^[\p{L}\p{N}("'“‘*_`]/u.test(text) && /[.!?…][)"'”’*_]*$/.test(text) && text.split(/\s+/).length >= 3;
 }
 
 /**
@@ -154,23 +165,23 @@ export function parse(text: string): Segment[] {
     if (text.startsWith("{{", i) && !isInShort) {
       const stretch: Stretch = { key: "", short: "", long: undefined, isClosed: false };
       (frame?.stretch.long ?? root).push(stretch);
-      stack.push({ stretch, siblings: new Set() });
+      stack.push({ stretch, siblings: new Set(), start: i + 2 });
       i += 2;
       continue;
     }
     if (isInShort && text[i] === "|") {
-      const parent = stack.at(-2);
-      const container = parent?.stretch.long ?? root;
-      const written = frame.stretch.short;
-      const lead = isWordless(written) ? takeLeadIn(container, frame.stretch) : undefined;
-      if (lead === undefined) dropRepeat(container, written, parent === undefined);
-      else frame.lead = { text: lead, short: written };
-      frame.stretch.key = keyOf(frame.stretch.short, parent, rootSiblings);
-      frame.stretch.long = [];
+      openLong(frame, stack.at(-2), root, rootSiblings);
       i += 1;
       continue;
     }
     if (frame && text.startsWith("}}", i)) {
+      if (isInShort && isBareLong(frame.stretch.short)) {
+        const written = frame.stretch.short;
+        frame.stretch.short = "";
+        openLong(frame, stack.at(-2), root, rootSiblings);
+        frame.stretch.long!.push(written);
+        frame.stretch.bare = frame.start;
+      }
       const { stretch, lead } = frame;
       stack.pop();
       i += 2;
@@ -195,6 +206,17 @@ export function parse(text: string): Segment[] {
   // A reply cut off inside a stretch: its long form is drawn open, so it needs its borrowed words too.
   for (const { stretch, lead } of stack) if (lead !== undefined && stretch.long !== undefined) prependLead(stretch.long, lead.text);
   return root;
+}
+
+/** The `|` of `frame`'s stretch: its short form is complete, so it gets its key and starts its long form. */
+function openLong(frame: Frame, parent: Frame | undefined, root: Segment[], rootSiblings: Set<string>): void {
+  const container = parent?.stretch.long ?? root;
+  const written = frame.stretch.short;
+  const lead = isWordless(written) ? takeLeadIn(container, frame.stretch) : undefined;
+  if (lead === undefined) dropRepeat(container, written, parent === undefined);
+  else frame.lead = { text: lead, short: written };
+  frame.stretch.key = keyOf(frame.stretch.short, parent, rootSiblings);
+  frame.stretch.long = [];
 }
 
 /**
@@ -736,6 +758,12 @@ export function withAnswers(text: string, answers: readonly DeepenAnswer[]): str
       return at === undefined ? [] : [{ answer, at, index }];
     });
     if (ready.length === 0) break;
+    // A sentence written without its `|` would take a spliced `{{✦|` pipe as its own: write it first, then look again.
+    const bare = [...new Set(ready.flatMap(({ at }) => all.find(s => s.end === at)?.bare ?? []))].sort((a, b) => b - a);
+    if (bare.length > 0) {
+      for (const at of bare) out = `${out.slice(0, at)}|${out.slice(at)}`;
+      continue;
+    }
     // Last offset first, so splicing one never moves the next one's offset. Answers to the same
     // stretch share an offset: splice the later one first so the earlier one lands before it.
     for (const { answer, at } of ready.sort((a, b) => b.at - a.at || b.index - a.index)) {
