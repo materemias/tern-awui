@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.13.0 (2026-11-19)
+
 ### Features
 
 - About in the dock shows the version and which of omp-stretch, AgentView and omp-compact you have.
