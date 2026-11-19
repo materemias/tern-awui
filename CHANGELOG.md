@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features
+
+- About in the dock shows the version and which of omp-stretch, AgentView and omp-compact you have.
+
 ### Fixes
 
 - A resend from the phone empties the Other text you cleared on a question's options.

@@ -11,6 +11,16 @@ export function configDir(env: Env, home: string): string {
   return env.TERN_AWUI_CONFIG || join(home, ".config", "tern-mobile");
 }
 
+/** omp's root folder, as omp's resolver (pi-utils `dirs.ts`) places it: ~/<`$PI_CONFIG_DIR` or `.omp`>. */
+export function ompRoot(env: Env, home: string): string {
+  return join(home, env.PI_CONFIG_DIR || ".omp");
+}
+
+/** omp's agent folder (settings, sessions): `$PI_CODING_AGENT_DIR`, else `<ompRoot>/agent`. */
+export function ompAgentDir(env: Env, home: string): string {
+  return env.PI_CODING_AGENT_DIR ? resolve(env.PI_CODING_AGENT_DIR) : join(ompRoot(env, home), "agent");
+}
+
 /**
  * omp's data directory: `sessions/`, `blobs/` and `history.db`. `$TERN_AWUI_OMP_DIR` overrides.
  * Otherwise as omp's own resolver (pi-utils `dirs.ts`, DirResolver) places its "data" files:
@@ -21,8 +31,8 @@ export function configDir(env: Env, home: string): string {
  */
 export function ompDataDir(env: Env, home: string, platform: NodeJS.Platform, exists: (path: string) => boolean = existsSync): string {
   if (env.TERN_AWUI_OMP_DIR) return resolve(env.TERN_AWUI_OMP_DIR);
-  const defaultAgent = join(home, env.PI_CONFIG_DIR || ".omp", "agent");
-  const agent = env.PI_CODING_AGENT_DIR ? resolve(env.PI_CODING_AGENT_DIR) : defaultAgent;
+  const defaultAgent = join(ompRoot(env, home), "agent");
+  const agent = ompAgentDir(env, home);
   if (agent === defaultAgent && (platform === "linux" || platform === "darwin") && env.XDG_DATA_HOME) {
     const xdg = join(env.XDG_DATA_HOME, "omp");
     if (exists(xdg)) return xdg;

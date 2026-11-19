@@ -9,6 +9,7 @@ import { goBack, origins, useExitGuard, useNow, useStream } from "./hooks";
 import { PUSH_LABEL, permissionHelp, type PushState } from "./push";
 import { WaitingIcon, WaitingPopup, WaitingStrip } from "./waiting";
 import { openGuide } from "./guide";
+import { About } from "./about";
 import { pickShare, usePendingShare, type Share } from "./share";
 
 /** The row's icon: the title's Nerd Font glyph, else Tern's π fallback for an omp not yet titled. */
@@ -696,6 +697,8 @@ export function Home({
   );
 
   const [picker, setPicker] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const closeAbout = useCallback(() => setAboutOpen(false), []);
   // Collapsed projects, remembered on this device.
   const [collapsed, setCollapsed] = useState<Set<string>>(storedCollapsed);
   function toggleProject(name: string) {
@@ -958,6 +961,14 @@ export function Home({
             </svg>
             <span class="dock-label">Guide</span>
           </button>
+          <button class="dock-btn about-btn" onClick={() => setAboutOpen(true)} title="About tern-awui and the tools it works best with">
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="1.4" />
+              <path d="M10 9v5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+              <circle cx="10" cy="6.3" r=".9" fill="currentColor" />
+            </svg>
+            <span class="dock-label">About</span>
+          </button>
         </footer>
       )}
       {/* The row's live session, not the one at the press: its recap or prompt may have moved on since. */}
@@ -965,6 +976,7 @@ export function Home({
       {sheet}
       {shareSheet}
       {waitingPopup}
+      {aboutOpen && <About onClose={closeAbout} />}
       {(exitHint || toast) && <div class="toast">{exitHint ? "Press back again to exit" : toast}</div>}
     </div>
   );

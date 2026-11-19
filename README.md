@@ -61,7 +61,7 @@ It has no login of its own. You reach it over a private network you control, suc
 - **Waiting.** With [CodexBar AgentView](https://github.com/materemias/codexbar-agentview) on the desktop, a strip under the list's header (a pill beside the Tern session chips) counts the sessions you set aside, red when some are on you. A tap opens them over the list, grouped On me, Machine watching, Waiting on something, When I have time, one line each on where the session stands; **Done** on a row on you clears it in one tap. Tap a row for the session in full: where it stands, your note and omp's suggestion, what else it waits on, its PRs, what happened and the recap, with **Open** or **Resume**, **Snooze 1d** and **Done** at the bottom. Notes and a manual wait (your own words, marked done by you) edit in place. An open session that is set aside shows its wait above the composer, as Tern's pane does, and a tap opens it in Waiting. A session that lands on you sends a notification. On the minimized desktop sidebar an hourglass with the on-you count opens the same popup.
 - **Shells and files too.** Plain terminals show their screen with a key bar (Esc, ^C, arrows, Tab), and Tern notes and opened files are readable, Markdown with its local images.
 - **First-run guide.** A short tour on first open, on the phone and on the desktop: the list, Waiting, **+ omp** and the dock, then a session's composer, cards, voice call and header actions. **Guide** in the dock replays it.
-- **The dock.** A small floating pill in the list's lower right corner, within thumb reach: **Notifications**, **Hide old** (sessions older than a day, with how many it hides) and **Guide**. The header keeps what is happening (the counts), the search button and **+ omp**; on the phone the filter opens from that search button.
+- **The dock.** A small floating pill in the list's lower right corner, within thumb reach: **Notifications**, **Hide old** (sessions older than a day, with how many it hides), **Guide** and **About** (the version, and which [Works best with](#works-best-with) tools this desktop has installed). The header keeps what is happening (the counts), the search button and **+ omp**; on the phone the filter opens from that search button.
 
 ## Works with Tern
 
@@ -73,7 +73,7 @@ It has no login of its own. You reach it over a private network you control, suc
 
 ## Works best with
 
-These run on the desktop beside Tern and omp. tern-awui picks up omp-stretch and AgentView by itself, with nothing to configure on its side, and shows tools as compactly as omp-compact without it.
+These run on the desktop beside Tern and omp. tern-awui picks up omp-stretch and AgentView by itself, with nothing to configure on its side, and shows tools as compactly as omp-compact without it. **About** in the dock shows which of them this desktop has installed and links to each one's install steps.
 
 - **[omp-stretch](https://github.com/materemias/omp-stretch).** omp's replies arrive as short gists, and a tap grows the detail in place. The phone shows the same stretches, opens and closes them in sync with the Tern pane, and its ✦ asks the model for more.
 

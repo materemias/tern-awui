@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import type { Item } from "./api";
 import { FakeEventSource, item, live, Net, settle, sleep, state } from "./fakes";
@@ -500,6 +500,30 @@ describe("Home", () => {
     expect(root.querySelector(".guide")).toBeNull();
     await click(root.querySelector(".dock .guide-btn"));
     expect(title()).toBe("Your Tern sessions, in your pocket");
+  });
+
+  test("the dock's About button opens the About window; Back closes it, and × takes its history entry off", async () => {
+    const back = spyOn(history, "back").mockImplementation(() => {});
+    try {
+      await mount([item()]);
+      expect(root.querySelector(".about-sheet")).toBeNull();
+      await click(root.querySelector(".dock .about-btn"));
+      expect(root.querySelector(".about-sheet")).not.toBeNull();
+      expect(net.calls.some((c) => c.url === "/api/companions")).toBe(true);
+      expect(history.state).toEqual({ about: true });
+      // A phone's Back leaves the sheet's entry: it closes, and the exit guard stays quiet.
+      history.replaceState({ guard: true }, "");
+      await act(() => { window.dispatchEvent(new PopStateEvent("popstate")); });
+      expect(root.querySelector(".about-sheet")).toBeNull();
+      expect(root.querySelector(".toast")).toBeNull();
+      expect(back).toHaveBeenCalledTimes(0);
+      await click(root.querySelector(".dock .about-btn"));
+      await click(root.querySelector(".about-close"));
+      expect(root.querySelector(".about-sheet")).toBeNull();
+      expect(back).toHaveBeenCalledTimes(1);
+    } finally {
+      back.mockRestore();
+    }
   });
 
   test("on a phone, a session step opens a session; an optional step with nothing to show is skipped", async () => {

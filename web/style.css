@@ -786,12 +786,12 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .waiting-btn { position: relative; }
 .waiting-btn .waiting-count { position: absolute; top: -3px; right: -4px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; background: var(--blocked); color: #fff; font-size: 10px; font-weight: 700; line-height: 15px; text-align: center; font-variant-numeric: tabular-nums; }
 /* Phone: a sheet over the list as tall as the screen; desktop: a dialog over the desk. */
-.wait-backdrop { z-index: 15; }
+.wait-backdrop, .about-backdrop { z-index: 15; }
 .sheet.wait-sheet { height: calc(100dvh - 8px - env(safe-area-inset-top)); max-height: none; }
 @media (min-width: 1000px) { .sheet.wait-sheet { max-width: 680px; height: min(88vh, 960px); } }
 @media (prefers-reduced-motion: no-preference) {
-  .wait-sheet { animation: wait-up .22s ease-out; }
-  @media (min-width: 1000px) { .wait-sheet { animation: wait-in .16s ease-out; } }
+  .wait-sheet, .about-sheet { animation: wait-up .22s ease-out; }
+  @media (min-width: 1000px) { .wait-sheet, .about-sheet { animation: wait-in .16s ease-out; } }
 }
 @keyframes wait-up { from { transform: translateY(100%); } }
 @keyframes wait-in { from { opacity: 0; transform: scale(.98); } }
@@ -987,6 +987,27 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 .dock-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @media (hover: hover) { .dock-btn:hover { background: var(--line); color: var(--fg); } }
 .screen:has(> .dock) > .toast { bottom: calc(72px + env(safe-area-inset-bottom)); }
+
+/* About, from the dock: a sheet over the list on a phone, a dialog on the desktop (the sheet's own
+   wide rule). The app on a card, then each companion with its status pill and README link. */
+.sheet.about-sheet { max-height: 88dvh; }
+.about-head { display: flex; align-items: center; gap: 10px; padding: 6px 4px 8px 10px; }
+.about-title { font-size: 18px; font-weight: 650; }
+.about-close { font-size: 24px; }
+.about-body { min-height: 0; overflow-y: auto; padding-bottom: 4px; }
+.about-app { margin: 0 6px; padding: 12px; border-radius: 12px; background: var(--raise); }
+.about-app b { font-size: 16px; }
+.about-version { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.about-app p, .about-companion p { margin: 4px 0 6px; color: var(--muted); font-size: 13.5px; }
+.about-body a[href] { color: var(--accent); font-size: 13.5px; }
+.about-list { margin: 0; padding: 0; list-style: none; }
+.about-companion { padding: 10px 10px 12px; border-bottom: 1px solid var(--line); }
+.about-name { display: flex; align-items: center; gap: 8px; }
+.about-name a[href] { color: var(--fg); font-size: 15px; font-weight: 600; }
+.about-status { margin-left: auto; padding: 0 9px; border-radius: 999px; font-size: 12px; font-weight: 650; line-height: 20px; white-space: nowrap; }
+.about-status.yes { background: color-mix(in srgb, var(--working) 16%, transparent); color: var(--working); }
+.about-status.no { background: var(--line); color: var(--muted); }
+@media (hover: hover) { .about-body a[href]:hover { text-decoration: underline; } }
 
 /* The list's tools row: the Tern session chips scroll on the left, the Waiting pill stays on the right. */
 .list-tools { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }

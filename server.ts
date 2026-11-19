@@ -37,6 +37,7 @@ import { rowKeys, statePatch } from "./lib/state-patch";
 import { chatKeys, chatUpdate, type ChatKeys } from "./lib/chat-patch";
 import { vapidSubject } from "./lib/push";
 import { WaitingWatch } from "./lib/waiting";
+import { companions } from "./lib/companions";
 import { blockOf, rowId, WAITING_ACTIONS, type OnMe } from "./lib/waiting-view";
 import { writePrivateFile } from "./lib/private-file";
 import { CONTINUE_AFTER_MS, CONTINUE_TEXT, limitKind, resetFromMessage, resetFromUsage, type LimitView } from "./lib/usage-limit";
@@ -1546,9 +1547,9 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   async function answer(block: string, item: Item, body: Obj, omp: string): Promise<string | null> {
     const chat = item.agent ? await readChat(item.agent.sessionId, 80) : null;
     const ask = chat?.entries.findLast((e) => e.role === "ask");
-    const last = appliedAnswers.get(block);
-    const applied = last && ask?.role === "ask" && last.id === ask.id ? last : undefined;
     if (ask?.role !== "ask") return "this question is no longer open";
+    const last = appliedAnswers.get(block);
+    const applied = last && last.id === ask.id ? last : undefined;
     const steps = answerSteps(ask, body, applied, omp);
     if (typeof steps === "string") return steps;
     // Half typed, the form's state is unknown: forget it rather than count from a wrong one.
@@ -1966,6 +1967,12 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     }
     if (req.method === "GET" && path === "/api/push/key") return json({ key: VAPID.publicKey });
     if (req.method === "GET" && path === "/api/waiting") return json(await waiting.view());
+    // The About window: which companion projects are installed, read from their files on each open,
+    // given up after 3 s (a stalled mount) so the window says it couldn't check.
+    if (req.method === "GET" && path === "/api/companions") {
+      const found = await Promise.race([companions(env, HOME), Bun.sleep(3000).then(() => null)]);
+      return found ? json({ companions: found }) : json({ error: "timed out" }, 504);
+    }
     if (req.method !== "POST") return json({ error: "not found" }, 404);
 
     // Cross-site forms cannot set custom headers; this keeps the POSTs same-origin.

@@ -4,6 +4,7 @@
 // "2m ago" whenever it is opened.
 import type { Agent, ApprovalView, Ask, BtwHistoryRecord, CatalogModel, ChangedFile, ChatEntry, Closed, Item, Job, LimitView, Live, Role, StretchState, Subagent, TernSession, WaitingRow } from "./api";
 import type { Wait } from "../lib/waiting-view";
+import type { Companion } from "../lib/companions";
 
 export type DemoSession = {
   item: Item;
@@ -28,6 +29,12 @@ export type DemoSession = {
 
 export const CONTEXT_WINDOW = 200_000;
 export const HOME = "/home/you";
+/** The About window's companions (lib/companions.ts reads them on a desktop): the demo has all of them installed. */
+export const COMPANIONS: Companion[] = [
+  { id: "omp-stretch", installed: true },
+  { id: "codexbar-agentview", installed: true },
+  { id: "omp-compact", installed: true },
+];
 export const MODEL = "anthropic/claude-opus-4-5";
 
 export const ROLES: Role[] = [

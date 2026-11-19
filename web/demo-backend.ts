@@ -16,6 +16,7 @@ import {
   ANSWER_REPLY,
   BTW_REPLY,
   CATALOG,
+  COMPANIONS,
   COMPLETIONS,
   CONTEXT_WINDOW,
   DEEPEN,
@@ -193,6 +194,7 @@ export class DemoServer {
       if (path === "/api/projects") return json({ projects: demoProjects(this.sessions), home: HOME });
       if (path === "/api/closed") return json({ sessions: this.closedList(url.searchParams.get("q") ?? ""), home: HOME });
       if (path === "/api/waiting") return json(this.waiting.view(this.clock.now()));
+      if (path === "/api/companions") return json({ companions: COMPANIONS });
       if (path === "/api/push/key") return json({ key: DEMO_PUSH_KEY });
       const sub = /^\/api\/blocks\/(\d+)\/(subagents|btw-history)$/.exec(path);
       if (!sub) return json({ error: NOT_FOUND }, 404);
