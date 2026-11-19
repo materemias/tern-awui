@@ -155,6 +155,9 @@ describe("tsc", () => {
     expect(bash("bun run typecheck", "$ tsc -p .\n")).toBe("no type errors");
     expect(bash("npm run typecheck", "\n> app@1.0.0 typecheck\n> tsc --noEmit\n\n")).toBe("no type errors");
     expect(bash("cd web && bunx tsc --noEmit 2>&1", "(no output, exit code 0)")).toBe("no type errors");
+    // omp's raw-output link after the output: `artifact://N` before omp 19, `local://N.log` since.
+    expect(bash("bun run typecheck", "$ tsc -p .\n\n[raw output: local://4.log]")).toBe("no type errors");
+    expect(bash("bun run typecheck", "$ tsc -p .\n\n[raw output: artifact://4]")).toBe("no type errors");
   });
 
   test("no claim when the output can't prove a clean run", () => {

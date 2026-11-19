@@ -16,8 +16,8 @@ const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
  * command sent to the background (its output arrives later, as a message of its own).
  */
 const CUT_MARK = /^(?:\[(?:Showing (?:lines?|head|\d)|Output truncated|shaken |…\d+ .*elided…|Command timed out)|Backgrounded as job )/m;
-/** omp's notes after a bash command's own output. */
-const OMP_NOTE = /^(?:Wall time: [\d.]+ seconds?|Command exited with code \d+|\[raw output: artifact:\/\/.*\]|\[Some lines truncated .*\]|\(no output, exit code \d+\))$/;
+/** omp's notes after a bash command's own output (its raw output link: `artifact://N` before omp 19, `local://N.log` since). */
+const OMP_NOTE = /^(?:Wall time: [\d.]+ seconds?|Command exited with code \d+|\[raw output: (?:artifact|local):\/\/.*\]|\[Some lines truncated .*\]|\(no output, exit code \d+\))$/;
 
 type Fact = { at: number; text: string };
 type Output = { lines: string[]; cut: boolean; command: string; error: boolean };
