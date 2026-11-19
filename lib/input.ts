@@ -92,8 +92,21 @@ function keySteps(ask: AskEntry | undefined, body: Obj, applied: Applied | undef
   return steps;
 }
 
-/** What an earlier send typed into the open ask: its values and Other texts, as the body had them. */
+/** What an earlier send typed into the open ask: its values and Other texts, as omp holds them. */
 export type Applied = { values: Obj; other: Obj };
+
+/**
+ * What the open ask holds after `body` was typed into it: fields the body left out keep what they
+ * held, Other texts come whole with every body, and a radio group whose Other text was typed holds
+ * no pick (`null`: omp's Other text clears it, and emptying the text doesn't bring the form's back).
+ */
+export function appliedAfter(ask: AskEntry, body: Obj, applied: Applied | undefined): Applied {
+  const other = obj(body.other);
+  const values: Obj = { ...applied?.values, ...obj(body.values) };
+  for (const f of ask.fields)
+    if (f.kind === "choice" && !f.multi && !f.select && f.other && str(other[f.name]).trim()) values[f.name] = null;
+  return { values, other };
+}
 
 /**
  * One field's keys from the stop Tab lands on; a string names a value it can't take. `was` and
@@ -156,6 +169,8 @@ function fieldSteps(
       typeOther();
       return null;
     }
+    // Text an earlier send left in Other would still answer the group: empty it.
+    if (!wanted && f.other && otherWas) typeOther();
     // Space picks a radio, whichever was picked before: the desktop may have changed it.
     if (wanted) {
       moveTo(rank(wanted[0]));
@@ -188,7 +203,7 @@ function landingRow(f: AskField & { kind: "choice" }, enabled: number[], was: un
   const row = enabled.findIndex((i) =>
     f.multi
       ? Array.isArray(was) ? was.includes(f.options[i].value) : f.options[i].checked
-      : typeof was === "string" ? f.options[i].value === was : i === last,
+      : was === null ? false : typeof was === "string" ? f.options[i].value === was : i === last,
   );
   if (row !== -1) return row;
   return f.other && otherWas ? enabled.length : 0;

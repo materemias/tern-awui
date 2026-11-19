@@ -23,7 +23,7 @@ import { readBtwHistory } from "./lib/btw-history";
 import { compactAtPercent, type Compaction } from "./lib/compaction";
 import { forgetRepos, repoOf } from "./lib/git";
 import { queryRecaps, querySessionRecaps, recapMark, withRecaps } from "./lib/recaps";
-import { answerSteps, KEYS, promptImages, type Applied, type PromptImage } from "./lib/input";
+import { answerSteps, appliedAfter, KEYS, promptImages, type Applied, type PromptImage } from "./lib/input";
 import { approvalQuestion, denyReason, emptyState, foldVoice, listChanged, parseBridgeState, PROTOCOL, STRETCH_BLOCK, type ApprovalView, type BridgeState, type Caps, type ContextUse, type Job, type Voice } from "./lib/bridge-state";
 import { extensionCheck, offersCommand, sessionMismatch, type InstallStatus, type Mismatch } from "./lib/extension-check";
 import { claudeDir, codexDir, configDir, docIcon, installedExtension, ompDataDir, ternNotesDir } from "./lib/paths";
@@ -1548,7 +1548,8 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
     const ask = chat?.entries.findLast((e) => e.role === "ask");
     const last = appliedAnswers.get(block);
     const applied = last && ask?.role === "ask" && last.id === ask.id ? last : undefined;
-    const steps = answerSteps(ask?.role === "ask" ? ask : undefined, body, applied, omp);
+    if (ask?.role !== "ask") return "this question is no longer open";
+    const steps = answerSteps(ask, body, applied, omp);
     if (typeof steps === "string") return steps;
     // Half typed, the form's state is unknown: forget it rather than count from a wrong one.
     appliedAnswers.delete(block);
@@ -1557,8 +1558,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
       if (err) return err;
       await Bun.sleep(150); // let omp open the prompt or the next tab before more input
     }
-    // Fields the body left out keep what they held; Other texts come whole with every body.
-    appliedAnswers.set(block, { id: str(body.id), values: { ...applied?.values, ...obj(body.values) }, other: obj(body.other) });
+    appliedAnswers.set(block, { id: str(body.id), ...appliedAfter(ask, body, applied) });
     return null;
   }
 

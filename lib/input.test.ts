@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { answerSteps as answerFor, KEYS, MAX_IMAGE_CHARS, MAX_PROMPT_IMAGES, promptImages, type Applied, type Step } from "./input";
+import { answerSteps as answerFor, appliedAfter, KEYS, MAX_IMAGE_CHARS, MAX_PROMPT_IMAGES, promptImages, type Applied, type Step } from "./input";
 import { parseAskForm } from "./ask-form";
 import type { AskEntry } from "./transcript";
 
@@ -94,6 +94,19 @@ describe("answerSteps", () => {
     expect(answerSteps(radios, { id: "ask1", values: { store: "redis" }, other: {} }, applied)).toEqual([
       { keys: [...top(1), ...n("Up", 2), "space", "Tab", "Enter"] },
     ]);
+  });
+
+  test("a resend empties a radio's Other text the phone cleared, and counts from no pick afterwards", () => {
+    // B's value is empty, so an empty string can't stand for "no pick".
+    const middle = ask(`<label><input type="radio" name="r" value="a"> A</label><label><input type="radio" name="r" value="" checked> B</label>
+      <label><input type="radio" name="r" value="c"> C</label>`);
+    const typedOther = appliedAfter(middle, { id: "ask1", values: {}, other: { r: "Z" } }, { values: { r: "c" }, other: {} });
+    expect(typedOther).toEqual({ values: { r: null }, other: { r: "Z" } });
+    // Left in omp, the old text would still answer the group.
+    expect(answerSteps(middle, { id: "ask1", values: {}, other: {} }, typedOther)).toEqual([{ keys: [...top(1), "ctrl+e", "ctrl+u", "Tab", "Enter"] }]);
+    // Emptied, omp holds no pick (not the form's B): Tab lands on the first row.
+    const cleared = appliedAfter(middle, { id: "ask1", values: {}, other: {} }, typedOther);
+    expect(answerSteps(middle, { id: "ask1", values: { r: "c" }, other: {} }, cleared)).toEqual([{ keys: [...top(1), ...n("Down", 2), "space", "Tab", "Enter"] }]);
   });
 
   test("checkboxes toggle only what differs from the form's own checks; Other's text adds to them", () => {

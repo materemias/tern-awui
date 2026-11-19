@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- A resend from the phone empties the Other text you cleared on a question's options.
+
 ## 0.12.2 (2026-11-19)
 
 ### Fixes
