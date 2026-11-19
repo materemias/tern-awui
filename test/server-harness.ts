@@ -192,7 +192,7 @@ export class Extension {
   snapshot: Message;
   constructor(private sandbox: Sandbox, pane = "1", model = "test/initial") {
     this.snapshot = { t: "state", pane, sessionId: sandbox.session, text: "", model, thinking: "medium", status: "working",
-      levels: ["off", "medium", "high"], tiers: ["", "priority"], tier: "", context: { tokens: 40000, window: 200000, percent: 20 }, queued: [], jobs: [], leaf: sandbox.leaf };
+      levels: ["off", "medium", "high"], tiers: ["", "priority"], tier: "", context: { tokens: 40000, window: 200000, percent: 20 }, queued: [], jobs: [], leaf: sandbox.leaf, omp: "19.0.0" };
   }
   async connect() {
     // Bun accepts headers here; lib.dom only declares the browser overload.

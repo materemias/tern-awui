@@ -21,6 +21,7 @@ const snapshot = {
   leaf: "e012",
   protocol: 3,
   build: "0123456789abcdef",
+  omp: "19.0.0",
   caps: { models: true, tiers: false, jobs: true, queue: true, rewind: true, btw: true, complete: true, levels: true, voice: true },
   stretch: {
     off: false,
@@ -50,6 +51,7 @@ describe("parseBridgeState", () => {
       leaf: "e012",
       protocol: 3,
       build: "0123456789abcdef",
+      omp: "19.0.0",
       caps: snapshot.caps,
       stretch: snapshot.stretch,
       approval: null,

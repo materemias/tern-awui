@@ -1542,13 +1542,13 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
   const answeredApprovals = new Map<string, { id: string; at: number }>();
   const ANSWER_DEDUP_MS = 5000;
 
-  /** Answers the pending ask dialog by typing its keys (see `answerSteps`). */
-  async function answer(block: string, item: Item, body: Obj): Promise<string | null> {
+  /** Answers the pending ask dialog by typing its keys (see `answerSteps`); `omp`: the pane's omp release, "" if unknown. */
+  async function answer(block: string, item: Item, body: Obj, omp: string): Promise<string | null> {
     const chat = item.agent ? await readChat(item.agent.sessionId, 80) : null;
     const ask = chat?.entries.findLast((e) => e.role === "ask");
     const last = appliedAnswers.get(block);
     const applied = last && ask?.role === "ask" && last.id === ask.id ? last : undefined;
-    const steps = answerSteps(ask?.role === "ask" ? ask : undefined, body, applied);
+    const steps = answerSteps(ask?.role === "ask" ? ask : undefined, body, applied, omp);
     if (typeof steps === "string") return steps;
     // Half typed, the form's state is unknown: forget it rather than count from a wrong one.
     appliedAnswers.delete(block);
@@ -2141,7 +2141,7 @@ export function startServer(options: ServerOptions = {}): ServerHandle {
           return done(bridgeError(await bridgeRequest(bridge, { t: "stretch", block: reply, key, open: body.open === true })));
         }
         case "answer":
-          return done(await answer(block, item, body));
+          return done(await answer(block, item, body, bridge?.state.omp ?? ""));
         case "approve": {
           // omp's approval dialog in the pane: its approve key (Ctrl+Q by default) allows the call
           // wherever the dialog's cursor sits and whatever the editor holds; Escape denies it. Typed

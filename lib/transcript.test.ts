@@ -533,6 +533,33 @@ describe("parseChat asks and advisor notes", () => {
     expect(entry.fields.map((f) => f.name)).toEqual(["pick"]);
   });
 
+  test("an ask written as questions[] gets the form omp ≥ 19 builds from it", () => {
+    const t = new Transcript();
+    t.user("decide", 0);
+    const questions = [
+      { id: "db", question: "Which <db>?", options: [{ label: "pg", description: "safe" }, "sqlite"], recommended: 1 },
+      { question: "Why?", options: [] },
+    ];
+    t.assistant([call("q1", "ask", { questions })], 10, { stop: "toolUse" });
+    const [entry] = only(parseChat(t.lines(), "", 80).entries, "ask");
+    expect(entry).toMatchObject({ id: "q1", question: "Which <db>?", answer: null });
+    expect(entry.fields).toMatchObject([
+      { kind: "choice", name: "db", multi: false, other: true, options: [{ value: "pg", label: "pg — safe", checked: false }, { value: "sqlite", checked: true }] },
+      { kind: "text", name: "q2", multiline: true },
+    ]);
+  });
+
+  test("a question list omp 18 refused, or a malformed one, stays a failed or ordinary tool call", () => {
+    const t = new Transcript();
+    t.user("decide", 0);
+    t.assistant([call("q1", "ask", { questions: [{ question: "Which?", options: ["a", "b"] }] })], 10, { stop: "toolUse" });
+    t.result("q1", "ask", 11, { isError: true });
+    t.assistant([call("q2", "ask", { questions: [{ options: ["a"] }] })], 12, { stop: "toolUse" });
+    const entries = parseChat(t.lines(), "", 80).entries;
+    expect(only(entries, "ask")).toEqual([]);
+    expect(only(entries, "tools").flatMap((g) => g.calls)).toMatchObject([{ name: "ask", error: true }, { name: "ask" }]);
+  });
+
   test("its result answers it: omp's answers as question lines, each followed by its option notes, a timeout noted, else the text", () => {
     const t = new Transcript();
     t.user("decide", 0);
@@ -593,13 +620,6 @@ describe("parseChat asks and advisor notes", () => {
     expect(withImages.answer).toBe('Which?: B\n  Note on "B": this [Image #1, 4x4] not [Image #2, 4x4]');
     expect(withImages.images).toEqual([{ src: "data:image/png;base64,AAAA" }, { src: "data:image/jpeg;base64,BBBB" }]);
     expect(plain.images).toBeUndefined();
-  });
-
-  test("an ask without an html form (omp before 18.18.3) is an ordinary tool call", () => {
-    const t = new Transcript();
-    t.user("decide", 0);
-    t.assistant([call("q", "ask", { questions: [{ question: "Which?", options: [{ label: "A" }] }] })], 10, { stop: "toolUse" });
-    expect(roles(parseChat(t.lines(), "", 80).entries)).toEqual(["user", "tools"]);
   });
 
   test("advisor notes keep their advisor and severity (default `note`); empty notes drop", () => {

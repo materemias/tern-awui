@@ -25,6 +25,13 @@ export const BUILD = (() => {
 	}
 })();
 
+/**
+ * The omp release running this session, from its binary's path: Tern runs each release from
+ * `…/omp/versions/<version>`. "" elsewhere (a bun checkout, another install); the server then
+ * assumes a current omp.
+ */
+export const OMP_VERSION = /[\\/]versions[\\/](\d+\.\d+\.\d+)$/.exec(process.execPath)?.[1] ?? "";
+
 /** Installer discovery stays in the default directory, even for a relocated config. */
 export function bridgeSettings(env: NodeJS.ProcessEnv = process.env, home = homedir()): { url: string; tokenFile: string } {
 	const dir = join(home, ".config", "tern-mobile");
@@ -366,6 +373,7 @@ export default function ternMobile(pi: Pi): void {
 			leaf: ctx.sessionManager.getLeafId ? (ctx.sessionManager.getLeafId() ?? "-") : "",
 			protocol: PROTOCOL,
 			build: BUILD,
+			omp: OMP_VERSION,
 			// What this omp offers beyond the core API; the server and phone turn the rest off.
 			caps: {
 				models: typeof ctx.modelRegistry.getAvailable === "function",

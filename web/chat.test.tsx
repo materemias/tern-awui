@@ -581,7 +581,7 @@ describe("ask cards", () => {
     await click(radio("café"));
     const [body] = answers() as Record<string, unknown>[];
     expect(body).toEqual({ id: "a1", values: { drink: "café" }, other: {} });
-    expect(answerSteps(entry, body)).toBeArray();
+    expect(answerSteps(entry, body, undefined, "19.0.0")).toBeArray();
   });
 
   test("a radio group's Other text replaces its pick; emptied, the form's own pick is back", async () => {

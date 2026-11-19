@@ -2,7 +2,7 @@
 // walks, in its order, with their starting values. Mirrors pi-tui's html-form/parse.ts in what
 // answering from the phone needs: which controls become fields, how radios and checkboxes group,
 // which groups get a free-text "Other", and the question each field asks.
-import { decodeHTML, decodeHTMLAttribute } from "entities";
+import { decodeHTML, decodeHTMLAttribute, escapeUTF8 as escapeHtml } from "entities";
 
 export type AskOption = { value: string; label: string; checked: boolean; disabled: boolean };
 /** `question`: what omp's answer summary calls the field (its label, the text before it, its legend or its name). */
@@ -287,4 +287,33 @@ export function fieldStops(f: AskField): number {
   const enabled = f.options.filter((o) => !o.disabled).length;
   if (f.select && !f.multi) return enabled > 0 ? 1 : 0;
   return enabled + (f.other ? 1 : 0);
+}
+
+/**
+ * The form omp ≥ 19 builds from an ask written the old way (`questions: [{ id, question, options,
+ * multi, recommended }]`), as its ask tool does: one fieldset per question, radios or boxes, a
+ * textarea for a question without options. Undefined unless `questions` is a non-empty list of
+ * well-formed questions (omp refuses the call otherwise).
+ */
+export function legacyAskHtml(questions: unknown): string | undefined {
+  if (!Array.isArray(questions) || !questions.length) return;
+  const sets: string[] = [];
+  for (const [n, raw] of questions.entries()) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+    const q = raw as Record<string, unknown>;
+    if (typeof q.question !== "string") return;
+    const name = escapeHtml(typeof q.id === "string" && q.id ? q.id : `q${n + 1}`);
+    const type = q.multi === true ? "checkbox" : "radio";
+    const rows: string[] = [];
+    for (const [i, o] of (Array.isArray(q.options) ? q.options : []).entries()) {
+      const rich = o && typeof o === "object" && !Array.isArray(o) ? (o as Record<string, unknown>) : undefined;
+      const label = rich ? rich.label : o;
+      if (typeof label !== "string") return;
+      const description = typeof rich?.description === "string" ? ` \u2014 ${escapeHtml(rich.description)}` : "";
+      const checked = q.recommended === i ? " checked" : "";
+      rows.push(`<label><input type="${type}" name="${name}" value="${escapeHtml(label)}"${checked}> ${escapeHtml(label)}${description}</label>`);
+    }
+    sets.push(`<fieldset><legend>${escapeHtml(q.question)}</legend>${rows.length ? rows.join("") : `<textarea name="${name}"></textarea>`}</fieldset>`);
+  }
+  return `<form>${sets.join("")}</form>`;
 }

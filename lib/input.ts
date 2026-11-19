@@ -36,18 +36,34 @@ export type Step = { keys: string[] } | { text: string };
  * select or textarea field, then Submit; Tab and Shift+Tab jump between fields, Up/Down between
  * rows, Space picks a radio or toggles a box, Left/Right step a dropdown, Enter on Submit sends.
  *
- * Up first: it ends the dialog's "typing edits your prompt" guard when the desktop draft isn't
- * empty, closes nothing and moves at most one row. Shift+Tab per field then reaches the first
- * field whatever the desktop did, and every move after that is counted from there. A radio or
- * dropdown is set to the phone's pick outright; boxes toggle and text is retyped only where the
+ * Up first: in omp ≥ 19 it hands the keys to the form when the desktop's composer holds them (a
+ * draft keeps the composer focused; Shift+Tab there does the same), before 19 it ends the dialog's
+ * "typing edits your prompt" guard. It closes nothing and moves at most one row. Shift+Tab per
+ * field then reaches the first field whatever the desktop did, and every move after that is
+ * counted from there. omp ≥ 19 puts a field's cursor on its picked row (else its Other text, else
+ * its first row) when Tab reaches it; older omp on its first row. A radio or dropdown is set to
+ * the phone's pick outright; boxes toggle and text is retyped only where the
  * phone's answer differs from what the field holds: the form's starting values, or what an earlier
  * send typed into this same ask (`applied`), which omp keeps when its own checks refuse the form.
- * A field the body leaves out keeps what it has.
+ * The rows Tab lands on are counted from those values too, so a pick changed on the desktop
+ * meanwhile can misplace a later row in that field. A field the body leaves out keeps what it has.
  *
  * `body`: `{ id, values: { name: string | string[] }, other: { name: text } }`, `ask` the newest
- * ask of the session; a string says why the body can't answer it.
+ * ask of the session, `omp` the pane's omp release ("" when unknown); a string says why the body
+ * can't answer it. An unknown release is refused only where the two landings need different keys,
+ * and so is an ask written as `questions[]` outside omp ≥ 19 (older omp shows its own list dialog).
  */
-export function answerSteps(ask: AskEntry | undefined, body: Obj, applied?: Applied): Step[] | string {
+export function answerSteps(ask: AskEntry | undefined, body: Obj, applied: Applied | undefined, omp: string): Step[] | string {
+  const current = keySteps(ask, body, applied, true);
+  if (typeof current === "string" || Number(omp.split(".")[0]) >= 19) return current;
+  const restart = "restart omp so the phone knows its release, or answer in the Tern pane";
+  if (ask?.legacy) return omp ? "this omp takes a question list only in the Tern pane" : restart;
+  const older = keySteps(ask, body, applied, false);
+  return omp || JSON.stringify(older) === JSON.stringify(current) ? older : restart;
+}
+
+/** `answerSteps` for an omp whose Tab lands on a group's picked row (`landsOnPick`, omp ≥ 19) or on its first row. */
+function keySteps(ask: AskEntry | undefined, body: Obj, applied: Applied | undefined, landsOnPick: boolean): Step[] | string {
   if (!ask || ask.answer !== null || ask.id !== str(body.id)) return "this question is no longer open";
   if (!body.values || typeof body.values !== "object" || Array.isArray(body.values)) return "no answer given";
   const values = obj(body.values);
@@ -68,7 +84,8 @@ export function answerSteps(ask: AskEntry | undefined, body: Obj, applied?: Appl
     const name = f.name;
     const was = name && applied && Object.hasOwn(applied.values, name) ? applied.values[name] : undefined;
     const value = name && Object.hasOwn(values, name) ? values[name] : undefined;
-    const error = fieldSteps(f, value, name ? str(others[name]).trim() : "", was, name && applied ? str(applied.other[name]).trim() : "", keys, type);
+    const otherWas = name && applied ? str(applied.other[name]).trim() : "";
+    const error = fieldSteps(f, value, name ? str(others[name]).trim() : "", was, otherWas, landsOnPick, keys, type);
     if (error) return error;
   }
   keys("Tab", "Enter");
@@ -79,8 +96,8 @@ export function answerSteps(ask: AskEntry | undefined, body: Obj, applied?: Appl
 export type Applied = { values: Obj; other: Obj };
 
 /**
- * One field's keys from its first stop; a string names a value it can't take. `was` and `otherWas`:
- * the value and Other text an earlier send left in the field, if any.
+ * One field's keys from the stop Tab lands on; a string names a value it can't take. `was` and
+ * `otherWas`: the value and Other text an earlier send left in the field, if any.
  */
 function fieldSteps(
   f: AskField,
@@ -88,6 +105,7 @@ function fieldSteps(
   other: string,
   was: unknown,
   otherWas: string,
+  landsOnPick: boolean,
   keys: (...k: string[]) => void,
   type: (text: string) => void,
 ): string | null {
@@ -121,9 +139,10 @@ function fieldSteps(
     keys(...Array(enabled.length).fill("Left"), ...Array(rank(wanted[0])).fill("Right"));
     return null;
   }
-  let at = 0;
+  // Up only within the field, from below its first row: omp never scrolls instead of moving there.
+  let at = landsOnPick ? landingRow(f, enabled, was, otherWas) : 0;
   const moveTo = (row: number) => {
-    keys(...Array(row - at).fill("Down"));
+    keys(...Array(Math.abs(row - at)).fill(row > at ? "Down" : "Up"));
     at = row;
   };
   const typeOther = () => {
@@ -155,4 +174,22 @@ function fieldSteps(
   // A box group's Other text joins its boxes, so text an earlier send left there is emptied too.
   if (f.other && (other || otherWas)) typeOther();
   return null;
+}
+
+/**
+ * The row of a radio or box group omp ≥ 19 puts the cursor on when Tab reaches it: its first picked
+ * enabled option, else its Other input when that holds text (a radio's Other text clears its pick),
+ * else its first row. `enabled`: the indexes of its enabled options, in row order.
+ */
+function landingRow(f: AskField & { kind: "choice" }, enabled: number[], was: unknown, otherWas: string): number {
+  if (f.other && otherWas && !f.multi) return enabled.length;
+  // A radio group holds the last option the form checked: omp checks each in turn.
+  const last = f.options.findLastIndex((o) => o.checked);
+  const row = enabled.findIndex((i) =>
+    f.multi
+      ? Array.isArray(was) ? was.includes(f.options[i].value) : f.options[i].checked
+      : typeof was === "string" ? f.options[i].value === was : i === last,
+  );
+  if (row !== -1) return row;
+  return f.other && otherWas ? enabled.length : 0;
 }

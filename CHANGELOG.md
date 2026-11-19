@@ -4,7 +4,10 @@
 
 ### Fixes
 
-- A sentence the model wrapped in `{{…}}` without a short form opens from the words before it instead of showing raw braces.
+- A `{{…}}` sentence without a short form opens from the words before it.
+- The phone answers omp 19 asks with preselected options once omp restarts on the new extension.
+- Test and typecheck facts show on tool lines that end in omp 19's `local://N.log` link.
+- An ask written as a question list, which omp 19 accepts again, shows as an answerable card.
 
 ## 0.12.1 (2026-11-16)
 

@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { dirname, extname, isAbsolute, resolve } from "node:path";
 import { marked } from "marked";
 import { arr, num, obj, str, type Obj } from "./json";
-import { parseAskForm, type AskField } from "./ask-form";
+import { legacyAskHtml, parseAskForm, type AskField } from "./ask-form";
 import { toolFacts } from "./tool-facts";
 
 /** Only the tail of a transcript is read: older entries never reach the phone. */
@@ -41,9 +41,10 @@ export type ChatEntry =
 /**
  * An `ask` call (omp ≥ 18.18.3: one HTML form). `html` as the model wrote it, `fields` as omp's
  * dialog walks them, `question` the first field's; `answer` one `question: answer` line per field;
- * `images` the answer's pasted images (omp ≥ 18.21: a note's `[Image #N]`), present when it has any.
+ * `images` the answer's pasted images (omp ≥ 18.21: a note's `[Image #N]`), present when it has any;
+ * `legacy` when written as `questions[]`, which omp ≥ 19 turns into this form and omp 18 refuses.
  */
-export type AskEntry = { role: "ask"; id: string; html: string; fields: AskField[]; question: string; answer: string | null; images?: Img[]; ts: number };
+export type AskEntry = { role: "ask"; id: string; html: string; fields: AskField[]; question: string; answer: string | null; images?: Img[]; legacy?: true; ts: number };
 /** A note from omp's advisor model: `Key:`/`Evidence:`/`Impact:`/`Fix:` lines. */
 export type AdvisorNote = { advisor: string; severity: string; note: string };
 type InjectedRule = { name: string; text: string };
@@ -580,10 +581,13 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
         }
         if (part.type !== "toolCall") continue;
         const args = obj(part.arguments);
-        if (part.name === "ask" && typeof args.html === "string") {
-          const fields = parseAskForm(args.html);
+        // omp ≥ 19 still takes an ask written as `questions[]`, turned into a form the same way.
+        const legacy = part.name === "ask" && typeof args.html !== "string" ? legacyAskHtml(args.questions) : undefined;
+        const html = part.name === "ask" && typeof args.html === "string" ? args.html : legacy;
+        if (html !== undefined) {
+          const fields = parseAskForm(html);
           const question = fields.find((f) => f.name)?.question ?? "";
-          const ask = { role: "ask" as const, id: str(part.id), html: args.html, fields, question, answer: null, ts };
+          const ask: AskEntry = { role: "ask", id: str(part.id), html, fields, question, answer: null, ts, ...(legacy ? { legacy: true } : {}) };
           asksById.set(ask.id, ask);
           entries.push(ask);
           continue;
@@ -612,7 +616,9 @@ export function parseChat(lines: string[], leaf: string, limit: number): { entri
       }
     } else if (msg.role === "toolResult") {
       const ask = asksById.get(str(msg.toolCallId));
-      if (ask) {
+      // omp 18.18.3–18.x refuses an ask written as `questions[]`: it stays the failed call it was.
+      if (ask?.legacy && msg.isError === true) entries[entries.indexOf(ask)] = { role: "tools", calls: [{ name: "ask", intent: "", error: true }], images: [], todo: null, ts: ask.ts };
+      else if (ask) {
         ask.answer = askAnswer(msg) || "answered";
         const images = imagesOf(msg.content);
         if (images.length) ask.images = images;

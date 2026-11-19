@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { answerSteps, KEYS, MAX_IMAGE_CHARS, MAX_PROMPT_IMAGES, promptImages, type Step } from "./input";
+import { answerSteps as answerFor, KEYS, MAX_IMAGE_CHARS, MAX_PROMPT_IMAGES, promptImages, type Applied, type Step } from "./input";
 import { parseAskForm } from "./ask-form";
 import type { AskEntry } from "./transcript";
 
@@ -35,13 +35,15 @@ describe("promptImages", () => {
 
 describe("answerSteps", () => {
   const ask = (html: string): AskEntry => ({ role: "ask", id: "ask1", html, fields: parseAskForm(html), question: "", answer: null, ts: 0 });
+  // An omp 19 pane unless a test names another release.
+  const answerSteps = (a: AskEntry | undefined, body: Record<string, unknown>, applied?: Applied, omp = "19.0.0") => answerFor(a, body, applied, omp);
   const steps = (a: AskEntry, values: Record<string, unknown>, other: Record<string, string> = {}) => answerSteps(a, { id: "ask1", values, other });
   const n = (key: string, times: number) => Array(times).fill(key);
   const radios = ask(`<fieldset><legend>Store</legend>
     <label><input type="radio" name="store" value="sqlite" checked> SQLite</label>
     <label><input type="radio" name="store" value="redis"> Redis</label>
     <label><input type="radio" name="store" value="pg"> Postgres</label></fieldset>`);
-  // The reset every answer starts with: Up ends the draft guard, Shift+Tab per field (plus one) reaches the first.
+  // The reset every answer starts with: Up hands the keys to the form, Shift+Tab per field (plus one) reaches the first.
   const top = (fields: number) => ["Up", ...n("shift+Tab", fields + 1)];
 
   test("refuses a missing, answered or different ask, and a body with no values", () => {
@@ -64,6 +66,33 @@ describe("answerSteps", () => {
       { keys: [...top(1), ...n("Down", 3), "ctrl+e", "ctrl+u"] },
       { text: "MySQL" },
       { keys: ["Tab", "Enter"] },
+    ]);
+  });
+
+  test("omp ≥ 19 lands Tab on a group's picked row and moves from there; older omp on its first row", () => {
+    const middle = ask(`<label><input type="radio" name="r" value="a"> A</label><label><input type="radio" name="r" value="b" checked> B</label>
+      <label><input type="radio" name="r" value="c"> C</label>`);
+    expect(steps(middle, { r: "a" })).toEqual([{ keys: [...top(1), "Up", "space", "Tab", "Enter"] }]);
+    expect(steps(middle, { r: "c" })).toEqual([{ keys: [...top(1), "Down", "space", "Tab", "Enter"] }]);
+    expect(answerSteps(middle, { id: "ask1", values: { r: "c" } }, undefined, "18.22.2")).toEqual([{ keys: [...top(1), ...n("Down", 2), "space", "Tab", "Enter"] }]);
+    // Boxes land on the first checked one.
+    const boxes = ask(`<label><input type="checkbox" name="x" value="a"> A</label><label><input type="checkbox" name="x" value="b" checked> B</label>`);
+    expect(steps(boxes, { x: ["a"] })).toEqual([{ keys: [...top(1), "Up", "space", "Down", "space", "Tab", "Enter"] }]);
+  });
+
+  test("an unknown omp release is refused only where omp 18 and 19 need different keys; a question list needs omp ≥ 19", () => {
+    const middle = ask(`<label><input type="radio" name="r" value="a"> A</label><label><input type="radio" name="r" value="b" checked> B</label>`);
+    expect(answerSteps(middle, { id: "ask1", values: { r: "a" } }, undefined, "")).toBe("restart omp so the phone knows its release, or answer in the Tern pane");
+    expect(answerSteps(radios, { id: "ask1", values: { store: "redis" } }, undefined, "")).toEqual([{ keys: [...top(1), "Down", "space", "Tab", "Enter"] }]);
+    const legacy = { ...radios, legacy: true as const };
+    expect(answerSteps(legacy, { id: "ask1", values: { store: "redis" } })).toEqual([{ keys: [...top(1), "Down", "space", "Tab", "Enter"] }]);
+    expect(answerSteps(legacy, { id: "ask1", values: { store: "redis" } }, undefined, "18.10.0")).toBe("this omp takes a question list only in the Tern pane");
+  });
+
+  test("after a send typed a radio's Other text, omp ≥ 19 lands on that input (the text cleared the pick)", () => {
+    const applied = { values: {}, other: { store: "MySQL" } };
+    expect(answerSteps(radios, { id: "ask1", values: { store: "redis" }, other: {} }, applied)).toEqual([
+      { keys: [...top(1), ...n("Up", 2), "space", "Tab", "Enter"] },
     ]);
   });
 

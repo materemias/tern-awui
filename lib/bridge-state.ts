@@ -36,6 +36,8 @@ export type BridgeState = {
   protocol: number;
   /** The extension's build id (see lib/extension-check.ts); "" when it sent none or couldn't read its file. */
   build: string;
+  /** The omp release the session runs (`19.0.0`); "" when the extension couldn't tell or predates reporting it. */
+  omp: string;
   /** What this omp supports, from the extension's feature detection; null when it sent none. */
   caps: Caps | null;
   /** Open stretches of the session's replies, from omp's stretch.ts; null when it isn't loaded. */
@@ -109,7 +111,7 @@ export function foldVoice(before: Voice | null, msg: Obj): Voice {
 
 /** A connection that hasn't reported yet. */
 export function emptyState(now: number): BridgeState {
-  return { sessionId: "", text: "", model: "", thinking: "", status: "", since: now, context: null, queued: [], jobs: [], run: null, leaf: "", levels: [], tiers: [], tier: "", protocol: 0, build: "", caps: null, stretch: null, approval: null };
+  return { sessionId: "", text: "", model: "", thinking: "", status: "", since: now, context: null, queued: [], jobs: [], run: null, leaf: "", levels: [], tiers: [], tier: "", protocol: 0, build: "", omp: "", caps: null, stretch: null, approval: null };
 }
 
 /** The reported caps; a cap the extension doesn't name (or names oddly) is unsupported. */
@@ -183,6 +185,7 @@ export function parseBridgeState(msg: Obj, before: BridgeState, now: number): Br
     leaf: str(msg.leaf),
     protocol: num(msg.protocol),
     build: str(msg.build),
+    omp: /^\d+\.\d+\.\d+$/.exec(str(msg.omp))?.[0] ?? "",
     caps: parseCaps(msg.caps),
     stretch: parseStretch(msg.stretch, num(msg.protocol)),
     approval: str(approval.id) ? { id: str(approval.id), tool: str(approval.tool).slice(0, 120), reason: str(approval.reason).slice(0, 500) } : null,

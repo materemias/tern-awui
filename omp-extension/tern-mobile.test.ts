@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, setSystemTime, jest } fr
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import ternMobile, { bridgeSettings, BUILD, PROTOCOL } from "./tern-mobile";
+import ternMobile, { bridgeSettings, BUILD, OMP_VERSION, PROTOCOL } from "./tern-mobile";
 import { bridgeFixture, type Completion } from "./bridge-fixture";
 import { PROTOCOL as SERVER_PROTOCOL } from "../lib/bridge-state";
 import { buildId } from "../lib/extension-check";
@@ -150,7 +150,7 @@ describe("omp extension bridge contract", () => {
 
 	test("authenticates and snapshots all fields, sends only changes, and replaces main session context", async () => {
 		const f = fixture();
-		expect<unknown>(await f.start()).toEqual({ t: "state", pane: "test-pane", sessionId: "session-123", text: "desktop draft", model: "openai/reasoner", thinking: "medium", levels: ["off", "minimal", "low", "medium", "high", "xhigh"], tiers: ["", "flex", "priority"], tier: "", status: "idle", run: null, jobs: [], context: { tokens: 1234, window: 10000, percent: 12 }, queued: [], leaf: "entry-1", protocol: PROTOCOL, build: BUILD, caps: capsWithoutShim, stretch: null, approval: null });
+		expect<unknown>(await f.start()).toEqual({ t: "state", pane: "test-pane", sessionId: "session-123", text: "desktop draft", model: "openai/reasoner", thinking: "medium", levels: ["off", "minimal", "low", "medium", "high", "xhigh"], tiers: ["", "flex", "priority"], tier: "", status: "idle", run: null, jobs: [], context: { tokens: 1234, window: 10000, percent: 12 }, queued: [], leaf: "entry-1", protocol: PROTOCOL, build: BUILD, omp: OMP_VERSION, caps: capsWithoutShim, stretch: null, approval: null });
 		expect(f.bridge.connections[0].data.token).toBe("test-bridge-secret");
 		expect(f.state.intervals).toEqual([100]);
 		f.state.poll!();
