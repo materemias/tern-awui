@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.12.2 (2026-11-19)
+
 ### Fixes
 
 - A `{{…}}` sentence without a short form opens from the words before it.
