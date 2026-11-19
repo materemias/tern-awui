@@ -10,7 +10,7 @@ import { obj } from "../lib/json";
 import { buildId } from "../lib/extension-check";
 import { Extension } from "../test/server-harness";
 import { CHROMIUM, closeBrowser, openApp, startSandbox, until } from "../test/e2e/helpers";
-import { parse, stretches } from "../web/stretch-core";
+import { parse, stretches } from "omp-stretch/stretch-core";
 
 if (!CHROMIUM) throw new Error("no headless Chromium: install Playwright's chromium_headless_shell or set TERN_AWUI_CHROMIUM");
 

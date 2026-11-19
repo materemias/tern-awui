@@ -23,7 +23,7 @@ import {
   type DeepenAnswer,
   type Segment,
   type Stretch,
-} from "./stretch-core";
+} from "omp-stretch/stretch-core";
 import { openText, withOpen } from "./stretch";
 
 let mermaidReady: Promise<Mermaid> | null = null;

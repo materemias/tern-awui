@@ -1,4 +1,4 @@
-import { KEY_SEPARATOR, parse, streamingView, writeOpen } from "./stretch-core";
+import { KEY_SEPARATOR, parse, streamingView, writeOpen } from "omp-stretch/stretch-core";
 
 /** Agent text with every stretch drawn open, for views without links (side answers). */
 export function openText(text: string): string {

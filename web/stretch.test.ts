@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { marked } from "marked";
-import { linkedMarkdown, parse, stretches, withAnswers } from "./stretch-core";
+import { linkedMarkdown, parse, stretches, withAnswers } from "omp-stretch/stretch-core";
 import { liveText, openText, withOpen } from "./stretch";
 
-// Keys are the bridge contract with omp-stretch's stretch.ts: the phone and the pane must name each
-// stretch alike. These pin the format; a change here needs the same change in omp-stretch.
+// Keys are the bridge contract with omp-stretch's stretch.ts, which shares this parser
+// (`omp-stretch/stretch-core`): the phone and the pane must name each stretch alike. These pin the
+// format, so an omp-stretch bump that renames stretches fails here.
 describe("stretch keys", () => {
   test("nested keys carry the parent, repeated siblings are numbered", () => {
     const parts = parse("{{a|a {{b|b x}}}} and {{a|a y}}");

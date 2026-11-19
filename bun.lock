@@ -10,6 +10,7 @@
         "highlight.js": "^11.12.0",
         "marked": "^18.1.0",
         "mermaid": "^12.1.0",
+        "omp-stretch": "github:materemias/omp-stretch#v0.6.0",
         "preact": "^11.0.1",
         "web-push": "^3.6.7",
       },
@@ -306,6 +307,8 @@
     "minimist": ["minimist@1.2.8", "", {}, "sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA=="],
 
     "ms": ["ms@2.1.3", "", {}, "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA=="],
+
+    "omp-stretch": ["omp-stretch@github:materemias/omp-stretch#8ad329d", {}, "materemias-omp-stretch-8ad329d", "sha512-/vp9dvW+UceYj1pZ5TqPaZawT8JBDns+kbbXR7FqNSV9q1zeis/mwjK6PC6oz1eDZRTTjEmQ5cdfVJnvPGhswg=="],
 
     "package-manager-detector": ["package-manager-detector@1.9.0", "", {}, "sha512-zAMfbta9nPA8AKkA4WdmNAT8R8s6Dk0/xwPsqNnRidMFcLo1YkLuPDTgs2f64XdzS8vbLNnoJ+uUIkgbz7oRHA=="],
 
