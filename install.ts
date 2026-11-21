@@ -572,7 +572,9 @@ export function main(deps: MainDeps): void {
   const installedPort = discovery.tokenFile === p.join(configDir, "bridge-token") ? discovery.port : undefined;
   const portSetting = args.port === undefined ? keep("TERN_AWUI_PORT", "4380") : undefined;
   const portSource = kept.has("TERN_AWUI_PORT") ? "TERN_AWUI_PORT in the installed service" : "TERN_AWUI_PORT";
-  const port = args.port ?? (portSetting ? parsePort(portSetting, portSource) : undefined) ?? installedPort ?? 4380;
+  // An install with TERN_AWUI_PORT set empty goes back to 4380; an uninstall still finds the published port.
+  const resetPort = env.TERN_AWUI_PORT === "" && !args.uninstall;
+  const port = args.port ?? (portSetting ? parsePort(portSetting, portSource) : undefined) ?? (resetPort ? undefined : installedPort) ?? 4380;
   const tailscale = which("tailscale", platform, env.PATH, args.uninstall);
   const tern = which("tern", platform, env.PATH, args.uninstall);
   let omp = "", dnsName = "", allow: string[] = [], hosts: string[] = [], allowFromLogin = false;

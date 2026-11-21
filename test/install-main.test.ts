@@ -251,9 +251,11 @@ describe.skipIf(!POSIX)("main: linux", () => {
   });
 
   test("a variable set empty puts a kept setting back to its default", () => {
-    main(deps([], { TERN_AWUI_HOSTS: "extra.example", TERN_AWUI_NOTES_DIR: "/notes" }));
-    main(deps([], { TERN_AWUI_HOSTS: "", TERN_AWUI_NOTES_DIR: "" }));
+    main(deps(["--port", "5123"], { TERN_AWUI_HOSTS: "extra.example", TERN_AWUI_NOTES_DIR: "/notes" }));
+    main(deps([], { TERN_AWUI_PORT: "", TERN_AWUI_HOSTS: "", TERN_AWUI_NOTES_DIR: "" }));
     const u = readFileSync(unit(), "utf8");
+    expect(u).toContain("TERN_AWUI_PORT=4380");
+    expect(recorded()).toContain("tailscale serve --https=5123 off");
     expect(u).toContain('TERN_AWUI_HOSTS=box.tail1234.ts.net"');
     expect(u).not.toContain("TERN_AWUI_NOTES_DIR");
   });
