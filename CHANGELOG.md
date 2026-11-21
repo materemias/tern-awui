@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.14.1 (2026-11-21)
+
 ### Features
 
 - Re-running `bun install.ts`, as an update does, keeps your port and `TERN_AWUI_*` settings.
