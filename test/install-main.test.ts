@@ -222,6 +222,53 @@ describe.skipIf(!POSIX)("main: linux", () => {
     expect(out.join("\n")).toContain(path.join(home, ".omp", "agent", "extensions", "tern-mobile.ts"));
     expect(out.join("\n")).not.toContain("TERN_AWUI_CONFIG");
   });
+
+  test("a re-run keeps the current install's port and settings; the environment still overrides them", () => {
+    main(deps(["--port", "5123"], { TERN_AWUI_ALLOW: "bob@example.com", TERN_AWUI_HOSTS: "extra.example", TERN_AWUI_NOTES_DIR: "/notes" }));
+    out = [];
+    writeFileSync(calls, "");
+    // The machine was renamed since: its old tailnet name goes, the given host stays.
+    const renamed = JSON.stringify({ Self: { DNSName: "new.tail1234.ts.net.", UserID: 7 }, User: { "7": { LoginName: "ann@example.com" } } });
+    main(deps([], { TS_STATUS: renamed }));
+    const u = readFileSync(unit(), "utf8");
+    expect(u).toContain("TERN_AWUI_PORT=5123");
+    expect(u).toContain("TERN_AWUI_ALLOW=bob@example.com");
+    expect(u).toContain('TERN_AWUI_HOSTS=new.tail1234.ts.net,extra.example"');
+    expect(u).toContain("TERN_AWUI_NOTES_DIR=/notes");
+    expect(recorded().at(-1)).toBe("tailscale serve --bg --https=5123 http://127.0.0.1:5123");
+    expect(recorded()).not.toContain("tailscale serve --https=5123 off");
+    expect(out[0]).toContain("TERN_AWUI_PORT=5123 TERN_AWUI_ALLOW=bob@example.com TERN_AWUI_HOSTS=extra.example TERN_AWUI_NOTES_DIR=/notes");
+    main(deps([], { TERN_AWUI_ALLOW: "carl@example.com" }));
+    expect(readFileSync(unit(), "utf8")).toContain("TERN_AWUI_ALLOW=carl@example.com");
+  });
+
+  test("a re-run of a default install keeps nothing and says nothing about it", () => {
+    main(deps([]));
+    out = [];
+    main(deps([]));
+    expect(out.some((l) => l.includes("Keeping"))).toBe(false);
+    expect(readFileSync(unit(), "utf8")).toContain("TERN_AWUI_ALLOW=ann@example.com");
+  });
+
+  test("a variable set empty puts a kept setting back to its default", () => {
+    main(deps([], { TERN_AWUI_HOSTS: "extra.example", TERN_AWUI_NOTES_DIR: "/notes" }));
+    main(deps([], { TERN_AWUI_HOSTS: "", TERN_AWUI_NOTES_DIR: "" }));
+    const u = readFileSync(unit(), "utf8");
+    expect(u).toContain('TERN_AWUI_HOSTS=box.tail1234.ts.net"');
+    expect(u).not.toContain("TERN_AWUI_NOTES_DIR");
+  });
+
+  test("allowed logins taken from Tailscale follow a new login; given ones stay", () => {
+    const login = (name: string) => JSON.stringify({ Self: { DNSName: "box.tail1234.ts.net.", UserID: 7 }, User: { "7": { LoginName: name } } });
+    main(deps([]));
+    main(deps([], { TS_STATUS: login("new@example.com") }));
+    expect(readFileSync(unit(), "utf8")).toContain("TERN_AWUI_ALLOW=new@example.com");
+    main(deps([], { TERN_AWUI_ALLOW: "bob@example.com" }));
+    main(deps([], { TS_STATUS: login("other@example.com") }));
+    const u = readFileSync(unit(), "utf8");
+    expect(u).toContain("TERN_AWUI_ALLOW=bob@example.com");
+    expect(u).not.toContain("TERN_AWUI_ALLOW_FROM_LOGIN");
+  });
 });
 
 describe.skipIf(!POSIX)("main: errors", () => {

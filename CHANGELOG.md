@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Features
+
+- Re-running `bun install.ts`, as an update does, keeps your port and `TERN_AWUI_*` settings.
+- Update in Tern's palette runs the update right away.
+
 ## 0.14.0 (2026-11-21)
 
 ### Features

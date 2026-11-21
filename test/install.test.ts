@@ -3,7 +3,7 @@ import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpath
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { type Action, type PlanInput, appUrl, execute, parseArgs, parseTailscaleStatus, plan, psString, windowsStopScript } from "../install";
+import { type Action, type PlanInput, appUrl, execute, parseArgs, parseServiceSettings, parseTailscaleStatus, plan, psString, windowsStopScript } from "../install";
 
 const linux: PlanInput = {
   platform: "linux",
@@ -403,6 +403,24 @@ describe("bridge discovery", () => {
         tokenFile: `${input.configDir}${separator}bridge-token`,
       });
       expect(actions.indexOf(discovery)).toBe(2);
+    });
+  }
+});
+
+describe("parseServiceSettings", () => {
+  // Values with every character the three escapers treat specially.
+  const tricky = { TERN_AWUI_NOTES_DIR: `/n%otes/"a&b"<c>$d\\e`, TERN_AWUI_PROJECTS: "it's" };
+  for (const input of [linux, darwin, win32]) {
+    test(`${input.platform}: reads back what the service file was written with`, () => {
+      const service = writes(plan({ ...input, port: 5123, extraEnv: tricky }))
+        .map((w) => w.content)
+        .find((c) => c.includes("TERN_AWUI_PORT"));
+      expect(parseServiceSettings(input.platform, service ?? "")).toEqual({
+        TERN_AWUI_PORT: "5123",
+        TERN_AWUI_ALLOW: "ann@example.com,bob@example.com",
+        TERN_AWUI_HOSTS: "box.tail1234.ts.net",
+        ...tricky,
+      });
     });
   }
 });

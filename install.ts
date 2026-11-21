@@ -69,6 +69,22 @@ const PASSTHROUGH_ENV = [
   "TERN_AWUI_VAPID_SUBJECT",
 ];
 
+/**
+ * Written beside `TERN_AWUI_ALLOW` when the installer took it from the Tailscale login, so a re-run
+ * follows a changed login instead of keeping the old one as if it had been given. The server ignores it.
+ */
+const ALLOW_FROM_LOGIN = "TERN_AWUI_ALLOW_FROM_LOGIN";
+
+/** Where each platform's service file goes: the unit, the LaunchAgent and the Windows launcher. */
+function serviceFiles(platform: Platform, home: string, configDir: string): Record<Platform, string> {
+  const p = pathFor(platform);
+  return {
+    linux: p.join(home, ".config", "systemd", "user", `${SERVICE_NAME}.service`),
+    darwin: p.join(home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`),
+    win32: p.join(configDir, "tern-awui.vbs"),
+  };
+}
+
 function pathFor(platform: Platform): typeof path.posix {
   return platform === "win32" ? path.win32 : path.posix;
 }
@@ -255,15 +271,13 @@ export function plan(input: PlanInput): Action[] {
   const serveOff: Action = { kind: "run", argv: [input.tailscale, "serve", `--https=${input.port}`, "off"], mayFail: true };
   const ternPlugin = (verb: "link" | "unlink", what: string): Action => ({ kind: "run", argv: [input.tern, "plugin", verb, what], mayFail: true });
 
-  const unit = p.join(input.home, ".config", "systemd", "user", `${SERVICE_NAME}.service`);
+  const { linux: unit, darwin: plist, win32: launcher } = serviceFiles(input.platform, input.home, input.configDir);
   const systemctl = (...args: string[]): Extract<Action, { kind: "run" }> => ({ kind: "run", argv: ["systemctl", "--user", ...args] });
   const dropLegacyUnit: Action[] = [
     { ...systemctl("disable", "--now", `${LEGACY_SERVICE_NAME}.service`), mayFail: true },
     { kind: "remove", path: p.join(input.home, ".config", "systemd", "user", `${LEGACY_SERVICE_NAME}.service`) },
   ];
-  const plist = p.join(input.home, "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`);
   const bootout: Action = { kind: "run", argv: ["launchctl", "bootout", `gui/${input.uid}/${LAUNCHD_LABEL}`], mayFail: true };
-  const launcher = p.join(input.configDir, "tern-awui.vbs");
   const taskXml = p.join(input.configDir, "tern-awui-task.xml");
   const endTask: Action = { kind: "run", argv: ["schtasks", "/End", "/TN", TASK_NAME], mayFail: true };
   const ours: OurProcesses = { bun: input.bun, server: p.join(input.repo, "server.ts"), launcher };
@@ -459,13 +473,55 @@ function which(name: string, platform: Platform, PATH: string | undefined, optio
   return found ?? name;
 }
 
-function readInstalledPort(discovery: string, tokenFile: string): number | undefined {
+/** bridge.json's port and token file, each when readable. */
+function readDiscovery(file: string): { port?: number; tokenFile?: string } {
   try {
-    const d = JSON.parse(readFileSync(discovery, "utf8")) as { endpoint?: string; tokenFile?: string };
+    const d = JSON.parse(readFileSync(file, "utf8")) as { endpoint?: string; tokenFile?: string };
     const port = Number(/^ws:\/\/127\.0\.0\.1:(\d+)\/bridge$/.exec(d.endpoint ?? "")?.[1]);
-    return d.tokenFile === tokenFile && Number.isInteger(port) && port > 0 ? port : undefined;
+    return { port: Number.isInteger(port) && port > 0 ? port : undefined, tokenFile: typeof d.tokenFile === "string" ? d.tokenFile : undefined };
   } catch {
-    return undefined;
+    return {};
+  }
+}
+
+const xmlUnescape = (s: string) =>
+  s.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&quot;", '"').replaceAll("&apos;", "'").replaceAll("&amp;", "&");
+
+/**
+ * The `TERN_AWUI_*` settings in a service file this installer wrote: the systemd unit's `Environment=`
+ * lines, the LaunchAgent's `EnvironmentVariables` or the Windows launcher's `env(…) = …` lines, each
+ * unescaped the way `systemdUnit`, `launchdPlist` and `windowsLauncher` escape them.
+ */
+export function parseServiceSettings(platform: Platform, text: string): Record<string, string> {
+  const pairs: [string, string][] = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (platform === "linux") {
+      const m = /^Environment="((?:[^"\\]|\\.)*)"$/.exec(line);
+      if (!m) continue;
+      const kv = m[1].replace(/\\(.)/g, "$1").replaceAll("%%", "%");
+      const eq = kv.indexOf("=");
+      if (eq > 0) pairs.push([kv.slice(0, eq), kv.slice(eq + 1)]);
+    } else if (platform === "darwin") {
+      const m = /^\s*<key>([^<]*)<\/key><string>([^<]*)<\/string>$/.exec(line);
+      if (m) pairs.push([xmlUnescape(m[1]), xmlUnescape(m[2])]);
+    } else {
+      const m = /^env\("((?:[^"]|"")*)"\) = "((?:[^"]|"")*)"$/.exec(line);
+      if (m) pairs.push([m[1].replaceAll('""', '"'), m[2].replaceAll('""', '"')]);
+    }
+  }
+  return Object.fromEntries(pairs.filter(([k]) => k.startsWith("TERN_AWUI_")));
+}
+
+/** The current install's settings from its service file; empty when there is none or it can't be read. */
+function readInstalledSettings(platform: Platform, home: string, configDir: string): Record<string, string> {
+  const file = serviceFiles(platform, home, configDir)[platform];
+  try {
+    const raw = readFileSync(file);
+    // The Windows launcher is UTF-16LE with a BOM.
+    const text = platform === "win32" ? raw.toString("utf16le").replace(/^\ufeff/, "") : raw.toString("utf8");
+    return parseServiceSettings(platform, text);
+  } catch {
+    return {};
   }
 }
 
@@ -488,33 +544,65 @@ export function main(deps: MainDeps): void {
   const env = deps.env;
   const home = deps.home;
   const p = pathFor(platform);
+  // A re-run (an update) keeps what the current install was given: each setting comes from the
+  // flag or environment (set but empty: its default), else from the installed service when it
+  // differs from the default there.
+  const defaultConfigDir = p.join(home, ".config", "tern-mobile");
+  const envConfigDir = env.TERN_AWUI_CONFIG ? p.resolve(env.TERN_AWUI_CONFIG) : undefined;
+  const discovery = readDiscovery(p.join(home, ".config", "tern-mobile", "bridge.json"));
+  // bridge.json names the installed config dir, where the Windows launcher lives.
+  const installed = readInstalledSettings(platform, home, envConfigDir ?? (discovery.tokenFile ? p.dirname(discovery.tokenFile) : defaultConfigDir));
+  // An installed host list starts with the tailnet name of its day, which a renamed machine no
+  // longer has: only the names after it were given.
+  const givenHosts = installed.TERN_AWUI_HOSTS?.split(",").slice(1).join(",");
+  if (givenHosts) installed.TERN_AWUI_HOSTS = givenHosts;
+  else delete installed.TERN_AWUI_HOSTS;
+  // A list the installer took from the Tailscale login follows the login, not the old value.
+  if (installed[ALLOW_FROM_LOGIN] === "1") delete installed.TERN_AWUI_ALLOW;
+  const kept = new Set<string>();
+  const keep = (key: string, fallback?: string): string | undefined => {
+    if (env[key] !== undefined) return env[key] || undefined;
+    const value = installed[key];
+    if (value === undefined || value === fallback) return undefined;
+    kept.add(key);
+    return value;
+  };
+  const configDir = envConfigDir ?? keep("TERN_AWUI_CONFIG") ?? defaultConfigDir;
   // The port the current install published, if bridge.json is still ours (points at our token file).
-  const configDir = env.TERN_AWUI_CONFIG ? p.resolve(env.TERN_AWUI_CONFIG) : p.join(home, ".config", "tern-mobile");
-  const installedPort = readInstalledPort(p.join(home, ".config", "tern-mobile", "bridge.json"), p.join(configDir, "bridge-token"));
-  const explicit = args.port ?? (env.TERN_AWUI_PORT ? parsePort(env.TERN_AWUI_PORT, "TERN_AWUI_PORT") : undefined);
-  const port = explicit ?? (args.uninstall ? installedPort : undefined) ?? 4380;
+  const installedPort = discovery.tokenFile === p.join(configDir, "bridge-token") ? discovery.port : undefined;
+  const portSetting = args.port === undefined ? keep("TERN_AWUI_PORT", "4380") : undefined;
+  const portSource = kept.has("TERN_AWUI_PORT") ? "TERN_AWUI_PORT in the installed service" : "TERN_AWUI_PORT";
+  const port = args.port ?? (portSetting ? parsePort(portSetting, portSource) : undefined) ?? installedPort ?? 4380;
   const tailscale = which("tailscale", platform, env.PATH, args.uninstall);
   const tern = which("tern", platform, env.PATH, args.uninstall);
-  let omp = "", dnsName = "", allow: string[] = [], hosts: string[] = [];
+  let omp = "", dnsName = "", allow: string[] = [], hosts: string[] = [], allowFromLogin = false;
   if (!args.uninstall) {
     omp = which("omp", platform, env.PATH);
     const r = Bun.spawnSync([tailscale, "status", "--json"], { env, stderr: "pipe" });
     if (r.exitCode !== 0) throw new Error(`tailscale status failed: ${r.stderr.toString()}`);
     const status = parseTailscaleStatus(r.stdout.toString());
     dnsName = status.dnsName;
-    allow = (env.TERN_AWUI_ALLOW ?? status.login).split(",").map((s) => s.trim()).filter(Boolean);
+    const given = keep("TERN_AWUI_ALLOW", status.login);
+    allowFromLogin = given === undefined;
+    allow = (given ?? status.login).split(",").map((s) => s.trim()).filter(Boolean);
     if (allow.length === 0) throw new Error("no allowed login: set TERN_AWUI_ALLOW (tailscale reports no user for this device)");
     // Tailscale Serve keeps the browser's Host: the tailnet name.
-    const extraHosts = (env.TERN_AWUI_HOSTS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    const extraHosts = (keep("TERN_AWUI_HOSTS") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
     hosts = [...new Set([dnsName.replace(/\.$/, ""), ...extraHosts])];
   }
-  const extraEnv = Object.fromEntries(PASSTHROUGH_ENV.flatMap((k) => (env[k] ? [[k, env[k] as string]] : [])));
-  // Resolve before the service changes its working directory to the checkout.
+  const extraEnv = Object.fromEntries(PASSTHROUGH_ENV.flatMap((k) => { const v = keep(k); return v === undefined ? [] : [[k, v]]; }));
+  // Resolve before the service changes its working directory to the checkout (a kept value is
+  // absolute already).
   for (const key of ["TERN_AWUI_CONFIG", "TERN_AWUI_OMP_DIR", "TERN_AWUI_NOTES_DIR"]) {
     if (extraEnv[key]) extraEnv[key] = p.resolve(extraEnv[key]);
   }
   // A path (not a bare command name looked up on PATH) is relative to the installer's cwd.
   if (extraEnv.TERN_AWUI_PROJECTS && /[/\\]/.test(extraEnv.TERN_AWUI_PROJECTS)) extraEnv.TERN_AWUI_PROJECTS = p.resolve(extraEnv.TERN_AWUI_PROJECTS);
+  if (allowFromLogin) extraEnv[ALLOW_FROM_LOGIN] = "1";
+  if (kept.size && !args.uninstall) {
+    const shown = [...kept].map((k) => `${k}=${k === "TERN_AWUI_PORT" ? port : k === "TERN_AWUI_ALLOW" ? allow.join(",") : installed[k]}`);
+    deps.log(`Keeping the current install's ${shown.join(" ")} (pass --port, or set a variable, empty for its default, to change it)\n`);
+  }
   const actions = plan({
     platform,
     uninstall: args.uninstall,

@@ -68,9 +68,9 @@ end)
 -- Update check: twice a day at most, the checkout's version (`../package.json`, the installer links
 -- this folder from the checkout) is compared with GitHub's latest release. A newer one shows one
 -- info toast, once per release across every window (`tern.kv`), and the palette offers "tern-awui:
--- Update", which opens a shell tab in the checkout with the README's update typed for Enter, and
--- "What's new", the release page. A plugin installed as a copy has no checkout beside it and checks
--- nothing.
+-- Update", which opens a shell tab in the checkout and runs the README's update there (the installer
+-- keeps the current install's port and settings), and "What's new", the release page. A plugin
+-- installed as a copy has no checkout beside it and checks nothing.
 
 local RELEASES = "https://api.github.com/repos/materemias/tern-awui/releases/latest"
 local CHECK_EVERY_S = 12 * 3600
@@ -204,10 +204,7 @@ tern.command({
 			cx:toast("error", "tern-awui: couldn't open a tab", `Run {UPDATE} in {repo}`)
 			return
 		end
-		-- Typed, not run: a reinstall without the `--port` or `TERN_AWUI_*` settings of the first
-		-- install would reset them, so the user adds them before Enter.
-		cx:run(pane, UPDATE)
-		cx:toast("info", "Press Enter to update tern-awui", "Add --port or TERN_AWUI_* first if you installed with them")
+		cx:run(pane, UPDATE .. "\r")
 	end,
 })
 
