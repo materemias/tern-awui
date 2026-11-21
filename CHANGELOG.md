@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features
+
+- Tern announces a new release and updates from its palette, after `tern plugin reload tern-awui`.
+
 ## 0.13.0 (2026-11-19)
 
 ### Features

@@ -70,6 +70,7 @@ It has no login of its own. You reach it over a private network you control, suc
 - **+ omp** opens a new omp tab in Tern in any project folder and jumps to it.
 - **Closed** in the same sheet lists the omp sessions you typed into that no Tern pane runs any more, newest first, with their title, recap and folder. Typing searches all your omp sessions on the server, plus Claude Code and Codex sessions; a tool's name (`claude`, `codex`, `omp`) shows only that tool's. A tap reopens one in a new Tern tab in its folder (`omp --resume`, `claude --resume`, `codex resume`), and × hides it from the list.
 - **Show on desktop** in a session's ⋯ menu (a button on the desktop) focuses that pane in the Tern window on the desktop.
+- **Updates.** When a new tern-awui release is out, Tern shows one toast. **tern-awui: Update** in Tern's palette opens a tab in the checkout with the update typed, for you to check and run with Enter; **tern-awui: What's new** opens the release notes.
 
 ## Works best with
 
@@ -157,8 +158,8 @@ Link `omp-extension/tern-mobile.ts` into `~/.omp/agent/extensions/` yourself. Re
 ### Updating and removing
 
 ```bash
-git pull && bun install.ts      # rebuild, update and restart the service
-bun install.ts --uninstall      # remove the service, the extension and the tailnet entry
+git pull --ff-only && bun install && bun install.ts   # rebuild, update and restart the service
+bun install.ts --uninstall                            # remove the service, the extension and the tailnet entry
 ```
 
 ## Security
@@ -185,6 +186,7 @@ What it does protect against, and why, is in [how it works](docs/architecture.md
 - Voice calls end when the session screen closes. With the screen off, Android keeps playing the voice but silences the phone's microphone until you unlock, so use the black screen instead of the power button. Phones may also cut a call when the app goes to the background (iOS Safari does), and the call stays on the phone that started it.
 - Swiping between sessions follows the list's hidden-old and folded projects, but not a filter typed in the desktop sidebar or a picked Tern session. A swipe that starts on something that scrolls sideways (a wide code block or table), or within 24 px of the screen edge, scrolls or goes back instead.
 - Parking needs Tern's plugins and the tern-awui plugin the installer links. When no Tern window is open, parking or unparking starts one. Unparking into a picked Tern session needs plugin 0.2.0, and telling panes from closed sessions apart 0.3.0; the installer links the plugin from the checkout, so `tern plugin reload tern-awui` loads it after a `git pull`.
+- The update check needs plugin 0.4.0 and the plugin linked from a git checkout, as the installer does. It asks GitHub at most twice a day (hourly after a failed try) and compares the latest release with the checkout's `package.json`. The installer doesn't remember `--port` or `TERN_AWUI_*` settings, so add them to the typed update line if you installed with them.
 - The session chips show the sessions of one Tern window, the one the server's `tern` commands reach.
 - Waiting needs CodexBar AgentView, whose `codexbar_waiting.py` watches the waits and holds every rule; tern-awui only shows them and passes on taps. Without it the strip doesn't show. The service must share the desktop's `XDG_STATE_HOME`. What lands on you while the server is down sends no notification. omp's own schedules (AgentView's On a timer group) don't show.
 - Answering an `ask` needs omp 18.18.3 or newer, whose `ask` is an HTML form; an older omp's questions can be answered only in the Tern pane, and an ask written as a question list needs omp 19. The phone types the answer into omp's form as keys, and omp 19 moves the form's cursor differently, so the phone needs the session's omp release from the current extension: until omp restarts on it, a form with preselected options is refused with a note to restart. Dropdowns end up as picked on the phone. Checkboxes are toggled from the values the form opened with, and in omp 19 radios and boxes are reached from the option the form opened with, so a group the desktop already changed in the same form may need a second look.
