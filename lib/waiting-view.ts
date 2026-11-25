@@ -5,13 +5,10 @@
 import { arr, num, obj, str, type Obj } from "./json";
 import { matchesWords } from "./search";
 
-/** The groups the app shows, in their order. omp's own schedules (`on_timer`) are left out. */
-const BALLS = ["on_me", "on_machine", "on_someone", "on_my_time"] as const;
-/** Who holds the next step. */
+/** The groups, in the CLI's rank order: a row sits in the first group any of its waits does. */
+const BALLS = ["on_me", "on_machine", "on_timer", "on_someone", "on_my_time"] as const;
+/** Who holds the next step; `on_timer`: only the clock (a time wait, a repeat, a snooze). */
 export type Ball = (typeof BALLS)[number];
-/** A wait can sit on a timer inside a row that is grouped by another of its waits. */
-export type WaitBall = Ball | "on_timer";
-const WAIT_BALLS: readonly WaitBall[] = [...BALLS, "on_timer"];
 
 const OUTCOMES = ["fulfilled", "attention", "overdue"] as const;
 /** What happened to a wait on the user: it came, it needs a look, or its time passed. */
@@ -29,7 +26,7 @@ export type Wait = {
   summary: string;
   /** "waiting", "pending" (a chain step not started), "acting" (the agent runs its prompt), "review", "fired", … */
   state: string;
-  ball: WaitBall;
+  ball: Ball;
   /** Why it needs the user: "agent asks a question", "ran, take a look". */
   reason: string | null;
   overdue: boolean;
@@ -144,7 +141,7 @@ const texts = (value: unknown): string[] => arr(value).flatMap((t) => (typeof t 
 function waits(value: unknown): Wait[] {
   return arr(value).flatMap((raw) => {
     const w = obj(raw);
-    const ball = pick(WAIT_BALLS, w.ball);
+    const ball = pick(BALLS, w.ball);
     if (typeof w.id !== "string" || !w.id || !ball) return [];
     return [{
       id: w.id,
@@ -325,12 +322,16 @@ export function matchesRow(row: WaitingRow, query: string): boolean {
   return matchesWords(query, [row.title, row.note, row.project, ...row.threads, row.waitingFor, row.headline].filter(Boolean).join("\n"));
 }
 
-export const GROUPS: readonly { ball: Ball; label: string }[] = [
-  { ball: "on_me", label: "On me" },
-  { ball: "on_machine", label: "Machine watching" },
-  { ball: "on_someone", label: "Waiting on something" },
-  { ball: "on_my_time", label: "When I have time" },
-];
+const LABELS: Record<Ball, string> = {
+  on_me: "On me",
+  on_machine: "Machine watching",
+  on_timer: "On a timer",
+  on_someone: "Waiting on something",
+  on_my_time: "When I have time",
+};
+/** Every group, in the CLI's rank order. */
+export const GROUPS: readonly { ball: Ball; label: string }[] = BALLS.map((ball) => ({ ball, label: LABELS[ball] }));
+
 /** On me, what needs a look leads and what merely came stays visible last until Seen. */
 const ON_ME_RANK: Record<Outcome, number> = { attention: 0, overdue: 1, fulfilled: 2 };
 

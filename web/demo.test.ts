@@ -228,7 +228,7 @@ describe("demo backend", () => {
     const list = open(server, clock, null);
     const first = list.last("waiting");
     if (!first.available) throw new Error("no waiting view");
-    expect(first.rows.map((r) => r.ball)).toEqual(["on_me", "on_machine", "on_someone", "on_my_time"]);
+    expect(first.rows.map((r) => r.ball)).toEqual(["on_me", "on_machine", "on_timer", "on_someone", "on_my_time"]);
     expect(first.onMe).toBe(1);
     // Done on the row on you: the review is seen, and CI still runs.
     expect((await post(server, "/api/waiting/mark-seen", { session: "demo-21" })).ok).toBe(true);
@@ -250,6 +250,20 @@ describe("demo backend", () => {
     expect(noted.rows.find((r) => r.session === "demo-31")!.note).toBe("next weekend");
     // As the server checks it: an unknown row is refused.
     expect((await post(server, "/api/waiting/seen", { session: "nope" })).status).toBe(404);
+  });
+
+  test("Snooze 1d takes the wait off you; the row sits On a timer once only the clock holds it", async () => {
+    const { clock, server } = setup();
+    const list = open(server, clock, null);
+    expect((await post(server, "/api/waiting/snooze", { session: "demo-21", wait: "w-212-review" })).ok).toBe(true);
+    const snoozed = list.last("waiting");
+    if (!snoozed.available) throw new Error("no waiting view");
+    expect(snoozed.onMe).toBe(0);
+    expect(snoozed.rows.find((r) => r.session === "demo-21")).toMatchObject({ ball: "on_machine", onYou: [], waits: [{ id: "w-212-review", ball: "on_timer", snoozable: false }, { id: "w-212-ci" }] });
+    expect((await post(server, "/api/waiting/stop", { session: "demo-21", wait: "w-212-ci" })).ok).toBe(true);
+    const timer = list.last("waiting");
+    if (!timer.available) throw new Error("no waiting view");
+    expect(timer.rows.find((r) => r.session === "demo-21")!.ball).toBe("on_timer");
   });
 
   test("Tern sessions spread the list; launches open in the picked one", async () => {

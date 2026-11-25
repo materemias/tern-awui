@@ -818,10 +818,12 @@ a.job:hover, .subagents-link:hover { background: var(--raise); }
 /* The list: plain rows on the sheet, divided by hairlines, under sentence-case group names that stay in
    view while their rows scroll. A row says who, where it stands in one line, and your note. */
 /* Each group name carries its colour: red for what is on you (as the strip), green for what the
-   machine watches, violet for what someone else holds, grey for when you have time. */
+   machine watches, blue for what only the clock brings back, violet for what someone else holds,
+   grey for when you have time. */
 .wait-group, .wait-bar { --grp: var(--muted); }
 .g-on_me { --grp: var(--blocked); }
 .g-on_machine { --grp: var(--working); }
+.g-on_timer { --grp: var(--accent); }
 .g-on_someone { --grp: var(--gpt); }
 .wait-group + .wait-group h3 { margin-top: 6px; }
 .wait-group h3 { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; margin: 0; padding: 14px 12px 8px; background: var(--panel); color: var(--fg); font-size: 15px; font-weight: 700; }

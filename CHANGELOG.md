@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- Waiting lists sessions that only wait for a time, under On a timer, as the desktop does.
+
 ## 0.14.1 (2026-11-21)
 
 ### Features

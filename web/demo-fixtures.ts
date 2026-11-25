@@ -738,10 +738,23 @@ export function demoWaiting(now: number): WaitingRow[] {
       close: { verdict: "safe", reason: "", text: "closable: Tern reopens it when a wait fires" },
       waits: [
         wait({ id: "w-48-ci", kind: "pr", label: "CI on PR#48", summary: "PR#48 checks", ball: "on_machine" }),
-        wait({ id: "w-48-rerun", kind: "time", label: "Run the flaky suite 200 times", summary: "rerun at 17:00", ball: "on_machine", mark: "⏲", due: now + 2 * 60 * MIN, hasPrompt: true }),
+        wait({ id: "w-48-rerun", kind: "time", label: "Run the flaky suite 200 times", summary: "rerun at 17:00", ball: "on_timer", mark: "⏲", due: now + 2 * 60 * MIN, hasPrompt: true }),
       ],
       history: [{ at: t(3 * 60), text: "Set aside: CI on PR#48, then a soak run", fired: false }],
       prs: [{ repo: "acme/api-server", number: 48, url: "https://github.com/acme/api-server/pull/48", source: "wait", title: "Use a fake clock in the webhook tests", state: "open", review: "review_required", checks: "pending" }],
+    }),
+    // On a timer: a closed session that only the clock brings back.
+    row({
+      session: "demo-c51",
+      title: "Move to Bun 1.4",
+      project: "tern-awui",
+      ball: "on_timer",
+      recap: "On Bun 1.4: the idle timeout and the test mocks needed fixes; all green.",
+      recapAt: t(26 * 60),
+      since: t(26 * 60),
+      close: { verdict: "safe", reason: "", text: "closable: Tern reopens it when a wait fires" },
+      waits: [wait({ id: "w-51-recheck", kind: "time", label: "Drop the mock workaround on Bun 1.4.1", summary: "in 3 days", ball: "on_timer", mark: "⏲", due: now + 3 * DAY * MIN, hasPrompt: true })],
+      history: [{ at: t(26 * 60), text: "Set aside: recheck once Bun 1.4.1 ships", fired: false }],
     }),
     // Waiting on something: the parked session; omp suggests a note.
     row({

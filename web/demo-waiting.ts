@@ -2,7 +2,7 @@
 // popup's taps do to them, standing in for `codexbar_waiting.py`. Requests are checked as the
 // server checks them (waitingArgs); a row's group, threads and counts follow from its waits.
 import type { Waiting, WaitingRow } from "./api";
-import { waitingArgs, type Ball, type WaitingAction } from "../lib/waiting-view";
+import { GROUPS, waitingArgs, type WaitingAction } from "../lib/waiting-view";
 import { demoWaiting } from "./demo-fixtures";
 
 const DAY_MS = 24 * 60 * 60_000;
@@ -15,17 +15,9 @@ function settle(row: WaitingRow): boolean {
     row.outcome = null;
     row.headline = null;
   }
-  const first = row.waits.find((w) => w.ball !== "on_me");
-  const ball: Ball = row.waits.some((w) => w.ball === "on_me")
-    ? "on_me"
-    : first
-      ? first.ball === "on_timer"
-        ? "on_machine"
-        : first.ball
-      : row.waitingFor
-        ? "on_someone"
-        : "on_my_time";
-  row.ball = ball;
+  // As the CLI ranks them: the row sits in the first group any of its waits does.
+  const ranked = GROUPS.find((g) => row.waits.some((w) => w.ball === g.ball));
+  row.ball = ranked ? ranked.ball : row.waitingFor ? "on_someone" : "on_my_time";
   const thread = (w: WaitingRow["waits"][number]) => `${w.mark || "⏳"} ${w.summary}`;
   row.threads = row.waits.filter((w) => w.kind !== "later").map(thread);
   row.stillWaiting = came ? row.waits.filter((w) => w !== came && w.kind !== "later").map(thread) : [];
@@ -83,7 +75,8 @@ export class DemoWaiting {
       }
       case "snooze":
         // Pushed a day: it rings again then, and until then sits on a timer.
-        Object.assign(wait!, { due: now + DAY_MS, overdue: false, outcome: null, state: "waiting", ball: wait!.ball === "on_me" ? "on_timer" : wait!.ball, mark: "⏲" });
+        Object.assign(wait!, { due: now + DAY_MS, overdue: false, outcome: null, state: "waiting", ball: wait!.ball === "on_me" ? "on_timer" : wait!.ball, mark: "⏲", snoozable: false });
+        row.onYou = row.onYou.filter((o) => o.id !== wait!.id);
         note(`Snoozed 1d: ${wait!.label}`);
         break;
       case "seen":

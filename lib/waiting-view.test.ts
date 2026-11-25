@@ -84,12 +84,13 @@ describe("parseView", () => {
       history: [{ at: Date.parse("2026-11-12T13:09:05+01:00"), text: "4h passed", fired: true }],
       prs: [{ repo: "o/r", number: 74, url: pr.url, source: "wait", title: "fix(x): y", state: "open", review: "approved", checks: "failing" }],
     });
-    // A wait on a timer stays on its row, though no group shows timers.
+    // A wait on a timer stays on its row, which another wait groups.
     expect(row.waits).toMatchObject([
       { id: "w1", kind: "time", state: "review", outcome: "fulfilled", mark: "✅", hasPrompt: true, snoozable: false, due: Date.parse("2026-11-12T13:09:05+01:00") },
       { id: "w2", ball: "on_timer", outcome: null, due: 0 },
     ]);
-    expect(rows([session("b", { ball: "on_timer" })])).toEqual([]);
+    // A session only the clock holds is listed, On a timer.
+    expect(rows([session("b", { ball: "on_timer" })])).toMatchObject([{ session: "b", ball: "on_timer" }]);
   });
 });
 
@@ -126,6 +127,7 @@ describe("groupRows", () => {
     const list = rows(
       [
         session("later", { ball: "on_my_time" }),
+        session("timer", { ball: "on_timer" }),
         session("done", { ball: "on_me", outcome: "fulfilled" }),
         session("plain", { ball: "on_me" }),
         session("late", { ball: "on_me", outcome: "overdue" }),
@@ -138,6 +140,7 @@ describe("groupRows", () => {
     expect(groupRows(list).map((g) => [g.label, g.rows.map(rowId)])).toEqual([
       ["On me", ["look", "pane:5", "late", "done", "plain"]],
       ["Machine watching", ["m1", "m2"]],
+      ["On a timer", ["timer"]],
       ["When I have time", ["later"]],
     ]);
   });
